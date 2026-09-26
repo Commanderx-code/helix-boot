@@ -81,7 +81,7 @@ if ((upgrade)); then
   if [[ ${old%%$'\t'*} == "$want" ]]; then
     ok "Ventoy is already $want"
   else
-    head "Upgrading Ventoy ${old%%$'\t'*} → $want on $disk (your files are kept)"
+    section "Upgrading Ventoy ${old%%$'\t'*} → $want on $disk (your files are kept)"
     # -u turns Secure Boot support on unless told otherwise; keep the stick's setting.
     flags=(-u)
     [[ ${old#*$'\t'} == NO ]] && flags+=(-S)

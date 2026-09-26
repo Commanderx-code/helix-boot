@@ -10,7 +10,9 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
+import subprocess
 import tarfile
 import tempfile
 import threading
@@ -403,6 +405,20 @@ class TestFetchAndSync(Base):
         rc, out = self.sync(dry_run=True)
         self.assertEqual(rc, 0, out)
         self.assertEqual(list(self.stick.iterdir()), [])
+
+
+class TestShellHelpers(unittest.TestCase):
+    def test_common_sh_does_not_shadow_commands(self):
+        # scripts/common.sh once defined head(), which broke every `| head -n1`.
+        names = subprocess.run(
+            ["bash", "-c", f"source {ROOT / 'scripts/common.sh'}; compgen -A function"],
+            capture_output=True, text=True, check=True,
+        ).stdout.split()
+        used = set()  # commands the shell scripts pipe into
+        for f in ("install.sh", "refresh.sh", "scripts/common.sh", "pe/vm/build-vm.sh"):
+            used |= set(re.findall(r"(?<!\|)\|(?!\|)\s*([a-z][\w.-]*)", (ROOT / f).read_text()))
+        self.assertIn("head", used)
+        self.assertEqual(sorted(used & set(names)), [], "helper functions hide commands the scripts use")
 
 
 if __name__ == "__main__":

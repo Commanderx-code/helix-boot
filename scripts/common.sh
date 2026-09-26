@@ -10,7 +10,7 @@ fi
 ok()   { printf '%s✓%s %s\n' "$G" "$X" "$*"; }
 warn() { printf '%s!%s %s\n' "$Y" "$X" "$*"; }
 info() { printf '%s•%s %s\n' "$D" "$X" "$*"; }
-head() { printf '\n%s%s%s\n' "$B" "$*" "$X"; }
+section() { printf '\n%s%s%s\n' "$B" "$*" "$X"; }
 die()  { printf '%s✗%s %s\n' "$R" "$X" "$*" >&2; exit 1; }
 
 # Friendly failure instead of a bare exit code.

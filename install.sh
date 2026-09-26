@@ -83,7 +83,7 @@ mapfile -t protected < <(system_disks)
 
 if [[ -z $dev ]]; then
   ((${#sticks[@]})) || die "no USB sticks found. Plug one in, or pass the device path."
-  head "USB sticks"
+  section "USB sticks"
   show_sticks
   read -rp "Which one? [1-${#sticks[@]}] " n
   if ! [[ $n =~ ^[0-9]+$ ]] || ((n < 1 || n > ${#sticks[@]})); then die "not a choice: $n"; fi
@@ -100,7 +100,7 @@ for s in "${sticks[@]}"; do [[ ${s%%$'\t'*} == "$dev" ]] && is_usb=1; done
 ((is_usb)) || die "$dev isn't a USB/removable disk. Refusing (edit install.sh if you really mean it)."
 
 # ── 3. Confirm ───────────────────────────────────────────────────────────
-head "This will ERASE everything on:"
+section "This will ERASE everything on:"
 lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS "$dev" | sed 's/^/  /'
 echo
 bytes=$(lsblk -bdno SIZE "$dev")
@@ -119,7 +119,7 @@ if ((secure)); then flags+=(-s); else flags+=(-S); fi
 [[ -n $reserve ]] && flags+=(-r "$reserve")
 
 want=$(basename "$vdir" | sed 's/^ventoy-//')
-head "Installing Ventoy $want"
+section "Installing Ventoy $want"
 # Ventoy2Disk.sh asks "Continue?" twice; we've already confirmed above.
 (cd "$vdir" && printf 'y\ny\n' | sudo ./Ventoy2Disk.sh "${flags[@]}" "$dev")
 sudo udevadm settle 2>/dev/null || sleep 3
@@ -135,7 +135,7 @@ ok "Ventoy installed, data partition mounted at $mnt"
 # ── 5. Fill it ───────────────────────────────────────────────────────────
 "$CRESCUE" sync "$mnt" --init --verify
 
-head "Finishing"
+section "Finishing"
 unmount_part "$part"
 ok "Done. You can unplug the stick."
 ((secure)) && info "First boot on a Secure Boot PC: pick 'Enroll key' → ENROLL_THIS_KEY_IN_MOKMANAGER.cer, then reboot."
