@@ -40,15 +40,24 @@ all frozen at 2021 versions. Commander Rescue keeps the idea and drops the rest:
 | Hardware Diagnostics | Memtest86+ | memtest.org · sha512 |
 | Secure Wipe | ShredOS (nwipe) | GitHub · sha256 |
 | Boot Repair | Super GRUB2 Disk | SourceForge · sha256 |
-| Malware Scan | Kaspersky Rescue Disk, Dr.Web LiveDisk | vendor sites · unverified |
+| Malware Scan | Dr.Web LiveDisk, Kaspersky Rescue Disk *(off by default)* | vendor sites · unverified |
 | **PE apps** (`USB:\Apps`) | Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO, TestDisk/PhotoRec, ProduKey | various |
-| | Kaspersky Virus Removal Tool, Microsoft Safety Scanner (malware scans inside the PE) | vendor sites · unverified |
+| | Microsoft Safety Scanner, Kaspersky Virus Removal Tool *(off by default)* (malware scans inside the PE) | vendor sites · unverified |
 
 *Unverified* means the publisher offers no checksum. The file is trusted on
 first download and refused if it later changes without a new version (see
 below). Antivirus tools carry their virus definitions, so `./refresh.sh`
 before a job keeps them current. Microsoft Safety Scanner stops working 10
-days after download.
+days after download. Kaspersky refuses downloads from the US, so its two
+tools are off; outside the US, turn them on in `local.toml`:
+
+```toml
+[overrides.kaspersky-rd]
+enabled = true
+
+[overrides.kvrt]
+enabled = true
+```
 
 Everything lives in [`tools.toml`](tools.toml). Adding a tool is a few lines.
 
