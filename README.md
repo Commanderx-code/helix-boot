@@ -4,6 +4,8 @@
 
 **A lean, always-current multiboot rescue USB, in the spirit of MediCat.**
 
+[![ci](https://github.com/Commanderx-code/commander-rescue/actions/workflows/ci.yml/badge.svg)](https://github.com/Commanderx-code/commander-rescue/actions/workflows/ci.yml)
+
 One stick with a Windows 11 PE desktop and the best free Linux rescue tools,
 rebuilt from upstream sources and verified before it touches your drive.
 
@@ -30,11 +32,11 @@ all frozen at 2021 versions. Commander Rescue keeps the idea and drops the rest:
 |---|---|---|
 | Windows PE | **Commander PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Win11 build | built locally ([guide](pe/README.md)) |
 | | Hiren's BootCD PE *(off by default, stopgap)* | hirensbootcd.org |
-| Linux Rescue | SystemRescue | SourceForge, sha512 |
-| Backup & Imaging | Rescuezilla, Clonezilla | GitHub / SourceForge |
-| Partitioning | GParted Live | SourceForge, CHECKSUMS.TXT |
-| Hardware Diagnostics | Memtest86+ | GitHub |
-| Secure Wipe | ShredOS (nwipe) | GitHub |
+| Linux Rescue | SystemRescue | SourceForge · sha512 |
+| Backup & Imaging | Rescuezilla, Clonezilla | GitHub · sha256 / SourceForge · sha512 |
+| Partitioning | GParted Live | SourceForge · sha512 |
+| Hardware Diagnostics | Memtest86+ | memtest.org · sha512 |
+| Secure Wipe | ShredOS (nwipe) | GitHub · sha256 |
 | **PE apps** (`USB:\Apps`) | Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO, TestDisk/PhotoRec, ProduKey | various |
 
 Everything lives in [`tools.toml`](tools.toml). Adding a tool is a few lines.
@@ -132,6 +134,7 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, tips
 
 - [x] Manifest, fetch/verify engine, installer, refresher, Ventoy menu
 - [x] PE app launcher (works in any WinPE)
+- [x] CI: tests, ShellCheck, weekly live resolve + download + verify of every tool
 - [ ] First Commander PE build + recommended PhoenixPE preset
 - [ ] Ventoy theme
 - [ ] Commander Toolbox entry
