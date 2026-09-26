@@ -151,7 +151,7 @@ project = "clonezilla"
 path = "/clonezilla_live_stable"
 asset = ['^clonezilla-live-[\d.]+-\d+-amd64\.iso$']
 version = 'clonezilla-live-([\d.]+-\d+)-amd64'
-checksum = [{ sibling = "CHECKSUMS.TXT" }, "sf-md5"]
+checksum = [{ url = "https://clonezilla.org/downloads/stable/data/CHECKSUMS.TXT" }, { sibling = "CHECKSUMS.TXT" }, "sf-md5"]
 description = "Disk and partition imaging, multicast deployment, bare-metal restore."
 
 # ── Partitioning ──────────────────────────────────────────────────────────
@@ -165,7 +165,7 @@ project = "gparted"
 path = "/gparted-live-stable"
 asset = ['^gparted-live-[\d.]+-\d+-amd64\.iso$']
 version = 'gparted-live-([\d.]+-\d+)-amd64'
-checksum = [{ sibling = "CHECKSUMS.TXT" }, "sf-md5"]
+checksum = [{ url = "https://gparted.org/gparted-live/stable/CHECKSUMS.TXT" }, { sibling = "CHECKSUMS.TXT" }, "sf-md5"]
 description = "Resize, move, copy and repair partitions."
 
 # ── Diagnostics ───────────────────────────────────────────────────────────
