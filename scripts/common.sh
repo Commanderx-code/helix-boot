@@ -10,7 +10,7 @@ fi
 ok()   { printf '%s✓%s %s\n' "$G" "$X" "$*"; }
 warn() { printf '%s!%s %s\n' "$Y" "$X" "$*"; }
 info() { printf '%s•%s %s\n' "$D" "$X" "$*"; }
-head() { printf '\n%s%s%s\n' "$B" "$*" "$X"; }
+section() { printf '\n%s%s%s\n' "$B" "$*" "$X"; }
 die()  { printf '%s✗%s %s\n' "$R" "$X" "$*" >&2; exit 1; }
 
 # Friendly failure instead of a bare exit code.
@@ -66,6 +66,16 @@ for d in json.load(sys.stdin)["blockdevices"]:
     if d["type"] == "disk" and (d.get("tran") == "usb" or d.get("rm") in (True, "1")):
         print(d["path"], d.get("size") or "?", (d.get("model") or "").strip() or "unknown", sep="\t")
 '
+}
+
+# What Ventoy says is on a disk, as "VERSION<TAB>YES|NO" (Secure Boot), or
+# nothing if the disk has no Ventoy. Ventoy2Disk.sh exits 0 even when it bails
+# out at a prompt, so this is how we know an install/upgrade really happened.
+ventoy_info() {  # ventoy_info <ventoy dir> <disk>
+  { (cd "$1" && sudo ./Ventoy2Disk.sh -l "$2") 2>/dev/null || true; } | awk -F': *' '
+    /^Ventoy Version in Disk/ {v = $2}
+    /^Secure Boot Support/    {s = $2}
+    END { if (v != "") print v "\t" s }'
 }
 
 first_partition() {

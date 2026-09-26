@@ -10,7 +10,9 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
+import subprocess
 import tarfile
 import tempfile
 import threading
@@ -24,8 +26,17 @@ WEB = Path(tempfile.mkdtemp(prefix="crescue-web-"))
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
+    fail = {}  # URL path -> how many more times to answer 500
+
     def log_message(self, *a):
         pass
+
+    def do_GET(self):
+        if self.fail.get(self.path, 0) > 0:
+            self.fail[self.path] -= 1
+            self.send_error(500)
+            return
+        super().do_GET()
 
 
 SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(WEB)))
@@ -42,6 +53,7 @@ loader = importlib.machinery.SourceFileLoader("crescue", str(ROOT / "crescue"))
 spec = importlib.util.spec_from_loader("crescue", loader)
 cr = importlib.util.module_from_spec(spec)
 loader.exec_module(cr)
+cr.RETRY_DELAYS = (0, 0, 0)
 
 
 def sha(b: bytes, algo="sha256") -> str:
@@ -398,11 +410,83 @@ class TestFetchAndSync(Base):
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(), '{"mine": true}')
 
+    def test_theme_is_copied_and_wired_up(self):
+        theme = self.repo / "theme"
+        (theme / "fonts").mkdir(parents=True)
+        (theme / "theme.txt").write_text("desktop-image: \"background.png\"\n")
+        (theme / "fonts/b.pf2").write_bytes(b"PFF2")
+        (theme / "fonts/a.pf2").write_bytes(b"PFF2")
+        (theme / "build-theme.py").write_text("# generator, not for the stick\n")
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("systemrescue")
+        (self.stick / "ventoy/theme").mkdir(parents=True)
+        (self.stick / "ventoy/theme/stale.png").write_bytes(b"old")
+        rc, out = self.sync()
+        self.assertEqual(rc, 0, out)
+        on_stick = sorted(p.relative_to(self.stick / "ventoy/theme").as_posix()
+                          for p in (self.stick / "ventoy/theme").rglob("*") if p.is_file())
+        self.assertEqual(on_stick, ["fonts/a.pf2", "fonts/b.pf2", "theme.txt"])
+        vj = json.loads((self.stick / "ventoy/ventoy.json").read_text())
+        self.assertEqual(vj["theme"]["file"], "/ventoy/theme/theme.txt")
+        self.assertEqual(vj["theme"]["fonts"], ["/ventoy/theme/fonts/a.pf2", "/ventoy/theme/fonts/b.pf2"])
+
+    def test_no_theme_setting_means_no_theme(self):
+        self.fetch("systemrescue")
+        rc, out = self.sync()
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("theme", json.loads((self.stick / "ventoy/ventoy.json").read_text()))
+        self.assertFalse((self.stick / "ventoy/theme").exists())
+
     def test_dry_run_writes_nothing(self):
         self.fetch("systemrescue")
         rc, out = self.sync(dry_run=True)
         self.assertEqual(rc, 0, out)
         self.assertEqual(list(self.stick.iterdir()), [])
+
+
+class TestDownloadRetry(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="crescue-test-"))
+        put("retry/tool.iso", b"iso bytes")
+        Quiet.fail.clear()
+
+    def tearDown(self):
+        Quiet.fail.clear()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def get(self):
+        with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+            cr.download(f"{BASE}/retry/tool.iso", self.tmp / "tool.iso")
+
+    def test_transient_500_is_retried(self):
+        Quiet.fail["/retry/tool.iso"] = 2
+        self.get()
+        self.assertEqual((self.tmp / "tool.iso").read_bytes(), b"iso bytes")
+
+    def test_gives_up_after_retries(self):
+        Quiet.fail["/retry/tool.iso"] = len(cr.RETRY_DELAYS) + 1
+        with self.assertRaisesRegex(cr.RescueError, "after 4 tries: HTTP 500"):
+            self.get()
+
+    def test_404_is_not_retried(self):
+        with self.assertRaisesRegex(cr.RescueError, "HTTP 404"):
+            with redirect_stderr(io.StringIO()):
+                cr.download(f"{BASE}/retry/missing.iso", self.tmp / "missing.iso")
+
+
+class TestShellHelpers(unittest.TestCase):
+    def test_common_sh_does_not_shadow_commands(self):
+        # scripts/common.sh once defined head(), which broke every `| head -n1`.
+        names = subprocess.run(
+            ["bash", "-c", f"source {ROOT / 'scripts/common.sh'}; compgen -A function"],
+            capture_output=True, text=True, check=True,
+        ).stdout.split()
+        used = set()  # commands the shell scripts pipe into
+        for f in ("install.sh", "refresh.sh", "scripts/common.sh", "pe/vm/build-vm.sh"):
+            used |= set(re.findall(r"(?<!\|)\|(?!\|)\s*([a-z][\w.-]*)", (ROOT / f).read_text()))
+        self.assertIn("head", used)
+        self.assertEqual(sorted(used & set(names)), [], "helper functions hide commands the scripts use")
 
 
 if __name__ == "__main__":

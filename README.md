@@ -28,6 +28,8 @@ all frozen at 2021 versions. Commander Rescue keeps the idea and drops the rest:
 
 ## What's on the stick
 
+![The Commander Rescue boot menu in Ventoy](docs/boot-menu.png)
+
 | Menu | Tool | Source |
 |---|---|---|
 | Windows PE | **Commander PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Win11 build | built locally ([guide](pe/README.md)) |
@@ -111,6 +113,11 @@ checksum = [{ url = "https://cdimage.kali.org/current/SHA256SUMS" }]
 
 ISOs you drop onto the stick by hand (e.g. in `ISO/Custom/`) are never touched.
 
+The boot-menu theme lives in [`theme/`](theme/). Edit `theme.txt` for layout,
+or the colours and text in `theme/build-theme.py` and re-run it to regenerate
+the images and fonts. For Ventoy's stock look, put `theme = ""` under
+`[settings]` in `local.toml`.
+
 ## Layout on the stick
 
 ```
@@ -135,8 +142,9 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, tips
 - [x] Manifest, fetch/verify engine, installer, refresher, Ventoy menu
 - [x] PE app launcher (works in any WinPE)
 - [x] CI: tests, ShellCheck, weekly live resolve + download + verify of every tool
-- [ ] First Commander PE build + recommended PhoenixPE preset
-- [ ] Ventoy theme
+- [x] Recommended PhoenixPE preset + Commander Rescue add-on ([guide](pe/README.md))
+- [ ] First Commander PE build
+- [x] Ventoy theme
 - [ ] Commander Toolbox entry
 
 ## Credits

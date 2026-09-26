@@ -24,56 +24,90 @@ USB (Ventoy data partition)
 
 | | |
 |---|---|
-| Build host | Windows 10/11 **x64**. A VM on your Linux box is fine (virt-manager / QEMU). |
+| Build host | Windows 10/11 **x64**. On Linux, `pe/vm/build-vm.sh` makes a VM for you (below). |
 | Source | A Windows 11 ISO. PhoenixPE recommends **Win11 23H2** for the fewest quirks. 24H2 and 25H2 work, but taskbar pins can misbehave. Win10 2004 also works. |
-| Disk | ~30 GB free in the build VM |
+| Disk | ~40 GB free on Linux for the VM (its disk grows as it fills, up to 64 GB) |
 | PhoenixPE | Latest release from [PhoenixPE releases](https://github.com/PhoenixPE/PhoenixPE/releases). It bundles the PEBakery build engine. |
 
 ### VM on Garuda (one-time)
 
+`pe/vm/build-vm.sh` sets up the build VM for you. It runs in your own user's
+libvirt session, so it needs no root and no libvirt group. It makes Windows 11
+(UEFI + TPM, 6 GB RAM, 64 GB disk) plus a small **transfer disk** that carries
+this repo's `pe/` tooling into Windows and the finished ISO back out.
+
 ```fish
-sudo pacman -S --needed virt-manager qemu-full dnsmasq
-sudo systemctl enable --now libvirtd
-sudo usermod -aG libvirt $USER   # log out/in
+sudo pacman -S --needed qemu-desktop libvirt virt-install virt-viewer edk2-ovmf swtpm dosfstools mtools
 ```
 
-Create a Windows 11 VM in virt-manager (4 GB RAM, 60 GB disk). It doesn't need
-activating to build PE images. To get the ISO out, add a shared folder
-(virtiofs), or just copy it over the network.
+1. Download the Windows 11 ISO from
+   [microsoft.com/software-download/windows11](https://www.microsoft.com/software-download/windows11)
+   (*Download Windows 11 Disk Image (ISO) for x64 devices*).
+2. Create the VM and start Windows setup:
+
+   ```fish
+   pe/vm/build-vm.sh create ~/Downloads/Win11_25H2_English_x64.iso
+   ```
+
+   Click into the window and press a key if it says *Press any key to boot
+   from CD*. Choose *I don't have a product key* and **Windows 11 Pro**. You
+   don't need to activate Windows to build PE images.
+3. Later: `pe/vm/build-vm.sh start` boots it again and `status` shows where
+   things stand. `destroy` deletes it all.
+
+The Windows ISO stays in the VM's DVD drive, which is also PhoenixPE's source.
+The transfer disk shows up in Explorer as **CRTRANSFER**, with a README.txt of
+these steps. Files move only while the VM is **shut down**: `push` refreshes the
+tooling and `pull` fetches the ISO.
 
 ## Build steps
 
-1. Unpack the PhoenixPE release inside the VM, e.g. `C:\PhoenixPE`, and run
-   `PEBakeryLauncher.exe`.
-2. **Source:** mount your Windows ISO and point PhoenixPE at it. Pick the
-   **Pro** edition index. (Windows S isn't supported.)
-3. **Core:** keep the defaults (Explorer shell, networking, Wi-Fi if offered).
-4. **Drivers:** add storage and network drivers for the machines you service.
-   This matters most on modern Intel laptops: with **Intel VMD/RST** enabled,
-   the NVMe drive is invisible to WinPE unless the Intel RST VMD driver is
-   injected. Drop the extracted `.inf` driver folders into PhoenixPE's driver
-   integration option.
-5. **Apps:** enable only what must be *inside* the image, like a browser, 7-Zip
-   and the built-in utilities you want on the Start menu. Don't enable the ones
-   listed in `tools.toml` under `kind = "app"`, because those come from the USB
-   and stay current.
-6. **Launcher (optional but nice):** add `pe/launcher/CommanderApps.cmd` as an
-   additional file with a desktop shortcut, using PhoenixPE's custom-files /
-   shortcut options (names vary by release; see the PhoenixPE wiki). Without
-   this step you can still run `Apps\CommanderApps.cmd` straight from the USB.
-7. Press **Build**. The first build takes longer because it caches the source.
+1. Unpack the PhoenixPE release inside the VM, e.g. `C:\PhoenixPE`.
+2. Apply the Commander preset from PowerShell, using the copy of `pe\` on the
+   transfer disk (`CRTRANSFER\commander`), or this repo if you build elsewhere:
+
+   ```powershell
+   cd E:\commander\phoenixpe        # the CRTRANSFER drive letter may differ
+   powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 C:\PhoenixPE -WhatIf   # preview
+   powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 C:\PhoenixPE
+   ```
+
+   This installs the **Commander Rescue** add-on (the app launcher, with
+   desktop and Start menu shortcuts) and ticks the options in
+   [`phoenixpe/preset.txt`](phoenixpe/preset.txt):
+
+   | | |
+   |---|---|
+   | **Intel RST driver** | NVMe drives behind Intel VMD/RST (most 11th-gen+ Intel laptops) are invisible to WinPE without it |
+   | **Network drivers** | Windows' own extra Wi-Fi and Ethernet drivers |
+   | **PowerShell, Task Manager** | the full versions, not WinPE's cut-down ones |
+   | **VC++ 2015–2026 runtime** | so the portable apps on the USB start |
+   | Notepad++ **off** | it comes from `USB:\Apps` instead, always current |
+
+   Everything else stays at PhoenixPE's defaults: Explorer with StartAllBack,
+   networking, audio, ramdisk, 7-Zip, Firefox. Edit `preset.txt` to taste; a
+   script PhoenixPE has renamed is reported, not guessed at.
+3. Run `PEBakeryLauncher.exe`. **Source:** point PhoenixPE at the Windows DVD
+   drive (or a mounted Windows ISO) and pick the **Pro** edition index. (Windows S isn't
+   supported.)
+4. **Extra drivers (optional):** for storage or network hardware not covered
+   above, drop the extracted `.inf` driver folders into *Drivers → Driver
+   Integration* and tick it.
+5. Press **Build**. The first build takes longer because it caches the source.
    Later builds take a few minutes.
-8. Test the ISO in the VM (boot it as a CD) before putting it on the stick.
+6. Test the ISO in the VM (boot it as a CD) before putting it on the stick:
+   the desktop should show **Commander Apps**.
 
 ## Put it on the stick
 
-Copy the finished ISO into this repo as:
+With the build VM: copy the ISO into `CRTRANSFER\out`, shut Windows down, then
+run `pe/vm/build-vm.sh pull`. Otherwise, copy it into this repo yourself as:
 
 ```
 pe/out/CommanderPE.iso
 ```
 
-then, on Linux:
+Then, on Linux:
 
 ```fish
 ./crescue fetch commander-pe   # registers the local build (hash + date)
