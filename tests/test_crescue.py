@@ -518,6 +518,15 @@ class TestDownloadRetry(unittest.TestCase):
         with self.assertRaisesRegex(cr.RescueError, "after 4 tries: HTTP 500"):
             self.get()
 
+    def test_page_requests_are_retried_too(self):
+        Quiet.fail["/retry/tool.iso"] = 2
+        with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+            self.assertEqual(cr.http_get(f"{BASE}/retry/tool.iso"), b"iso bytes")
+        Quiet.fail["/retry/tool.iso"] = len(cr.RETRY_DELAYS) + 1
+        with self.assertRaisesRegex(cr.RescueError, "HTTP 500"):
+            with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+                cr.http_get(f"{BASE}/retry/tool.iso")
+
     def test_404_is_not_retried(self):
         with self.assertRaisesRegex(cr.RescueError, "HTTP 404"):
             with redirect_stderr(io.StringIO()):

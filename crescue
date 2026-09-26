@@ -175,10 +175,31 @@ def _request(url: str, headers: dict | None = None) -> urllib.request.Request:
 
 
 def http_get(url: str, headers: dict | None = None, timeout: int = 60) -> bytes:
+    """GET a page or API response. Server errors and timeouts are retried like downloads."""
+    for delay in RETRY_DELAYS:
+        try:
+            return _http_get_once(url, headers, timeout)
+        except _Transient as e:
+            warn(f"{e} — retrying in {delay}s")
+            time.sleep(delay)
+    try:
+        return _http_get_once(url, headers, timeout)
+    except _Transient as e:
+        raise RescueError(str(e)) from None
+
+
+class _Transient(Exception):
+    """A failure worth retrying: 5xx, timeout, dropped connection."""
+
+
+def _http_get_once(url: str, headers: dict | None, timeout: int) -> bytes:
+    host = urllib.parse.urlparse(url).netloc
     try:
         with urllib.request.urlopen(_request(url, headers), timeout=timeout) as r:
             return r.read()
     except urllib.error.HTTPError as e:
+        if e.code >= 500:
+            raise _Transient(f"HTTP {e.code} from {url}") from None
         if e.code in (403, 429) and url.startswith(GITHUB_API):
             body = e.read().decode("utf-8", "replace")
             if "rate limit" in body.lower():
@@ -194,9 +215,9 @@ def http_get(url: str, headers: dict | None = None, timeout: int = 60) -> bytes:
             raise FileNotFoundError(url) from None
         raise RescueError(f"HTTP {e.code} from {url}") from None
     except urllib.error.URLError as e:
-        raise RescueError(f"couldn't reach {urllib.parse.urlparse(url).netloc}: {e.reason}") from None
-    except TimeoutError:
-        raise RescueError(f"timed out talking to {urllib.parse.urlparse(url).netloc}") from None
+        raise _Transient(f"couldn't reach {host}: {e.reason}") from None
+    except (TimeoutError, ConnectionError) as e:
+        raise _Transient(f"lost the connection to {host}: {e or 'timed out'}") from None
 
 
 def _fmt_bytes(n: float) -> str:
@@ -207,7 +228,7 @@ def _fmt_bytes(n: float) -> str:
     return f"{n:.1f} GiB"
 
 
-RETRY_DELAYS = (2, 5, 10)  # seconds to wait before each retry of a failed download request
+RETRY_DELAYS = (2, 5, 10)  # seconds to wait before each retry of a failed request
 
 
 def download(url: str, dest: Path) -> None:
