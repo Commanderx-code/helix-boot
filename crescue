@@ -683,7 +683,7 @@ def cmd_check(cfg: Config, args) -> int:
         have = prev.get("version") if prev else None
         latest = res["version"] or "unversioned download"
         if t["source"] == "local":
-            hint = f"put your ISO at {t['path']}" if t.get("byo") else f"{t['path']} missing — see pe/README.md"
+            hint = f"put your {'ISO' if t['kind'] == 'iso' else 'file'} at {t['path']}" if t.get("byo") else f"{t['path']} missing — see pe/README.md"
             latest = res["version"] or hint
             status = ("not provided" if t.get("byo") else "not built") if not res["version"] \
                 else "up to date" if prev and prev.get("path") else "not fetched"
