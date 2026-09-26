@@ -197,18 +197,6 @@ extract = '\.iso$'
 checksum = [{ sibling = "sha512sum.txt" }, { sibling = "sha256sum.txt" }]
 description = "RAM tester (UEFI and BIOS)."
 
-[[tool]]
-name = "hdat2"
-title = "HDAT2"
-kind = "iso"
-category = "diagnostics"
-enabled = false            # hdat2.com often times out; enable in local.toml if it answers for you
-source = "page"
-page = "https://www.hdat2.com/download.html"
-asset = ['hdat2cd_\d+\.iso$']
-version = 'hdat2cd_(\d+)'
-checksum = ["tofu"]
-description = "Disk diagnostics and repair: SMART, surface scan, HPA/DCO. BIOS (legacy) boot only."
 
 # ── Secure wipe ───────────────────────────────────────────────────────────
 [[tool]]
@@ -367,6 +355,16 @@ source = "local"
 byo = true
 path = "byo/bootit-bm.iso"
 description = "TeraByte's BootIt Bare Metal ISO. BIOS (legacy) boot only."
+
+[[tool]]
+name = "hdat2"
+title = "HDAT2"
+kind = "iso"
+category = "diagnostics"
+source = "local"
+byo = true
+path = "byo/hdat2.iso"
+description = "Disk diagnostics and repair: SMART, surface scan, HPA/DCO. BIOS (legacy) boot only."
 
 [[tool]]
 name = "memtest86"
