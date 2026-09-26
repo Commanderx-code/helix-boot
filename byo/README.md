@@ -45,3 +45,40 @@ Free ones: HDAT2 is `hdat2cd_<version>.iso` from
 Remove the file and the next `./refresh.sh` takes it off the stick. Most
 vendors build their rescue ISO from the installed program (look for "Create
 bootable media" or "Rescue media"). Pick the WinPE/UEFI option where offered.
+
+## Your own tools
+
+Anything not in the list gets a slot of its own in `local.toml`. A bootable
+ISO:
+
+```toml
+[[tool]]
+name = "acronis"                 # any short id
+title = "Acronis True Image"     # menu text
+kind = "iso"
+category = "imaging"             # rescue, imaging, partitioning, diagnostics,
+source = "local"                 #   wipe, boot-repair, antivirus, windows
+byo = true
+path = "byo/acronis.iso"
+description = "Shown under the menu when it's highlighted."
+```
+
+A portable Windows program, run from the PE's **Commander Apps** menu. The
+path can be a single `.exe` or a `.zip` (it's unpacked into `USB:\Apps\<name>\`),
+and `entry` is the program to launch, relative to that folder:
+
+```toml
+[[tool]]
+name = "mytool"
+title = "My Tool"
+kind = "app"
+source = "local"
+byo = true
+path = "byo/MyTool_portable.zip"
+entry = "MyTool/MyTool.exe"
+```
+
+Then `./refresh.sh`. Trial versions work the same way. Note that many of them
+expect activation or an internet connection, which can fail inside WinPE.
+Portable versions are the ones to look for.
+

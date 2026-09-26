@@ -815,8 +815,13 @@ def cmd_sync(cfg: Config, args) -> int:
     apps = []
     for t in cfg.enabled(kinds={"app"}):
         entry = lock.get(t["name"])
-        src = cfg.cache / t["name"] / entry["final"] if entry else None
-        if not src or not src.exists():
+        if not entry:
+            if not t.get("byo"):  # an empty bring-your-own slot isn't "missing"
+                missing.append(t["title"])
+            continue
+        # Downloaded apps live in the cache; local / bring-your-own ones where you keep them
+        src = Path(entry["path"]) if entry.get("path") else cfg.cache / t["name"] / entry["final"]
+        if not src.exists():
             missing.append(t["title"])
             continue
         apps.append((t, entry, src))
