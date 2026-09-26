@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import html
 import json
 import os
 import re
@@ -40,7 +41,8 @@ SF_RSS = os.environ.get(
 SF_DL = os.environ.get("CRESCUE_SF_DL", "https://downloads.sourceforge.net/project/{project}{path}")
 USER_AGENT = f"commander-rescue/{__version__} (+https://github.com/Commanderx-code/commander-rescue)"
 KINDS = {"iso", "app", "ventoy"}
-SOURCES = {"github": ["repo"], "sourceforge": ["project", "path"], "url": ["url"], "local": ["path"]}
+SOURCES = {"github": ["repo"], "sourceforge": ["project", "path"], "url": ["url"], "page": ["page", "asset", "version"],
+           "local": ["path"]}
 HASH_BY_LEN = {32: "md5", 40: "sha1", 64: "sha256", 128: "sha512"}
 STRENGTH = {"md5": 1, "sha1": 2, "sha256": 3, "sha512": 4}
 STATE_DIR = ".commander-rescue"
@@ -388,7 +390,10 @@ def resolve(tool: dict, cfg: Config) -> dict:
         quoted = urllib.parse.quote(e["path"])
         res.update(file=e["name"], url=SF_DL.format(project=tool["project"], path=quoted), md5=e["md5"],
                    dir_url=SF_DL.format(project=tool["project"], path=quoted.rsplit("/", 1)[0]))
-        res["version"] = _version(tool, e["name"], e["path"].rstrip("/").split("/")[-2] if e["path"].count("/") > 1 else None)
+        # Version: from the file name, else its release folder, else SourceForge's upload date
+        folder = e["path"].rstrip("/").split("/")[-2] if e["path"].count("/") > 1 else None
+        uploaded = dt.date.fromtimestamp(e["when"]).isoformat() if e["when"] > 0 else None
+        res["version"] = _version(tool, e["name"], folder or uploaded)
 
     elif src == "url":
         # `file` names downloads whose URL doesn't end in one (redirect links like .../fwlink/?LinkId=…)
@@ -400,8 +405,23 @@ def resolve(tool: dict, cfg: Config) -> dict:
         if res["version"] is None:
             res["remote_id"] = remote_id(tool["url"])
 
+    elif src == "page":
+        # A download page whose links carry the version (hdat2cd_76.iso, DGEng6201829_x64.zip)
+        text = http_get(tool["page"]).decode("utf-8", "replace")
+        hrefs = [urllib.parse.urljoin(tool["page"], html.unescape(h))
+                 for h in re.findall(r"""href\s*=\s*["']([^"']+)""", text, re.I)]
+        hits: list[tuple[str, str]] = []
+        for pat in tool["asset"]:  # first pattern that matches anything wins, as for releases
+            hits = [(m.group(0), h) for h in hrefs if (m := re.search(pat, h))]
+            if hits:
+                break
+        if not hits:
+            raise RescueError(f"no link on {tool['page']} matches {tool['asset']}")
+        name, url = max(hits, key=lambda nh: [int(n) for n in re.findall(r"\d+", _version(tool, nh[0], None))])
+        res.update(file=name, url=url, dir_url=tool["page"], version=_version(tool, name, None))
+
     elif src == "local":
-        p = (cfg.repo / tool["path"]).resolve()
+        p = (cfg.repo / Path(tool["path"]).expanduser()).resolve()
         res.update(file=p.name, url=None, path=p)
         res["version"] = (
             dt.date.fromtimestamp(p.stat().st_mtime).isoformat() if p.exists() else None
@@ -521,15 +541,18 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
     if tool["source"] == "local":
         p: Path = res["path"]
         if not p.exists():
-            warn(f"{tool['title']}: {tool['path']} isn't built yet — skipping (see pe/README.md)")
+            lock.pop(name, None)  # file gone: drop it from the stick on the next sync
+            if not tool.get("byo"):  # bring-your-own slots are simply empty until filled
+                warn(f"{tool['title']}: {tool['path']} isn't built yet — skipping (see pe/README.md)")
             return "skipped"
+        kind = "your own file" if tool.get("byo") else "local build"
         sha = file_hash(p)
         if prev and prev.get("sha256") == sha:
-            ok(f"{tool['title']} {res['version']} — local build, unchanged")
+            ok(f"{tool['title']} {res['version']} — {kind}, unchanged")
             return "current"
         lock[name] = {"version": res["version"], "file": p.name, "path": str(p), "sha256": sha,
-                      "verified_by": "local build", "fetched": dt.datetime.now().isoformat(timespec="seconds")}
-        ok(f"{tool['title']} {res['version']} — local build registered")
+                      "verified_by": kind, "fetched": dt.datetime.now().isoformat(timespec="seconds")}
+        ok(f"{tool['title']} {res['version']} — {kind} registered")
         return "new"
 
     tdir = cfg.cache / name
@@ -613,7 +636,7 @@ def cmd_list(cfg: Config, args) -> int:
     rows = [("NAME", "KIND", "CATEGORY", "SOURCE", "ON")]
     for t in cfg.tools:
         cat = cfg.categories.get(t.get("category"), {}).get("title", "—")
-        src = t.get("repo") or t.get("project") or t.get("url") or t.get("path")
+        src = t.get("repo") or t.get("project") or t.get("url") or t.get("page") or t.get("path")
         rows.append((t["name"], t["kind"], cat, f"{t['source']}:{src}"[:52],
                      "yes" if t.get("enabled", True) else "no"))
     w = [max(len(r[i]) for r in rows) for i in range(5)]
@@ -639,8 +662,10 @@ def cmd_check(cfg: Config, args) -> int:
         have = prev.get("version") if prev else None
         latest = res["version"] or "unversioned download"
         if t["source"] == "local":
-            latest = res["version"] or f"{t['path']} missing — see pe/README.md"
-            status = "not built" if not res["version"] else "up to date" if prev and prev.get("path") else "not fetched"
+            hint = f"put your ISO at {t['path']}" if t.get("byo") else f"{t['path']} missing — see pe/README.md"
+            latest = res["version"] or hint
+            status = ("not provided" if t.get("byo") else "not built") if not res["version"] \
+                else "up to date" if prev and prev.get("path") else "not fetched"
         else:
             status = "not fetched" if not have else "up to date" if is_current(prev, res) else "update"
         updates += status in ("update", "not fetched")

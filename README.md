@@ -34,14 +34,16 @@ all frozen at 2021 versions. Commander Rescue keeps the idea and drops the rest:
 |---|---|---|
 | Windows PE | **Commander PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Win11 build | built locally ([guide](pe/README.md)) |
 | | Hiren's BootCD PE, ready-made Win11 PE | hirensbootcd.org · unverified |
-| Linux Rescue | SystemRescue | SourceForge · sha512 |
-| Backup & Imaging | Rescuezilla, Clonezilla | GitHub · sha256 / SourceForge · sha512 |
+| Rescue Environments | SystemRescue | SourceForge · sha512 |
+| Backup & Recovery | Rescuezilla, Clonezilla | GitHub · sha256 / SourceForge · sha512 |
 | Partitioning | GParted Live | SourceForge · sha512 |
 | Hardware Diagnostics | Memtest86+ | memtest.org · sha512 |
+| | HDAT2 *(BIOS boot only)* | hdat2.com · unverified |
 | Secure Wipe | ShredOS (nwipe) | GitHub · sha256 |
 | Boot Repair | Super GRUB2 Disk | SourceForge · sha256 |
+| | Boot-Repair-Disk | SourceForge · md5 |
 | Malware Scan | Dr.Web LiveDisk, Kaspersky Rescue Disk *(off by default)* | vendor sites · unverified |
-| **PE apps** (`USB:\Apps`) | Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO, TestDisk/PhotoRec, ProduKey | various |
+| **PE apps** (`USB:\Apps`) | Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO, TestDisk/PhotoRec, ProduKey, DiskGenius Free | various |
 | | Microsoft Safety Scanner, Kaspersky Virus Removal Tool *(off by default)* (malware scans inside the PE) | vendor sites · unverified |
 
 *Unverified* means the publisher offers no checksum. The file is trusted on
@@ -58,6 +60,14 @@ enabled = true
 [overrides.kvrt]
 enabled = true
 ```
+
+**Bring your own.** Paid and licence-restricted tools get menu slots you fill
+with your own copy: Macrium Reflect, AOMEI Backupper and Partition Assistant,
+EaseUS Todo Backup and Data Recovery, Paragon Hard Disk Manager, Parted Magic,
+Active@ Data Studio, BootIt Bare Metal, SpinRite, PassMark MemTest86, Windows
+10/11 Setup (WinRE), Microsoft DaRT and Jayro's Lockpick. Drop the ISO into
+[`byo/`](byo/README.md) under its slot name and `./refresh.sh` puts it in the
+right menu. Nothing is downloaded or shared for these.
 
 Everything lives in [`tools.toml`](tools.toml). Adding a tool is a few lines.
 
