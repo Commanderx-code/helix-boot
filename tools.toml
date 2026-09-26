@@ -60,12 +60,12 @@ title = "Windows PE"
 [[category]]
 id = "rescue"
 dir = "2-Rescue"
-title = "Linux Rescue"
+title = "Rescue Environments"
 
 [[category]]
 id = "imaging"
 dir = "3-Imaging"
-title = "Backup & Imaging"
+title = "Backup & Recovery"
 
 [[category]]
 id = "partitioning"
@@ -81,6 +81,21 @@ title = "Hardware Diagnostics"
 id = "wipe"
 dir = "6-Data-Wipe"
 title = "Secure Wipe"
+
+[[category]]
+id = "boot-repair"
+dir = "7-Boot-Repair"
+title = "Boot Repair"
+
+[[category]]
+id = "antivirus"
+dir = "8-Antivirus"
+title = "Malware Scan"
+
+[[category]]
+id = "windows"
+dir = "9-Windows"
+title = "Windows Install & Recovery"
 
 # ── Boot loader ───────────────────────────────────────────────────────────
 [[tool]]
@@ -108,11 +123,10 @@ name = "hirens"
 title = "Hiren's BootCD PE"
 kind = "iso"
 category = "windows-pe"
-enabled = false            # stopgap WinPE until your own PE build exists
 source = "url"
 url = "https://www.hirensbootcd.org/files/HBCD_PE_x64.iso"
 checksum = ["tofu"]
-description = "Ready-made Win11 PE. Enable in local.toml while Commander PE isn't built."
+description = "Ready-made Win11 PE with its own tool set. The Apps launcher works here too."
 
 # ── Linux rescue ──────────────────────────────────────────────────────────
 [[tool]]
@@ -183,6 +197,7 @@ extract = '\.iso$'
 checksum = [{ sibling = "sha512sum.txt" }, { sibling = "sha256sum.txt" }]
 description = "RAM tester (UEFI and BIOS)."
 
+
 # ── Secure wipe ───────────────────────────────────────────────────────────
 [[tool]]
 name = "shredos"
@@ -195,6 +210,221 @@ asset = ['x86-64.*\.iso$']
 version = 'shredos-([\d.]+_\d+)_x86-64_v?([\d.]+)_'
 checksum = ["github-digest", { asset = '{name}\.sha(1|256)$' }]
 description = "Boots straight into nwipe. DESTROYS DATA on the disks you select."
+
+# ── Boot repair ───────────────────────────────────────────────────────────
+[[tool]]
+name = "supergrub2"
+title = "Super GRUB2 Disk"
+kind = "iso"
+category = "boot-repair"
+source = "sourceforge"
+project = "supergrub2"
+path = "/"
+asset = ['^supergrub2-classic-[\d.]+s\d+-multiarch-CD\.iso$']
+version = 'supergrub2-classic-([\d.]+s\d+)-multiarch'
+checksum = [{ sibling = "{name}.sha256" }, "sf-md5"]
+description = "Finds and boots installed Linux/Windows when their bootloader is broken."
+
+[[tool]]
+name = "boot-repair-disk"
+title = "Boot-Repair-Disk"
+kind = "iso"
+category = "boot-repair"
+source = "sourceforge"
+project = "boot-repair-cd"
+path = "/"
+asset = ['^boot-repair-disk-64bit\.iso$']
+checksum = ["sf-md5"]
+description = "Live desktop with one-click GRUB/boot repair."
+
+# ── Malware scan (bootable) ───────────────────────────────────────────────
+# Neither publishes checksums, so both are trust-on-first-use. Their virus
+# databases are baked in: refresh.sh keeps them current.
+[[tool]]
+name = "kaspersky-rd"
+title = "Kaspersky Rescue Disk"
+kind = "iso"
+category = "antivirus"
+enabled = false            # Kaspersky blocks downloads from the US; enable in local.toml elsewhere
+source = "url"
+url = "https://rescuedisk.s.kaspersky-labs.com/updatable/2018/krd.iso"
+checksum = ["tofu"]
+description = "Offline malware scan and cleanup of Windows installs. Free for personal use."
+
+[[tool]]
+name = "drweb-livedisk"
+title = "Dr.Web LiveDisk"
+kind = "iso"
+category = "antivirus"
+source = "url"
+url = "https://download.geo.drweb.com/pub/drweb/livedisk/drweb-livedisk-900-cd.iso"
+checksum = ["tofu"]
+description = "Second-opinion offline malware scanner. Free."
+
+# ── Bring your own ────────────────────────────────────────────────────────
+# Paid or licence-restricted tools the project can't download or share.
+# Put your own ISO at the path shown (byo/ is git-ignored), or point `path`
+# at it in local.toml. Empty slots are skipped silently.
+
+[[tool]]
+name = "macrium-reflect"
+title = "Macrium Reflect Rescue"
+kind = "iso"
+category = "imaging"
+source = "local"
+byo = true
+path = "byo/macrium-reflect.iso"
+description = "Macrium's WinPE rescue media, made from your licensed copy."
+
+[[tool]]
+name = "aomei-backupper"
+title = "AOMEI Backupper"
+kind = "iso"
+category = "imaging"
+source = "local"
+byo = true
+path = "byo/aomei-backupper.iso"
+description = "AOMEI's bootable WinPE media (Backupper → Tools → Create Bootable Media → ISO)."
+
+[[tool]]
+name = "easeus-todo-backup"
+title = "EaseUS Todo Backup"
+kind = "iso"
+category = "imaging"
+source = "local"
+byo = true
+path = "byo/easeus-todo-backup.iso"
+description = "EaseUS's emergency disk (Tools → Create Emergency Disk → ISO)."
+
+[[tool]]
+name = "easeus-data-recovery"
+title = "EaseUS Data Recovery Wizard"
+kind = "iso"
+category = "imaging"
+source = "local"
+byo = true
+path = "byo/easeus-data-recovery.iso"
+description = "EaseUS's bootable data-recovery media."
+
+[[tool]]
+name = "active-data-studio"
+title = "Active@ Data Studio"
+kind = "iso"
+category = "rescue"
+source = "local"
+byo = true
+path = "byo/active-data-studio.iso"
+description = "Active@ Boot Disk / Data Studio ISO."
+
+[[tool]]
+name = "aomei-pa"
+title = "AOMEI Partition Assistant"
+kind = "iso"
+category = "partitioning"
+source = "local"
+byo = true
+path = "byo/aomei-pa.iso"
+description = "AOMEI's bootable media (Make Bootable Media → ISO)."
+
+[[tool]]
+name = "paragon-hdm"
+title = "Paragon Hard Disk Manager"
+kind = "iso"
+category = "partitioning"
+source = "local"
+byo = true
+path = "byo/paragon-hdm.iso"
+description = "Paragon's WinPE recovery media."
+
+[[tool]]
+name = "parted-magic"
+title = "Parted Magic"
+kind = "iso"
+category = "partitioning"
+source = "local"
+byo = true
+path = "byo/parted-magic.iso"
+description = "The ISO from your Parted Magic purchase."
+
+[[tool]]
+name = "bootit-bm"
+title = "BootIt Bare Metal"
+kind = "iso"
+category = "partitioning"
+source = "local"
+byo = true
+path = "byo/bootit-bm.iso"
+description = "TeraByte's BootIt Bare Metal ISO. BIOS (legacy) boot only."
+
+[[tool]]
+name = "hdat2"
+title = "HDAT2"
+kind = "iso"
+category = "diagnostics"
+source = "local"
+byo = true
+path = "byo/hdat2.iso"
+description = "Disk diagnostics and repair: SMART, surface scan, HPA/DCO. BIOS (legacy) boot only."
+
+[[tool]]
+name = "memtest86"
+title = "PassMark MemTest86 Free"
+kind = "iso"
+category = "diagnostics"
+source = "local"
+byo = true
+path = "byo/memtest86.img"
+description = "PassMark's RAM tester (UEFI). Free, but its site blocks automated downloads: grab memtest86-usb.zip, keep the .img."
+
+[[tool]]
+name = "spinrite"
+title = "SpinRite"
+kind = "iso"
+category = "diagnostics"
+source = "local"
+byo = true
+path = "byo/spinrite.iso"
+description = "GRC's SpinRite 6.1 ISO (SpinRite.exe → create ISO). BIOS (legacy) boot only."
+
+[[tool]]
+name = "windows11"
+title = "Windows 11 Setup"
+kind = "iso"
+category = "windows"
+source = "local"
+byo = true
+path = "byo/windows11.iso"
+description = "Install, or Repair your computer → WinRE. Free from microsoft.com/software-download/windows11."
+
+[[tool]]
+name = "windows10"
+title = "Windows 10 Setup"
+kind = "iso"
+category = "windows"
+source = "local"
+byo = true
+path = "byo/windows10.iso"
+description = "Install, or Repair your computer → WinRE. Free from microsoft.com/software-download/windows10."
+
+[[tool]]
+name = "ms-dart"
+title = "Microsoft DaRT"
+kind = "iso"
+category = "windows"
+source = "local"
+byo = true
+path = "byo/ms-dart.iso"
+description = "Your DaRT recovery image (Microsoft Desktop Optimization Pack, volume licence)."
+
+[[tool]]
+name = "lockpick"
+title = "Jayro's Lockpick"
+kind = "iso"
+category = "windows"
+source = "local"
+byo = true
+path = "byo/lockpick.iso"
+description = "Windows password removal. No official download to verify; supply the ISO yourself."
 
 # ── Portable apps (loaded by Commander PE from USB:\Apps) ─────────────────
 [[tool]]
@@ -280,4 +510,37 @@ kind = "app"
 source = "url"
 url = "https://www.nirsoft.net/utils/produkey-x64.zip"
 entry = "ProduKey.exe"
+checksum = ["tofu"]
+
+[[tool]]
+name = "diskgenius"
+title = "DiskGenius Free"
+kind = "app"
+source = "page"
+page = "https://www.diskgenius.com/download.php"
+asset = ['DGEng\d+_x64\.zip$']
+version = 'DGEng(\d+)_x64'
+entry = "DiskGenius/DiskGenius.exe"
+checksum = ["tofu"]
+
+# Malware scanners that run inside Commander PE / Hiren's from USB:\Apps.
+# Single self-contained .exe files with today's definitions.
+[[tool]]
+name = "kvrt"
+title = "Kaspersky Virus Removal Tool"
+kind = "app"
+enabled = false            # Kaspersky blocks downloads from the US; enable in local.toml elsewhere
+source = "url"
+url = "https://devbuilds.s.kaspersky-labs.com/devbuilds/KVRT/latest/full/KVRT.exe"
+entry = "KVRT.exe"
+checksum = ["tofu"]
+
+[[tool]]
+name = "msert"
+title = "Microsoft Safety Scanner"
+kind = "app"
+source = "url"
+url = "https://go.microsoft.com/fwlink/?LinkId=212732"   # x64; expires 10 days after download
+file = "msert.exe"
+entry = "msert.exe"
 checksum = ["tofu"]

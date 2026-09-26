@@ -3,3 +3,5 @@ pe/out/*
 !pe/out/.gitkeep
 __pycache__/
 *.pyc
+byo/*
+!byo/README.md

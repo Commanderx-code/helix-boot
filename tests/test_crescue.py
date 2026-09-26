@@ -278,6 +278,34 @@ class TestConfig(Base):
         cfg = cr.Config(repo=self.repo)
         self.assertNotIn("memtest86plus", [t["name"] for t in cfg.enabled()])
 
+    def test_url_file_override(self):
+        put("fwlink/index.html", "redirect target stand-in")
+        tool = {"name": "x", "title": "X", "kind": "app", "source": "url",
+                "url": f"{BASE}/fwlink/?LinkId=1", "file": "msert.exe", "checksum": ["tofu"]}
+        self.assertEqual(cr.resolve(tool, self.cfg)["file"], "msert.exe")
+        del tool["file"]
+        with self.assertRaisesRegex(cr.RescueError, "add file ="):
+            cr.resolve(tool, self.cfg)
+
+    def test_page_source_picks_newest_link(self):
+        put("dlpage/index.html", '<a href="files/tool_75.iso">75</a> <a href="files/tool_lite_77.iso">lite</a>'
+                                 '<a href="/dyna/?software=tool_76.iso&amp;x=1">76</a>')
+        tool = {"name": "t", "title": "T", "kind": "iso", "category": "rescue", "source": "page",
+                "page": f"{BASE}/dlpage/index.html", "asset": [r"tool_\d+\.iso$", r"tool_\d+\.iso"],
+                "version": r"tool_(\d+)", "checksum": ["tofu"]}
+        res = cr.resolve(tool, self.cfg)
+        self.assertEqual((res["file"], res["version"]), ("tool_75.iso", "75"))  # first pattern with hits wins
+        tool["asset"] = [r"tool_\d+\.iso"]
+        res = cr.resolve(tool, self.cfg)
+        self.assertEqual((res["file"], res["version"]), ("tool_76.iso", "76"))
+        self.assertEqual(res["url"], f"{BASE}/dyna/?software=tool_76.iso&x=1")
+
+    def test_sourceforge_unversioned_file_uses_upload_date(self):
+        sf_feed("brd", "/", [("/brd-64bit.iso", b"iso", "Sat, 23 Dec 2023 11:59:10 UT")])
+        tool = {"name": "brd", "title": "BRD", "kind": "iso", "category": "rescue", "source": "sourceforge",
+                "project": "brd", "path": "/", "asset": [r"^brd-64bit\.iso$"], "checksum": ["sf-md5"]}
+        self.assertEqual(cr.resolve(tool, self.cfg)["version"], "2023-12-23")
+
     def test_unknown_override(self):
         (self.repo / "local.toml").write_text('[overrides.nope]\nenabled = false\n')
         with self.assertRaisesRegex(cr.RescueError, "unknown tool"):
@@ -438,6 +466,38 @@ class TestFetchAndSync(Base):
         self.assertNotIn("theme", json.loads((self.stick / "ventoy/ventoy.json").read_text()))
         self.assertFalse((self.stick / "ventoy/theme").exists())
 
+    def test_bring_your_own_slot(self):
+        (self.repo / "local.toml").write_text(
+            '[[tool]]\nname = "mine"\ntitle = "Mine"\nkind = "iso"\ncategory = "rescue"\n'
+            'source = "local"\nbyo = true\npath = "byo/mine.iso"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        rc, out = self.fetch("mine")
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("Mine", out)                      # empty slot: silent
+        (self.repo / "byo").mkdir()
+        (self.repo / "byo/mine.iso").write_bytes(b"licensed iso")
+        rc, out = self.fetch("mine")
+        self.assertIn("your own file registered", out)
+        self.assertEqual(self.sync()[0], 0)
+        placed = list(self.stick.rglob("mine.iso"))
+        self.assertEqual(len(placed), 1)
+        (self.repo / "byo/mine.iso").unlink()               # taken away again
+        self.fetch("mine")
+        self.assertNotIn("mine", cr.load_lock(self.cfg))
+        self.assertEqual(self.sync()[0], 0)
+        self.assertFalse(placed[0].exists())
+
+    def test_check_json_stays_clean_when_warning(self):
+        Quiet.fail["/sf/systemrescuecd/rss/sysresccd-x86/feed.xml"] = 1   # forces a retry warning
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with redirect_stdout(out), redirect_stderr(err):
+                cr.cmd_check(self.cfg, type("A", (), {"tools": ["systemrescue"], "json": True})())
+        finally:
+            Quiet.fail.clear()
+        self.assertIn("retrying", err.getvalue())
+        self.assertEqual(json.loads(out.getvalue())["systemrescue"]["latest"], "12.02")
+
     def test_dry_run_writes_nothing(self):
         self.fetch("systemrescue")
         rc, out = self.sync(dry_run=True)
@@ -468,6 +528,15 @@ class TestDownloadRetry(unittest.TestCase):
         Quiet.fail["/retry/tool.iso"] = len(cr.RETRY_DELAYS) + 1
         with self.assertRaisesRegex(cr.RescueError, "after 4 tries: HTTP 500"):
             self.get()
+
+    def test_page_requests_are_retried_too(self):
+        Quiet.fail["/retry/tool.iso"] = 2
+        with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+            self.assertEqual(cr.http_get(f"{BASE}/retry/tool.iso"), b"iso bytes")
+        Quiet.fail["/retry/tool.iso"] = len(cr.RETRY_DELAYS) + 1
+        with self.assertRaisesRegex(cr.RescueError, "HTTP 500"):
+            with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+                cr.http_get(f"{BASE}/retry/tool.iso")
 
     def test_404_is_not_retried(self):
         with self.assertRaisesRegex(cr.RescueError, "HTTP 404"):

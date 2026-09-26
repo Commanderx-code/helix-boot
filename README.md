@@ -33,13 +33,40 @@ all frozen at 2021 versions. Commander Rescue keeps the idea and drops the rest:
 | Menu | Tool | Source |
 |---|---|---|
 | Windows PE | **Commander PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Win11 build | built locally ([guide](pe/README.md)) |
-| | Hiren's BootCD PE *(off by default, stopgap)* | hirensbootcd.org |
-| Linux Rescue | SystemRescue | SourceForge · sha512 |
-| Backup & Imaging | Rescuezilla, Clonezilla | GitHub · sha256 / SourceForge · sha512 |
+| | Hiren's BootCD PE, ready-made Win11 PE | hirensbootcd.org · unverified |
+| Rescue Environments | SystemRescue | SourceForge · sha512 |
+| Backup & Recovery | Rescuezilla, Clonezilla | GitHub · sha256 / SourceForge · sha512 |
 | Partitioning | GParted Live | SourceForge · sha512 |
 | Hardware Diagnostics | Memtest86+ | memtest.org · sha512 |
 | Secure Wipe | ShredOS (nwipe) | GitHub · sha256 |
-| **PE apps** (`USB:\Apps`) | Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO, TestDisk/PhotoRec, ProduKey | various |
+| Boot Repair | Super GRUB2 Disk | SourceForge · sha256 |
+| | Boot-Repair-Disk | SourceForge · md5 |
+| Malware Scan | Dr.Web LiveDisk, Kaspersky Rescue Disk *(off by default)* | vendor sites · unverified |
+| **PE apps** (`USB:\Apps`) | Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO, TestDisk/PhotoRec, ProduKey, DiskGenius Free | various |
+| | Microsoft Safety Scanner, Kaspersky Virus Removal Tool *(off by default)* (malware scans inside the PE) | vendor sites · unverified |
+
+*Unverified* means the publisher offers no checksum. The file is trusted on
+first download and refused if it later changes without a new version (see
+below). Antivirus tools carry their virus definitions, so `./refresh.sh`
+before a job keeps them current. Microsoft Safety Scanner stops working 10
+days after download. Kaspersky refuses downloads from the US, so its two
+tools are off; outside the US, turn them on in `local.toml`:
+
+```toml
+[overrides.kaspersky-rd]
+enabled = true
+
+[overrides.kvrt]
+enabled = true
+```
+
+**Bring your own.** Paid and licence-restricted tools get menu slots you fill
+with your own copy: Macrium Reflect, AOMEI Backupper and Partition Assistant,
+EaseUS Todo Backup and Data Recovery, Paragon Hard Disk Manager, Parted Magic,
+Active@ Data Studio, BootIt Bare Metal, SpinRite, PassMark MemTest86, HDAT2, Windows
+10/11 Setup (WinRE), Microsoft DaRT and Jayro's Lockpick. Drop the ISO into
+[`byo/`](byo/README.md) under its slot name and `./refresh.sh` puts it in the
+right menu. Nothing is downloaded or shared for these.
 
 Everything lives in [`tools.toml`](tools.toml). Adding a tool is a few lines.
 
@@ -95,7 +122,7 @@ Personal changes go in `local.toml` (git-ignored). It overlays `tools.toml`:
 
 ```toml
 [overrides.hirens]
-enabled = true              # turn on the stopgap PE
+enabled = false             # don't want Hiren's on this stick
 
 [overrides.shredos]
 enabled = false             # don't want a wipe tool on this stick
