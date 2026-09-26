@@ -410,6 +410,34 @@ class TestFetchAndSync(Base):
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(), '{"mine": true}')
 
+    def test_theme_is_copied_and_wired_up(self):
+        theme = self.repo / "theme"
+        (theme / "fonts").mkdir(parents=True)
+        (theme / "theme.txt").write_text("desktop-image: \"background.png\"\n")
+        (theme / "fonts/b.pf2").write_bytes(b"PFF2")
+        (theme / "fonts/a.pf2").write_bytes(b"PFF2")
+        (theme / "build-theme.py").write_text("# generator, not for the stick\n")
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("systemrescue")
+        (self.stick / "ventoy/theme").mkdir(parents=True)
+        (self.stick / "ventoy/theme/stale.png").write_bytes(b"old")
+        rc, out = self.sync()
+        self.assertEqual(rc, 0, out)
+        on_stick = sorted(p.relative_to(self.stick / "ventoy/theme").as_posix()
+                          for p in (self.stick / "ventoy/theme").rglob("*") if p.is_file())
+        self.assertEqual(on_stick, ["fonts/a.pf2", "fonts/b.pf2", "theme.txt"])
+        vj = json.loads((self.stick / "ventoy/ventoy.json").read_text())
+        self.assertEqual(vj["theme"]["file"], "/ventoy/theme/theme.txt")
+        self.assertEqual(vj["theme"]["fonts"], ["/ventoy/theme/fonts/a.pf2", "/ventoy/theme/fonts/b.pf2"])
+
+    def test_no_theme_setting_means_no_theme(self):
+        self.fetch("systemrescue")
+        rc, out = self.sync()
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("theme", json.loads((self.stick / "ventoy/ventoy.json").read_text()))
+        self.assertFalse((self.stick / "ventoy/theme").exists())
+
     def test_dry_run_writes_nothing(self):
         self.fetch("systemrescue")
         rc, out = self.sync(dry_run=True)

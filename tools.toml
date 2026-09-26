@@ -49,6 +49,7 @@
 cache_dir = "~/.cache/commander-rescue"
 iso_root  = "ISO"
 apps_root = "Apps"
+theme     = "theme"   # Ventoy boot-menu theme (folder in this repo); remove for Ventoy's default
 
 # ── Menu categories (folder order = boot menu order) ──────────────────────
 [[category]]

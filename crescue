@@ -705,11 +705,22 @@ def build_ventoy_json(cfg: Config, placed: list[dict]) -> dict:
         ],
         "menu_alias": alias,
     }
-    if tips:
-        doc["menu_tip"] = {"left": "10%", "top": "81%", "color": "#7fb4ff", "tips": tips}
     theme = cfg.settings.get("theme")
-    if theme:
-        doc["theme"] = {"file": "/ventoy/theme/theme.txt", "gfxmode": "1920x1080"}
+    theme_dir = cfg.repo / theme if theme else None
+    if tips:
+        doc["menu_tip"] = {"left": "10%", "top": "80%", "tips": tips,
+                           "color": "#8b98a9" if theme_dir and theme_dir.is_dir() else "#7fb4ff"}
+    if theme_dir and theme_dir.is_dir():
+        doc["theme"] = {
+            "file": "/ventoy/theme/theme.txt",
+            "gfxmode": "1920x1080",
+            "resolution_fit": 1,         # fall back to the screen's own mode if 1080p isn't offered
+            "ventoy_left": "78%",
+            "ventoy_top": "95%",
+            "ventoy_color": "#4d5b6e",
+            "fonts": [f"/ventoy/theme/{f.relative_to(theme_dir).as_posix()}"
+                      for f in sorted(theme_dir.rglob("*.pf2"))],
+        }
     return doc
 
 
@@ -844,7 +855,8 @@ def cmd_sync(cfg: Config, args) -> int:
     if cfg.settings.get("theme"):
         theme_src = cfg.repo / cfg.settings["theme"]
         if theme_src.is_dir():
-            shutil.copytree(theme_src, vdir / "theme", dirs_exist_ok=True)
+            shutil.rmtree(vdir / "theme", ignore_errors=True)
+            shutil.copytree(theme_src, vdir / "theme", ignore=shutil.ignore_patterns("*.py"))
     vjson.write_text(json.dumps(build_ventoy_json(cfg, placed), indent=2) + "\n")
 
     (mnt / TAG_FILE).write_text(f"Commander Rescue {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n")
