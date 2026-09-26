@@ -498,6 +498,28 @@ class TestFetchAndSync(Base):
         self.assertIn("retrying", err.getvalue())
         self.assertEqual(json.loads(out.getvalue())["systemrescue"]["latest"], "12.02")
 
+    def test_bring_your_own_apps(self):
+        (self.repo / "byo").mkdir()
+        (self.repo / "byo/Trial.exe").write_bytes(b"MZ trial")
+        (self.repo / "byo/suite.zip").write_bytes(zipped({"Suite/suite.exe": b"MZ suite"}))
+        (self.repo / "local.toml").write_text(
+            '[[tool]]\nname = "trial"\ntitle = "Trial Tool"\nkind = "app"\nsource = "local"\nbyo = true\n'
+            'path = "byo/Trial.exe"\nentry = "Trial.exe"\n\n'
+            '[[tool]]\nname = "suite"\ntitle = "Suite"\nkind = "app"\nsource = "local"\nbyo = true\n'
+            'path = "byo/suite.zip"\nentry = "Suite/suite.exe"\n\n'
+            '[[tool]]\nname = "empty"\ntitle = "Empty Slot"\nkind = "app"\nsource = "local"\nbyo = true\n'
+            'path = "byo/none.exe"\nentry = "none.exe"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("systemrescue", "trial", "suite", "empty")
+        rc, out = self.sync()
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("Empty Slot", out)
+        self.assertEqual((self.stick / "Apps/trial/Trial.exe").read_bytes(), b"MZ trial")
+        self.assertEqual((self.stick / "Apps/suite/Suite/suite.exe").read_bytes(), b"MZ suite")
+        apps = (self.stick / "Apps/apps.txt").read_text()
+        self.assertIn("Trial Tool|trial\\Trial.exe", apps)
+        self.assertIn("Suite|suite\\Suite\\suite.exe", apps)
+
     def test_dry_run_writes_nothing(self):
         self.fetch("systemrescue")
         rc, out = self.sync(dry_run=True)
