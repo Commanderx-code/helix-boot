@@ -391,7 +391,10 @@ def resolve(tool: dict, cfg: Config) -> dict:
         res["version"] = _version(tool, e["name"], e["path"].rstrip("/").split("/")[-2] if e["path"].count("/") > 1 else None)
 
     elif src == "url":
-        name = urllib.parse.unquote(urllib.parse.urlparse(tool["url"]).path.rsplit("/", 1)[-1])
+        # `file` names downloads whose URL doesn't end in one (redirect links like .../fwlink/?LinkId=…)
+        name = tool.get("file") or urllib.parse.unquote(urllib.parse.urlparse(tool["url"]).path.rsplit("/", 1)[-1])
+        if not name:
+            raise RescueError(f"{tool['title']}: {tool['url']} doesn't end in a file name — add file = \"name.ext\"")
         res.update(file=name, url=tool["url"], dir_url=tool["url"].rsplit("/", 1)[0])
         res["version"] = _version(tool, name, None) if (tool.get("version") or tool.get("version_pin")) else None
         if res["version"] is None:

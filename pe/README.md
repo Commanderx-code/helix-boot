@@ -118,15 +118,10 @@ Then, on Linux:
 
 ## Until the PE is built
 
-Enable Hiren's BootCD PE as a stopgap. It's a free, ready-made Win11 PE:
-
-```toml
-# local.toml
-[overrides.hirens]
-enabled = true
-```
-
-`Apps\CommanderApps.cmd` works from Hiren's too.
+Hiren's BootCD PE is on the stick too: a free, ready-made Win11 PE. It covers
+for Commander PE until yours is built, and `Apps\CommanderApps.cmd` works from
+it as well. To leave it off, set `enabled = false` under `[overrides.hirens]`
+in `local.toml`.
 
 ## When to rebuild
 

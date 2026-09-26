@@ -33,13 +33,22 @@ all frozen at 2021 versions. Commander Rescue keeps the idea and drops the rest:
 | Menu | Tool | Source |
 |---|---|---|
 | Windows PE | **Commander PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Win11 build | built locally ([guide](pe/README.md)) |
-| | Hiren's BootCD PE *(off by default, stopgap)* | hirensbootcd.org |
+| | Hiren's BootCD PE, ready-made Win11 PE | hirensbootcd.org · unverified |
 | Linux Rescue | SystemRescue | SourceForge · sha512 |
 | Backup & Imaging | Rescuezilla, Clonezilla | GitHub · sha256 / SourceForge · sha512 |
 | Partitioning | GParted Live | SourceForge · sha512 |
 | Hardware Diagnostics | Memtest86+ | memtest.org · sha512 |
 | Secure Wipe | ShredOS (nwipe) | GitHub · sha256 |
+| Boot Repair | Super GRUB2 Disk | SourceForge · sha256 |
+| Malware Scan | Kaspersky Rescue Disk, Dr.Web LiveDisk | vendor sites · unverified |
 | **PE apps** (`USB:\Apps`) | Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO, TestDisk/PhotoRec, ProduKey | various |
+| | Kaspersky Virus Removal Tool, Microsoft Safety Scanner (malware scans inside the PE) | vendor sites · unverified |
+
+*Unverified* means the publisher offers no checksum. The file is trusted on
+first download and refused if it later changes without a new version (see
+below). Antivirus tools carry their virus definitions, so `./refresh.sh`
+before a job keeps them current. Microsoft Safety Scanner stops working 10
+days after download.
 
 Everything lives in [`tools.toml`](tools.toml). Adding a tool is a few lines.
 
@@ -95,7 +104,7 @@ Personal changes go in `local.toml` (git-ignored). It overlays `tools.toml`:
 
 ```toml
 [overrides.hirens]
-enabled = true              # turn on the stopgap PE
+enabled = false             # don't want Hiren's on this stick
 
 [overrides.shredos]
 enabled = false             # don't want a wipe tool on this stick

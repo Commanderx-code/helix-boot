@@ -82,6 +82,16 @@ id = "wipe"
 dir = "6-Data-Wipe"
 title = "Secure Wipe"
 
+[[category]]
+id = "boot-repair"
+dir = "7-Boot-Repair"
+title = "Boot Repair"
+
+[[category]]
+id = "antivirus"
+dir = "8-Antivirus"
+title = "Malware Scan"
+
 # ── Boot loader ───────────────────────────────────────────────────────────
 [[tool]]
 name = "ventoy"
@@ -108,11 +118,10 @@ name = "hirens"
 title = "Hiren's BootCD PE"
 kind = "iso"
 category = "windows-pe"
-enabled = false            # stopgap WinPE until your own PE build exists
 source = "url"
 url = "https://www.hirensbootcd.org/files/HBCD_PE_x64.iso"
 checksum = ["tofu"]
-description = "Ready-made Win11 PE. Enable in local.toml while Commander PE isn't built."
+description = "Ready-made Win11 PE with its own tool set. The Apps launcher works here too."
 
 # ── Linux rescue ──────────────────────────────────────────────────────────
 [[tool]]
@@ -195,6 +204,43 @@ asset = ['x86-64.*\.iso$']
 version = 'shredos-([\d.]+_\d+)_x86-64_v?([\d.]+)_'
 checksum = ["github-digest", { asset = '{name}\.sha(1|256)$' }]
 description = "Boots straight into nwipe. DESTROYS DATA on the disks you select."
+
+# ── Boot repair ───────────────────────────────────────────────────────────
+[[tool]]
+name = "supergrub2"
+title = "Super GRUB2 Disk"
+kind = "iso"
+category = "boot-repair"
+source = "sourceforge"
+project = "supergrub2"
+path = "/"
+asset = ['^supergrub2-classic-[\d.]+s\d+-multiarch-CD\.iso$']
+version = 'supergrub2-classic-([\d.]+s\d+)-multiarch'
+checksum = [{ sibling = "{name}.sha256" }, "sf-md5"]
+description = "Finds and boots installed Linux/Windows when their bootloader is broken."
+
+# ── Malware scan (bootable) ───────────────────────────────────────────────
+# Neither publishes checksums, so both are trust-on-first-use. Their virus
+# databases are baked in: refresh.sh keeps them current.
+[[tool]]
+name = "kaspersky-rd"
+title = "Kaspersky Rescue Disk"
+kind = "iso"
+category = "antivirus"
+source = "url"
+url = "https://rescuedisk.s.kaspersky-labs.com/updatable/2018/krd.iso"
+checksum = ["tofu"]
+description = "Offline malware scan and cleanup of Windows installs. Free for personal use."
+
+[[tool]]
+name = "drweb-livedisk"
+title = "Dr.Web LiveDisk"
+kind = "iso"
+category = "antivirus"
+source = "url"
+url = "https://download.geo.drweb.com/pub/drweb/livedisk/drweb-livedisk-900-cd.iso"
+checksum = ["tofu"]
+description = "Second-opinion offline malware scanner. Free."
 
 # ── Portable apps (loaded by Commander PE from USB:\Apps) ─────────────────
 [[tool]]
@@ -280,4 +326,25 @@ kind = "app"
 source = "url"
 url = "https://www.nirsoft.net/utils/produkey-x64.zip"
 entry = "ProduKey.exe"
+checksum = ["tofu"]
+
+# Malware scanners that run inside Commander PE / Hiren's from USB:\Apps.
+# Single self-contained .exe files with today's definitions.
+[[tool]]
+name = "kvrt"
+title = "Kaspersky Virus Removal Tool"
+kind = "app"
+source = "url"
+url = "https://devbuilds.s.kaspersky-labs.com/devbuilds/KVRT/latest/full/KVRT.exe"
+entry = "KVRT.exe"
+checksum = ["tofu"]
+
+[[tool]]
+name = "msert"
+title = "Microsoft Safety Scanner"
+kind = "app"
+source = "url"
+url = "https://go.microsoft.com/fwlink/?LinkId=212732"   # x64; expires 10 days after download
+file = "msert.exe"
+entry = "msert.exe"
 checksum = ["tofu"]

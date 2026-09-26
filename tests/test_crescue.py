@@ -278,6 +278,15 @@ class TestConfig(Base):
         cfg = cr.Config(repo=self.repo)
         self.assertNotIn("memtest86plus", [t["name"] for t in cfg.enabled()])
 
+    def test_url_file_override(self):
+        put("fwlink/index.html", "redirect target stand-in")
+        tool = {"name": "x", "title": "X", "kind": "app", "source": "url",
+                "url": f"{BASE}/fwlink/?LinkId=1", "file": "msert.exe", "checksum": ["tofu"]}
+        self.assertEqual(cr.resolve(tool, self.cfg)["file"], "msert.exe")
+        del tool["file"]
+        with self.assertRaisesRegex(cr.RescueError, "add file ="):
+            cr.resolve(tool, self.cfg)
+
     def test_unknown_override(self):
         (self.repo / "local.toml").write_text('[overrides.nope]\nenabled = false\n')
         with self.assertRaisesRegex(cr.RescueError, "unknown tool"):
