@@ -1,0 +1,16 @@
+name: probe
+on: push
+jobs:
+  kaspersky:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "runner country: $(curl -s -m 10 https://ipinfo.io/country)"
+          for u in https://rescuedisk.s.kaspersky-labs.com/updatable/2018/krd.iso \
+                   https://devbuilds.s.kaspersky-labs.com/devbuilds/KVRT/latest/full/KVRT.exe; do
+            for ua in "commander-rescue/0.1 (+https://github.com/Commanderx-code/commander-rescue)" \
+                      "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"; do
+              code=$(curl -s -o /dev/null -r 0-0 -m 20 -A "$ua" -w '%{http_code}' "$u")
+              echo "$code  ${ua%% *}  $u"
+            done
+          done
