@@ -205,20 +205,35 @@ def _fmt_bytes(n: float) -> str:
     return f"{n:.1f} GiB"
 
 
+RETRY_DELAYS = (2, 5, 10)  # seconds to wait before each retry of a failed download request
+
+
 def download(url: str, dest: Path) -> None:
-    """Download to dest, resuming a previous .part file when the server allows it."""
+    """Download to dest, resuming a previous .part file when the server allows it.
+
+    Server errors (5xx), timeouts and dropped connections are retried a few
+    times: release hosts like GitHub's return the odd transient 500.
+    """
     part = dest.with_name(dest.name + ".part")
     have = part.stat().st_size if part.exists() else 0
     headers = {"Range": f"bytes={have}-"} if have else {}
-    try:
-        resp = urllib.request.urlopen(_request(url, headers), timeout=60)
-    except urllib.error.HTTPError as e:
-        if e.code == 416 and have:  # .part already complete
-            os.replace(part, dest)
-            return
-        raise RescueError(f"download failed: HTTP {e.code} from {url}") from None
-    except urllib.error.URLError as e:
-        raise RescueError(f"download failed: {e.reason}") from None
+    for attempt, delay in enumerate((*RETRY_DELAYS, None)):
+        try:
+            resp = urllib.request.urlopen(_request(url, headers), timeout=60)
+            break
+        except urllib.error.HTTPError as e:
+            if e.code == 416 and have:  # .part already complete
+                os.replace(part, dest)
+                return
+            err = f"HTTP {e.code} from {url}"
+            if e.code < 500:
+                raise RescueError(f"download failed: {err}") from None
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            err = str(getattr(e, "reason", e))
+        if delay is None:
+            raise RescueError(f"download failed after {attempt + 1} tries: {err}")
+        warn(f"{err} — retrying in {delay}s")
+        time.sleep(delay)
 
     with resp:
         resumed = have and resp.status == 206
