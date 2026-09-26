@@ -1,0 +1,281 @@
+# Commander Rescue — tool manifest
+#
+# Every ISO, portable app and the Ventoy loader itself is described here.
+# `crescue fetch` resolves the newest upstream release of each enabled entry,
+# downloads it, and verifies it before anything touches your USB stick.
+#
+# Personal tweaks go in `local.toml` (git-ignored), so this file stays clean:
+#
+#   [overrides.hirens]
+#   enabled = true
+#
+#   [[tool]]            # add your own entries with the same schema as below
+#   name = "my-tool"
+#   ...
+#
+# ── Schema ─────────────────────────────────────────────────────────────────
+#   name        unique id (also the cache folder name)
+#   title       pretty name shown in the Ventoy menu / PE app list
+#   kind        "iso" | "app" | "ventoy"
+#   category    one of the [[category]] ids below (iso only)
+#   enabled     include in fetch/sync (default true)
+#   source      "github" | "sourceforge" | "url" | "local"
+#     github:       repo = "owner/name"
+#     sourceforge:  project = "name", path = "/folder"
+#     url:          url = "https://..."
+#     local:        path = "relative/to/repo.iso"
+#   asset       list of regexes tried in order against release file names;
+#               the first regex that matches anything wins
+#   version     optional regex with one capture group, applied to the file name
+#               (falls back to the GitHub release tag, then to the fetch date)
+#   version_pin fixed version string for hand-bumped `url` sources
+#   extract     optional regex: pull a matching member out of a downloaded .zip
+#   entry       (apps) the .exe the PE launcher should start
+#   checksum    list of strategies, tried in order; the first that produces a
+#               hash is used. The download is rejected if it doesn't match.
+#       "github-digest"            sha256 GitHub records for each release asset
+#       { asset = "regex" }        another asset in the same GitHub release
+#       { sibling = "file" }       a file next to the download ({name} = file name)
+#       { url = "https://..." }    a checksum file anywhere
+#       { sha256 = "hex" }         pinned hash
+#       "sf-md5"                   SourceForge's own MD5 (integrity only)
+#       "tofu"                     trust on first use: no upstream hash exists,
+#                                  so record ours and warn if it ever changes
+#                                  without a version bump
+#   description short tip shown at the bottom of the Ventoy menu
+
+[settings]
+cache_dir = "~/.cache/commander-rescue"
+iso_root  = "ISO"
+apps_root = "Apps"
+
+# ── Menu categories (folder order = boot menu order) ──────────────────────
+[[category]]
+id = "windows-pe"
+dir = "1-Windows-PE"
+title = "Windows PE"
+
+[[category]]
+id = "rescue"
+dir = "2-Rescue"
+title = "Linux Rescue"
+
+[[category]]
+id = "imaging"
+dir = "3-Imaging"
+title = "Backup & Imaging"
+
+[[category]]
+id = "partitioning"
+dir = "4-Partitioning"
+title = "Partitioning"
+
+[[category]]
+id = "diagnostics"
+dir = "5-Diagnostics"
+title = "Hardware Diagnostics"
+
+[[category]]
+id = "wipe"
+dir = "6-Data-Wipe"
+title = "Secure Wipe"
+
+# ── Boot loader ───────────────────────────────────────────────────────────
+[[tool]]
+name = "ventoy"
+title = "Ventoy"
+kind = "ventoy"
+source = "github"
+repo = "ventoy/Ventoy"
+asset = ['^ventoy-[\d.]+-linux\.tar\.gz$']
+version = 'ventoy-([\d.]+)-linux'
+checksum = [{ asset = '^sha256\.txt$' }, "github-digest"]
+
+# ── Windows PE ────────────────────────────────────────────────────────────
+[[tool]]
+name = "commander-pe"
+title = "Commander PE (Windows 11)"
+kind = "iso"
+category = "windows-pe"
+source = "local"
+path = "pe/out/CommanderPE.iso"
+description = "Your own PhoenixPE build. Portable apps load from the USB's Apps folder."
+
+[[tool]]
+name = "hirens"
+title = "Hiren's BootCD PE"
+kind = "iso"
+category = "windows-pe"
+enabled = false            # stopgap WinPE until your own PE build exists
+source = "url"
+url = "https://www.hirensbootcd.org/files/HBCD_PE_x64.iso"
+checksum = ["tofu"]
+description = "Ready-made Win11 PE. Enable in local.toml while Commander PE isn't built."
+
+# ── Linux rescue ──────────────────────────────────────────────────────────
+[[tool]]
+name = "systemrescue"
+title = "SystemRescue"
+kind = "iso"
+category = "rescue"
+source = "sourceforge"
+project = "systemrescuecd"
+path = "/sysresccd-x86"
+asset = ['^systemrescue-[\d.]+-amd64\.iso$']
+version = 'systemrescue-([\d.]+)-amd64'
+checksum = [{ sibling = "{name}.sha512" }, { sibling = "{name}.sha256" }, "sf-md5"]
+description = "Arch-based rescue shell: chntpw, testdisk, ddrescue, fsck, network tools."
+
+# ── Imaging ───────────────────────────────────────────────────────────────
+[[tool]]
+name = "rescuezilla"
+title = "Rescuezilla"
+kind = "iso"
+category = "imaging"
+source = "github"
+repo = "rescuezilla/rescuezilla"
+# Prefer the newest Ubuntu LTS base; fall back to any 64-bit build.
+asset = ['64bit\.noble\.iso$', '64bit\.[a-z]+\.iso$']
+version = 'rescuezilla-([\d.]+)-'
+checksum = ["github-digest", { asset = '(?i)sha256' }]
+description = "Point-and-click backup, restore and clone (Clonezilla-compatible)."
+
+[[tool]]
+name = "clonezilla"
+title = "Clonezilla"
+kind = "iso"
+category = "imaging"
+source = "sourceforge"
+project = "clonezilla"
+path = "/clonezilla_live_stable"
+asset = ['^clonezilla-live-[\d.]+-\d+-amd64\.iso$']
+version = 'clonezilla-live-([\d.]+-\d+)-amd64'
+checksum = [{ sibling = "CHECKSUMS.TXT" }, "sf-md5"]
+description = "Disk and partition imaging, multicast deployment, bare-metal restore."
+
+# ── Partitioning ──────────────────────────────────────────────────────────
+[[tool]]
+name = "gparted"
+title = "GParted Live"
+kind = "iso"
+category = "partitioning"
+source = "sourceforge"
+project = "gparted"
+path = "/gparted-live-stable"
+asset = ['^gparted-live-[\d.]+-\d+-amd64\.iso$']
+version = 'gparted-live-([\d.]+-\d+)-amd64'
+checksum = [{ sibling = "CHECKSUMS.TXT" }, "sf-md5"]
+description = "Resize, move, copy and repair partitions."
+
+# ── Diagnostics ───────────────────────────────────────────────────────────
+[[tool]]
+name = "memtest86plus"
+title = "Memtest86+"
+kind = "iso"
+category = "diagnostics"
+source = "github"
+repo = "memtest86plus/memtest86plus"
+asset = ['_64\.iso\.zip$', 'x86_64\.iso\.zip$']
+version = 'mt86plus_([\d.]+)'
+extract = '\.iso$'
+checksum = ["github-digest", "tofu"]
+description = "RAM tester (UEFI and BIOS)."
+
+# ── Secure wipe ───────────────────────────────────────────────────────────
+[[tool]]
+name = "shredos"
+title = "ShredOS (nwipe)"
+kind = "iso"
+category = "wipe"
+source = "github"
+repo = "PartialVolume/shredos.x86_64"
+asset = ['x86-64.*\.iso$']
+version = '_x86-64_([\d.]+)_'
+checksum = ["github-digest", { asset = '{name}\.sha(1|256)$' }]
+description = "Boots straight into nwipe. DESTROYS DATA on the disks you select."
+
+# ── Portable apps (loaded by Commander PE from USB:\Apps) ─────────────────
+[[tool]]
+name = "sysinternals"
+title = "Sysinternals Suite"
+kind = "app"
+source = "url"
+url = "https://download.sysinternals.com/files/SysinternalsSuite.zip"
+entry = "procexp64.exe"
+checksum = ["tofu"]
+
+[[tool]]
+name = "explorerpp"
+title = "Explorer++"
+kind = "app"
+source = "github"
+repo = "derceg/explorerplusplus"
+asset = ['explorerpp_x64\.zip$']   # no version in the file name → release tag is used
+entry = "Explorer++.exe"
+checksum = ["github-digest", "tofu"]
+
+[[tool]]
+name = "notepadpp"
+title = "Notepad++"
+kind = "app"
+source = "github"
+repo = "notepad-plus-plus/notepad-plus-plus"
+asset = ['^npp\.[\d.]+\.portable\.x64\.zip$']
+version = 'npp\.([\d.]+)\.portable'
+entry = "notepad++.exe"
+checksum = ["github-digest", { asset = 'checksums\.sha256$' }]
+
+[[tool]]
+name = "crystaldiskinfo"
+title = "CrystalDiskInfo"
+kind = "app"
+source = "sourceforge"
+project = "crystaldiskinfo"
+path = "/"
+asset = ['^CrystalDiskInfo\d[\d_]*\.zip$']
+version = 'CrystalDiskInfo([\d_]+)\.zip'
+entry = "DiskInfo64.exe"
+checksum = ["sf-md5"]
+
+[[tool]]
+name = "crystaldiskmark"
+title = "CrystalDiskMark"
+kind = "app"
+source = "sourceforge"
+project = "crystaldiskmark"
+path = "/"
+asset = ['^CrystalDiskMark\d[\d_]*\.zip$']
+version = 'CrystalDiskMark([\d_]+)\.zip'
+entry = "DiskMark64.exe"
+checksum = ["sf-md5"]
+
+[[tool]]
+name = "hwinfo"
+title = "HWiNFO"
+kind = "app"
+source = "sourceforge"
+project = "hwinfo"
+path = "/"
+asset = ['^hwi_?\d+\.zip$']
+version = 'hwi_?(\d+)\.zip'
+entry = "HWiNFO64.exe"
+checksum = ["sf-md5"]
+
+[[tool]]
+name = "testdisk"
+title = "TestDisk & PhotoRec"
+kind = "app"
+source = "url"
+url = "https://www.cgsecurity.org/testdisk-7.2.win64.zip"   # bump by hand
+version_pin = "7.2"
+entry = "testdisk-7.2/qphotorec_win.exe"
+checksum = ["tofu"]
+
+[[tool]]
+name = "produkey"
+title = "ProduKey"
+kind = "app"
+source = "url"
+url = "https://www.nirsoft.net/utils/produkey-x64.zip"
+entry = "ProduKey.exe"
+checksum = ["tofu"]

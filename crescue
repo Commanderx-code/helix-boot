@@ -1,0 +1,884 @@
+#!/usr/bin/env python3
+"""crescue — build and refresh the Commander Rescue USB.
+
+Resolves the newest upstream release of every tool in tools.toml, downloads and
+verifies it into a local cache, then syncs the cache onto a Ventoy stick with a
+generated boot menu. Standard library only (Python 3.11+).
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+import zipfile
+from email.utils import parsedate_to_datetime
+from pathlib import Path
+
+if sys.version_info < (3, 11):
+    sys.exit("✗ crescue needs Python 3.11 or newer (for tomllib).")
+import tomllib  # noqa: E402
+
+__version__ = "0.1.0"
+
+REPO = Path(__file__).resolve().parent
+GITHUB_API = os.environ.get("CRESCUE_GITHUB_API", "https://api.github.com")
+SF_RSS = os.environ.get(
+    "CRESCUE_SF_RSS", "https://sourceforge.net/projects/{project}/rss?path={path}&limit=200"
+)
+SF_DL = os.environ.get("CRESCUE_SF_DL", "https://downloads.sourceforge.net/project/{project}{path}")
+USER_AGENT = f"commander-rescue/{__version__} (+https://github.com/Commanderx-code/commander-rescue)"
+KINDS = {"iso", "app", "ventoy"}
+SOURCES = {"github": ["repo"], "sourceforge": ["project", "path"], "url": ["url"], "local": ["path"]}
+HASH_BY_LEN = {32: "md5", 40: "sha1", 64: "sha256", 128: "sha512"}
+STRENGTH = {"md5": 1, "sha1": 2, "sha256": 3, "sha512": 4}
+STATE_DIR = ".commander-rescue"
+TAG_FILE = "commander-rescue.tag"
+
+
+# ── Output ────────────────────────────────────────────────────────────────
+class C:
+    on = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    G, Y, R, B, D, X = (
+        ("\033[32m", "\033[33m", "\033[31m", "\033[1m", "\033[2m", "\033[0m") if on else ("",) * 6
+    )
+
+
+def ok(msg: str) -> None:
+    print(f"{C.G}✓{C.X} {msg}")
+
+
+def warn(msg: str) -> None:
+    print(f"{C.Y}!{C.X} {msg}")
+
+
+def bad(msg: str) -> None:
+    print(f"{C.R}✗{C.X} {msg}", file=sys.stderr)
+
+
+def info(msg: str) -> None:
+    print(f"{C.D}•{C.X} {msg}")
+
+
+def head(msg: str) -> None:
+    print(f"\n{C.B}{msg}{C.X}")
+
+
+class RescueError(Exception):
+    """An error with a message meant for humans. No tracebacks."""
+
+
+# ── Config ────────────────────────────────────────────────────────────────
+class Config:
+    def __init__(self, repo: Path = REPO, manifest: Path | None = None):
+        self.repo = repo
+        path = manifest or repo / "tools.toml"
+        if not path.exists():
+            raise RescueError(f"can't find {path}")
+        try:
+            data = tomllib.loads(path.read_text())
+        except tomllib.TOMLDecodeError as e:
+            raise RescueError(f"{path.name} has a syntax error: {e}") from None
+
+        local = repo / "local.toml"
+        overrides: dict = {}
+        if local.exists() and manifest is None:
+            try:
+                ldata = tomllib.loads(local.read_text())
+            except tomllib.TOMLDecodeError as e:
+                raise RescueError(f"local.toml has a syntax error: {e}") from None
+            overrides = ldata.get("overrides", {})
+            data.setdefault("tool", []).extend(ldata.get("tool", []))
+            data.setdefault("settings", {}).update(ldata.get("settings", {}))
+
+        self.settings = data.get("settings", {})
+        self.categories = {c["id"]: c for c in data.get("category", [])}
+        self.tools: list[dict] = []
+        seen = set()
+        for t in data.get("tool", []):
+            t = {**t, **overrides.get(t.get("name", ""), {})}
+            self._validate(t, seen)
+            seen.add(t["name"])
+            self.tools.append(t)
+        unknown = set(overrides) - seen
+        if unknown:
+            raise RescueError(f"local.toml overrides unknown tool(s): {', '.join(sorted(unknown))}")
+
+        cache = os.environ.get("CRESCUE_CACHE") or self.settings.get(
+            "cache_dir", "~/.cache/commander-rescue"
+        )
+        self.cache = Path(cache).expanduser()
+        self.iso_root = self.settings.get("iso_root", "ISO")
+        self.apps_root = self.settings.get("apps_root", "Apps")
+
+    def _validate(self, t: dict, seen: set) -> None:
+        name = t.get("name")
+        where = f"tool '{name}'" if name else "a [[tool]] entry"
+        if not name or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name):
+            raise RescueError(f"{where}: name must be lowercase letters, digits, - or _")
+        if name in seen:
+            raise RescueError(f"{where} is defined twice")
+        if t.get("kind") not in KINDS:
+            raise RescueError(f"{where}: kind must be one of {sorted(KINDS)}")
+        src = t.get("source")
+        if src not in SOURCES:
+            raise RescueError(f"{where}: source must be one of {sorted(SOURCES)}")
+        for key in SOURCES[src]:
+            if key not in t:
+                raise RescueError(f"{where}: source '{src}' needs '{key}'")
+        if src in ("github", "sourceforge") and not t.get("asset"):
+            raise RescueError(f"{where}: needs an 'asset' regex list")
+        if t["kind"] == "iso" and t.get("category") not in self.categories:
+            raise RescueError(f"{where}: category '{t.get('category')}' isn't a [[category]] id")
+        if src != "local" and not t.get("checksum"):
+            raise RescueError(
+                f"{where}: no checksum strategy. Add one, or checksum = [\"tofu\"] to accept "
+                "unverified downloads explicitly."
+            )
+        for pat in t.get("asset", []) + [t.get("version") or "", t.get("extract") or ""]:
+            try:
+                re.compile(pat.replace("{name}", "x"))
+            except re.error as e:
+                raise RescueError(f"{where}: bad regex {pat!r}: {e}") from None
+
+    def enabled(self, names: list[str] | None = None, kinds: set[str] | None = None) -> list[dict]:
+        if names:
+            known = {t["name"] for t in self.tools}
+            missing = [n for n in names if n not in known]
+            if missing:
+                raise RescueError(f"unknown tool(s): {', '.join(missing)} (see `crescue list`)")
+            picked = [t for t in self.tools if t["name"] in names]
+        else:
+            picked = [t for t in self.tools if t.get("enabled", True)]
+        return [t for t in picked if not kinds or t["kind"] in kinds]
+
+
+# ── HTTP ──────────────────────────────────────────────────────────────────
+def _request(url: str, headers: dict | None = None) -> urllib.request.Request:
+    h = {"User-Agent": USER_AGENT, **(headers or {})}
+    if url.startswith(GITHUB_API) and os.environ.get("GITHUB_TOKEN"):
+        h["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
+    return urllib.request.Request(url, headers=h)
+
+
+def http_get(url: str, headers: dict | None = None, timeout: int = 60) -> bytes:
+    try:
+        with urllib.request.urlopen(_request(url, headers), timeout=timeout) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 429) and url.startswith(GITHUB_API):
+            body = e.read().decode("utf-8", "replace")
+            if "rate limit" in body.lower():
+                raise RescueError(
+                    "GitHub API rate limit hit. Set GITHUB_TOKEN (any read-only token) and retry."
+                ) from None
+            try:
+                msg = json.loads(body).get("message", body)
+            except ValueError:
+                msg = body
+            raise RescueError(f"GitHub refused the request ({e.code}): {msg.strip()[:200]}") from None
+        if e.code == 404:
+            raise FileNotFoundError(url) from None
+        raise RescueError(f"HTTP {e.code} from {url}") from None
+    except urllib.error.URLError as e:
+        raise RescueError(f"couldn't reach {urllib.parse.urlparse(url).netloc}: {e.reason}") from None
+    except TimeoutError:
+        raise RescueError(f"timed out talking to {urllib.parse.urlparse(url).netloc}") from None
+
+
+def _fmt_bytes(n: float) -> str:
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if n < 1024 or unit == "GiB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
+        n /= 1024
+    return f"{n:.1f} GiB"
+
+
+def download(url: str, dest: Path) -> None:
+    """Download to dest, resuming a previous .part file when the server allows it."""
+    part = dest.with_name(dest.name + ".part")
+    have = part.stat().st_size if part.exists() else 0
+    headers = {"Range": f"bytes={have}-"} if have else {}
+    try:
+        resp = urllib.request.urlopen(_request(url, headers), timeout=60)
+    except urllib.error.HTTPError as e:
+        if e.code == 416 and have:  # .part already complete
+            os.replace(part, dest)
+            return
+        raise RescueError(f"download failed: HTTP {e.code} from {url}") from None
+    except urllib.error.URLError as e:
+        raise RescueError(f"download failed: {e.reason}") from None
+
+    with resp:
+        resumed = have and resp.status == 206
+        if not resumed:
+            have = 0
+        total = resp.headers.get("Content-Length")
+        total = int(total) + have if total else None
+        done, last, start = have, 0.0, time.monotonic()
+        tty = sys.stderr.isatty()
+        with open(part, "ab" if resumed else "wb") as f:
+            while chunk := resp.read(1 << 20):
+                f.write(chunk)
+                done += len(chunk)
+                now = time.monotonic()
+                if tty and now - last > 0.25:
+                    last = now
+                    rate = (done - have) / max(now - start, 1e-6)
+                    pct = f"{done * 100 // total:3d}%" if total else "    "
+                    tot = f"/{_fmt_bytes(total)}" if total else ""
+                    print(
+                        f"\r  ↓ {_fmt_bytes(done)}{tot} {pct}  {_fmt_bytes(rate)}/s   ",
+                        end="",
+                        file=sys.stderr,
+                    )
+            f.flush()
+            os.fsync(f.fileno())
+        if tty:
+            print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
+    if total and done != total:
+        raise RescueError(f"download was cut short ({_fmt_bytes(done)} of {_fmt_bytes(total)}); run fetch again to resume")
+    os.replace(part, dest)
+
+
+def file_hash(path: Path, algo: str = "sha256") -> str:
+    h = hashlib.new(algo)
+    with open(path, "rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def remote_id(url: str) -> str | None:
+    """Identify an unversioned download by ETag / Last-Modified / size (HEAD request)."""
+    req = _request(url)
+    req.method = "HEAD"
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            parts = [r.headers.get("ETag"), r.headers.get("Last-Modified"), r.headers.get("Content-Length")]
+    except (urllib.error.URLError, TimeoutError):
+        return None
+    return "|".join(p or "" for p in parts) if any(parts) else None
+
+
+def is_current(prev: dict | None, res: dict) -> bool:
+    if not prev or prev.get("source_file", prev.get("file")) != res["file"]:
+        return False
+    if res["version"] is not None:
+        return prev.get("version") == res["version"]
+    return res.get("remote_id") is not None and prev.get("remote_id") == res["remote_id"]
+
+
+# ── Resolving the latest upstream release ─────────────────────────────────
+def _pick(names: list[str], patterns: list[str]) -> list[str]:
+    """Return matches for the first pattern that matches anything."""
+    for pat in patterns:
+        rx = re.compile(pat)
+        hits = [n for n in names if rx.search(n)]
+        if hits:
+            return hits
+    return []
+
+
+def _version(tool: dict, filename: str, fallback: str | None) -> str:
+    if tool.get("version_pin"):
+        return str(tool["version_pin"])
+    if tool.get("version"):
+        m = re.search(tool["version"], filename)
+        if m:
+            return m.group(1) if m.groups() else m.group(0)
+    if fallback:
+        return fallback.lstrip("vV")
+    return dt.date.today().isoformat()
+
+
+def resolve(tool: dict, cfg: Config) -> dict:
+    """Work out what the newest upstream file is, without downloading it."""
+    src = tool["source"]
+    res: dict = {"digest": None, "md5": None, "gh_assets": {}, "dir_url": None}
+
+    if src == "github":
+        try:
+            raw = http_get(f"{GITHUB_API}/repos/{tool['repo']}/releases/latest",
+                           {"Accept": "application/vnd.github+json"})
+        except FileNotFoundError:
+            raise RescueError(f"{tool['repo']} has no published releases on GitHub") from None
+        rel = json.loads(raw)
+        assets = {a["name"]: a for a in rel.get("assets", [])}
+        hits = _pick(list(assets), tool["asset"])
+        if not hits:
+            raise RescueError(
+                f"no file in {tool['repo']} {rel.get('tag_name')} matches {tool['asset']} "
+                f"(files: {', '.join(assets) or 'none'})"
+            )
+        a = assets[hits[0]]
+        res.update(file=a["name"], url=a["browser_download_url"], size=a.get("size"),
+                   gh_assets=assets, tag=rel.get("tag_name"))
+        if (a.get("digest") or "").startswith("sha256:"):
+            res["digest"] = a["digest"].split(":", 1)[1]
+        res["version"] = _version(tool, a["name"], rel.get("tag_name"))
+
+    elif src == "sourceforge":
+        url = SF_RSS.format(project=tool["project"], path=urllib.parse.quote(tool["path"]))
+        try:
+            root = ET.fromstring(http_get(url))
+        except FileNotFoundError:
+            raise RescueError(f"SourceForge project '{tool['project']}' not found") from None
+        except ET.ParseError:
+            raise RescueError(f"SourceForge returned something that isn't RSS for {tool['project']}") from None
+        entries = []
+        for i, item in enumerate(root.iter("item")):
+            title = (item.findtext("title") or "").strip()
+            if not title:
+                continue
+            md5 = None
+            for el in item.iter():
+                if el.tag.endswith("hash") and el.get("algo") == "md5":
+                    md5 = (el.text or "").strip().lower()
+            try:
+                when = parsedate_to_datetime(item.findtext("pubDate") or "").timestamp()
+            except (TypeError, ValueError):
+                when = -i  # RSS is newest-first; keep that order
+            entries.append({"path": title, "name": title.rsplit("/", 1)[-1], "md5": md5, "when": when})
+        hits = set(_pick([e["name"] for e in entries], tool["asset"]))
+        cands = [e for e in entries if e["name"] in hits]
+        if not cands:
+            raise RescueError(f"no file in SourceForge {tool['project']}{tool['path']} matches {tool['asset']}")
+        e = max(cands, key=lambda e: e["when"])
+        quoted = urllib.parse.quote(e["path"])
+        res.update(file=e["name"], url=SF_DL.format(project=tool["project"], path=quoted), md5=e["md5"],
+                   dir_url=SF_DL.format(project=tool["project"], path=quoted.rsplit("/", 1)[0]))
+        res["version"] = _version(tool, e["name"], e["path"].rstrip("/").split("/")[-2] if e["path"].count("/") > 1 else None)
+
+    elif src == "url":
+        name = urllib.parse.unquote(urllib.parse.urlparse(tool["url"]).path.rsplit("/", 1)[-1])
+        res.update(file=name, url=tool["url"], dir_url=tool["url"].rsplit("/", 1)[0])
+        res["version"] = _version(tool, name, None) if (tool.get("version") or tool.get("version_pin")) else None
+        if res["version"] is None:
+            res["remote_id"] = remote_id(tool["url"])
+
+    elif src == "local":
+        p = (cfg.repo / tool["path"]).resolve()
+        res.update(file=p.name, url=None, path=p)
+        res["version"] = (
+            dt.date.fromtimestamp(p.stat().st_mtime).isoformat() if p.exists() else None
+        )
+    return res
+
+
+# ── Checksums ─────────────────────────────────────────────────────────────
+def parse_checksum_text(text: str, filename: str) -> tuple[str, str] | None:
+    """Find the strongest hash for `filename` in a sha*sum / CHECKSUMS.TXT / BSD-style file."""
+    hexrx = re.compile(r"\b([0-9a-fA-F]{128}|[0-9a-fA-F]{64}|[0-9a-fA-F]{40}|[0-9a-fA-F]{32})\b")
+    best: tuple[str, str] | None = None
+    lines = text.splitlines()
+    for line in lines:
+        if filename not in line:
+            continue
+        for h in hexrx.findall(line):
+            algo = HASH_BY_LEN[len(h)]
+            if not best or STRENGTH[algo] > STRENGTH[best[0]]:
+                best = (algo, h.lower())
+    if best:
+        return best
+    # single-file checksum (e.g. foo.iso.sha256 containing just the hash)
+    allhex = hexrx.findall(text)
+    if len(allhex) == 1:
+        return HASH_BY_LEN[len(allhex[0])], allhex[0].lower()
+    return None
+
+
+def expected_hash(tool: dict, res: dict) -> tuple[str, str | None, str]:
+    """Return (algo, hex, how) — algo 'tofu' means no upstream hash."""
+    tried = []
+    for strat in tool.get("checksum", []):
+        if strat == "github-digest":
+            tried.append("GitHub digest")
+            if res.get("digest"):
+                return "sha256", res["digest"], "GitHub sha256 digest"
+        elif strat == "sf-md5":
+            tried.append("SourceForge md5")
+            if res.get("md5"):
+                return "md5", res["md5"], "SourceForge md5 (integrity only)"
+        elif strat == "tofu":
+            return "tofu", None, "unverified (trust on first use)"
+        elif isinstance(strat, dict) and "sha256" in strat:
+            return "sha256", strat["sha256"].lower(), "pinned sha256"
+        elif isinstance(strat, dict):
+            if "asset" in strat:
+                pat = strat["asset"].replace("{name}", re.escape(res["file"]))
+                tried.append(f"release asset /{pat}/")
+                hit = next((n for n in res.get("gh_assets", {}) if re.search(pat, n)), None)
+                url = res["gh_assets"][hit]["browser_download_url"] if hit else None
+            elif "sibling" in strat:
+                tried.append(strat["sibling"])
+                url = f"{res['dir_url']}/{urllib.parse.quote(strat['sibling'].format(name=res['file']))}" if res.get("dir_url") else None
+            elif "url" in strat:
+                tried.append(strat["url"])
+                url = strat["url"]
+            else:
+                raise RescueError(f"{tool['name']}: unknown checksum strategy {strat}")
+            if not url:
+                continue
+            try:
+                text = http_get(url).decode("utf-8", "replace")
+            except (FileNotFoundError, RescueError):
+                continue
+            found = parse_checksum_text(text, res["file"])
+            if found:
+                return found[0], found[1], f"{found[0]} from {url.rsplit('/', 1)[-1]}"
+        else:
+            raise RescueError(f"{tool['name']}: unknown checksum strategy {strat!r}")
+    raise RescueError(
+        f"{tool['name']}: couldn't find an upstream checksum for {res['file']} "
+        f"(tried: {', '.join(tried)}). Refusing to use an unverified download — add \"tofu\" "
+        "to its checksum list if you accept that."
+    )
+
+
+# ── Lock file ─────────────────────────────────────────────────────────────
+def load_lock(cfg: Config) -> dict:
+    p = cfg.cache / "lock.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def save_lock(cfg: Config, lock: dict) -> None:
+    cfg.cache.mkdir(parents=True, exist_ok=True)
+    tmp = cfg.cache / "lock.json.tmp"
+    tmp.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n")
+    os.replace(tmp, cfg.cache / "lock.json")
+
+
+def _safe_extract_tar(tar: tarfile.TarFile, dest: Path) -> None:
+    if hasattr(tarfile, "data_filter"):
+        tar.extractall(dest, filter="data")
+        return
+    root = dest.resolve()
+    for m in tar.getmembers():
+        target = (dest / m.name).resolve()
+        if not str(target).startswith(str(root)) or m.issym() and os.path.isabs(m.linkname):
+            raise RescueError(f"refusing unsafe path in archive: {m.name}")
+    tar.extractall(dest)
+
+
+def _safe_zip_members(zf: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    for m in zf.infolist():
+        p = Path(m.filename)
+        if p.is_absolute() or ".." in p.parts:
+            raise RescueError(f"refusing unsafe path in zip: {m.filename}")
+    return zf.infolist()
+
+
+def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
+    """Fetch one tool. Returns 'new', 'current' or 'skipped'."""
+    name = tool["name"]
+    res = resolve(tool, cfg)
+    prev = lock.get(name)
+
+    if tool["source"] == "local":
+        p: Path = res["path"]
+        if not p.exists():
+            warn(f"{tool['title']}: {tool['path']} isn't built yet — skipping (see pe/README.md)")
+            return "skipped"
+        sha = file_hash(p)
+        if prev and prev.get("sha256") == sha:
+            ok(f"{tool['title']} {res['version']} — local build, unchanged")
+            return "current"
+        lock[name] = {"version": res["version"], "file": p.name, "path": str(p), "sha256": sha,
+                      "verified_by": "local build", "fetched": dt.datetime.now().isoformat(timespec="seconds")}
+        ok(f"{tool['title']} {res['version']} — local build registered")
+        return "new"
+
+    tdir = cfg.cache / name
+    cached = bool(prev and prev.get("final") and (tdir / prev["final"]).exists())
+    if not force and cached and is_current(prev, res):
+        ok(f"{tool['title']} {prev['version']} — up to date")
+        return "current"
+
+    algo, want, how = expected_hash(tool, res)
+    tdir.mkdir(parents=True, exist_ok=True)
+    dest = tdir / res["file"]
+    info(f"{tool['title']}: downloading {res['file']}")
+    download(res["url"], dest)
+
+    sha256 = file_hash(dest)
+    if algo == "tofu":
+        if (prev and prev.get("source_file") == res["file"] and prev.get("sha256_download")
+                and prev["sha256_download"] != sha256 and res["version"] is not None
+                and prev.get("version") == res["version"]):
+            dest.unlink()
+            raise RescueError(
+                f"{tool['title']}: {res['file']} changed upstream without a version bump. That can be "
+                "a silent re-release — or tampering. Check the vendor's site, then rerun with --force."
+            )
+    else:
+        got = sha256 if algo == "sha256" else file_hash(dest, algo)
+        if got != want:
+            dest.unlink()
+            raise RescueError(
+                f"{tool['title']}: checksum MISMATCH for {res['file']} ({algo})\n"
+                f"    expected {want}\n    got      {got}\n  The file was deleted. Try again; if it "
+                "keeps happening, don't use it."
+            )
+
+    version = res["version"]
+    if version is None:  # unversioned url source: version by content
+        version = (prev["version"] if prev and prev.get("sha256_download") == sha256
+                   else f"{dt.date.today().isoformat()}-{sha256[:8]}")
+
+    final = res["file"]
+    if tool.get("extract"):
+        with zipfile.ZipFile(dest) as zf:
+            members = [m for m in _safe_zip_members(zf) if re.search(tool["extract"], m.filename)]
+            if not members:
+                raise RescueError(f"{tool['title']}: nothing in {res['file']} matches {tool['extract']}")
+            m = members[0]
+            final = Path(m.filename).name
+            with zf.open(m) as s, open(tdir / final, "wb") as d:
+                shutil.copyfileobj(s, d)
+    elif tool["kind"] == "ventoy":
+        with tarfile.open(dest) as tar:
+            top = {n.split("/", 1)[0] for n in tar.getnames()}
+            _safe_extract_tar(tar, tdir)
+        if len(top) != 1:
+            raise RescueError(f"unexpected Ventoy archive layout: {sorted(top)}")
+        final = top.pop()
+
+    keep = {res["file"], final}
+    for old in tdir.iterdir():
+        if old.name not in keep and not old.name.endswith(".part"):
+            shutil.rmtree(old) if old.is_dir() else old.unlink()
+
+    lock[name] = {
+        "version": version,
+        "source_file": res["file"],
+        "final": final,
+        "sha256_download": sha256,
+        "sha256": file_hash(tdir / final) if (tdir / final).is_file() else None,
+        "verified_by": how,
+        "url": res["url"],
+        "remote_id": res.get("remote_id"),
+        "fetched": dt.datetime.now().isoformat(timespec="seconds"),
+    }
+    marker = f"{C.Y}unverified{C.X}" if algo == "tofu" else f"{C.D}{how}{C.X}"
+    ok(f"{tool['title']} {version} — {marker}")
+    return "new"
+
+
+# ── Commands ──────────────────────────────────────────────────────────────
+def cmd_list(cfg: Config, args) -> int:
+    rows = [("NAME", "KIND", "CATEGORY", "SOURCE", "ON")]
+    for t in cfg.tools:
+        cat = cfg.categories.get(t.get("category"), {}).get("title", "—")
+        src = t.get("repo") or t.get("project") or t.get("url") or t.get("path")
+        rows.append((t["name"], t["kind"], cat, f"{t['source']}:{src}"[:52],
+                     "yes" if t.get("enabled", True) else "no"))
+    w = [max(len(r[i]) for r in rows) for i in range(5)]
+    for i, r in enumerate(rows):
+        line = "  ".join(c.ljust(w[j]) for j, c in enumerate(r))
+        print(f"{C.B}{line}{C.X}" if i == 0 else line)
+    return 0
+
+
+def cmd_check(cfg: Config, args) -> int:
+    lock = load_lock(cfg)
+    out, updates, errors = {}, 0, 0
+    for t in cfg.enabled(args.tools):
+        try:
+            res = resolve(t, cfg)
+        except RescueError as e:
+            errors += 1
+            out[t["name"]] = {"error": str(e)}
+            if not args.json:
+                bad(f"{t['title']}: {e}")
+            continue
+        prev = lock.get(t["name"])
+        have = prev.get("version") if prev else None
+        latest = res["version"] or "unversioned download"
+        if t["source"] == "local":
+            latest = res["version"] or f"{t['path']} missing — see pe/README.md"
+            status = "not built" if not res["version"] else "up to date" if prev and prev.get("path") else "not fetched"
+        else:
+            status = "not fetched" if not have else "up to date" if is_current(prev, res) else "update"
+        updates += status in ("update", "not fetched")
+        out[t["name"]] = {"latest": res["version"], "file": res["file"], "have": have, "status": status}
+        if not args.json:
+            mark = {"up to date": ok, "update": warn, "not fetched": warn}.get(status, info)
+            mark(f"{t['title']}: {status}  ({have or '—'} → {latest})" if status == "update"
+                 else f"{t['title']}: {status}  ({latest})")
+    if args.json:
+        print(json.dumps(out, indent=2, sort_keys=True))
+    elif not errors:
+        print(f"\n{updates} to fetch." if updates else "\nEverything is current.")
+    return 1 if errors else 0
+
+
+def cmd_fetch(cfg: Config, args) -> int:
+    lock = load_lock(cfg)
+    tools = cfg.enabled(args.tools)
+    head(f"Fetching {len(tools)} tool(s) into {cfg.cache}")
+    failed = []
+    for t in tools:
+        try:
+            fetch_tool(cfg, t, lock, force=args.force)
+        except RescueError as e:
+            bad(str(e))
+            failed.append(t["name"])
+        finally:
+            save_lock(cfg, lock)
+    if failed:
+        bad(f"{len(failed)} failed: {', '.join(failed)}")
+        return 1
+    ok("All fetched and verified.")
+    return 0
+
+
+def _label_of(mount: Path) -> str | None:
+    try:
+        src = subprocess.run(["findmnt", "-no", "SOURCE", "--target", str(mount)],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        if not src.startswith("/dev/"):
+            return None
+        return subprocess.run(["lsblk", "-no", "LABEL", src], capture_output=True, text=True,
+                              check=True).stdout.strip() or None
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def build_ventoy_json(cfg: Config, placed: list[dict]) -> dict:
+    alias, tips = [], []
+    used = {p["category"] for p in placed}
+    for cid, c in cfg.categories.items():
+        if cid in used:
+            alias.append({"dir": f"/{cfg.iso_root}/{c['dir']}", "alias": c["title"]})
+    for p in placed:
+        img = f"/{cfg.iso_root}/{cfg.categories[p['category']]['dir']}/{p['file']}"
+        alias.append({"image": img, "alias": f"{p['title']}  {p['version']}"})
+        if p.get("description"):
+            tips.append({"image": img, "tip": p["description"]})
+    doc: dict = {
+        "control": [
+            {"VTOY_DEFAULT_MENU_MODE": "1"},            # tree view: categories as folders
+            {"VTOY_DEFAULT_SEARCH_ROOT": f"/{cfg.iso_root}"},
+            {"VTOY_FILT_DOT_UNDERSCORE_FILE": "1"},
+            {"VTOY_TREE_VIEW_MENU_STYLE": "1"},
+        ],
+        "menu_alias": alias,
+    }
+    if tips:
+        doc["menu_tip"] = {"left": "10%", "top": "81%", "color": "#7fb4ff", "tips": tips}
+    theme = cfg.settings.get("theme")
+    if theme:
+        doc["theme"] = {"file": "/ventoy/theme/theme.txt", "gfxmode": "1920x1080"}
+    return doc
+
+
+def _copy(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(dst.name + ".part")
+    with open(src, "rb") as s, open(tmp, "wb") as d:
+        shutil.copyfileobj(s, d, 8 << 20)
+        d.flush()
+        os.fsync(d.fileno())
+    os.replace(tmp, dst)
+
+
+def cmd_sync(cfg: Config, args) -> int:
+    mnt = Path(args.target).expanduser().resolve()
+    if not mnt.is_dir():
+        raise RescueError(f"{mnt} isn't a mounted folder. Plug the stick in and pass its mount point.")
+    state_dir = mnt / STATE_DIR
+    if not state_dir.exists():
+        label = _label_of(mnt)
+        if not args.init and label != "Ventoy":
+            raise RescueError(
+                f"{mnt} doesn't look like a Ventoy stick (label: {label or 'unknown'}). "
+                "If you're sure, rerun with --init."
+            )
+    lock = load_lock(cfg)
+    state_path = state_dir / "state.json"
+    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+
+    placed, want_files, missing = [], set(), []
+    for t in cfg.enabled(kinds={"iso"}):
+        entry = lock.get(t["name"])
+        src = (Path(entry["path"]) if entry and entry.get("path")
+               else cfg.cache / t["name"] / entry["final"] if entry else None)
+        if not src or not src.exists():
+            missing.append(t["title"])
+            continue
+        rel = f"{cfg.iso_root}/{cfg.categories[t['category']]['dir']}/{src.name}"
+        want_files.add(rel)
+        placed.append({"rel": rel, "src": src, "file": src.name, "title": t["title"],
+                       "version": entry["version"], "category": t["category"],
+                       "description": t.get("description"), "sha256": entry.get("sha256")})
+    apps = []
+    for t in cfg.enabled(kinds={"app"}):
+        entry = lock.get(t["name"])
+        src = cfg.cache / t["name"] / entry["final"] if entry else None
+        if not src or not src.exists():
+            missing.append(t["title"])
+            continue
+        apps.append((t, entry, src))
+    for m in missing:
+        warn(f"{m}: not fetched yet — run `crescue fetch` (skipping)")
+
+    stale = [f for f in state.get("files", []) if f not in want_files]
+    head(f"Syncing to {mnt}{'  (dry run)' if args.dry_run else ''}")
+
+    for p in placed:
+        dst = mnt / p["rel"]
+        same = dst.exists() and dst.stat().st_size == p["src"].stat().st_size
+        if same and args.verify and p["sha256"]:
+            same = file_hash(dst) == p["sha256"]
+        if same:
+            ok(f"{p['title']} {p['version']} — already on stick")
+            continue
+        info(f"{p['title']} {p['version']} → {p['rel']}")
+        if not args.dry_run:
+            _copy(p["src"], dst)
+            if args.verify and p["sha256"] and file_hash(dst) != p["sha256"]:
+                raise RescueError(f"{p['rel']} doesn't match after copying — the stick may be failing.")
+            ok(f"{p['title']} copied")
+
+    app_state = dict(state.get("apps", {}))
+    app_root = mnt / cfg.apps_root
+    for t, entry, src in apps:
+        dst = app_root / t["name"]
+        if app_state.get(t["name"]) == entry["version"] and dst.exists():
+            ok(f"{t['title']} {entry['version']} — already on stick")
+            continue
+        info(f"{t['title']} {entry['version']} → {cfg.apps_root}/{t['name']}/")
+        if args.dry_run:
+            continue
+        new = app_root / f".{t['name']}.new"
+        shutil.rmtree(new, ignore_errors=True)
+        new.mkdir(parents=True)
+        if zipfile.is_zipfile(src):
+            with zipfile.ZipFile(src) as zf:
+                zf.extractall(new, members=_safe_zip_members(zf))
+        else:
+            shutil.copy2(src, new / src.name)
+        if dst.exists():
+            shutil.rmtree(dst)
+        os.replace(new, dst)
+        app_state[t["name"]] = entry["version"]
+        ok(f"{t['title']} unpacked")
+
+    enabled_apps = {t["name"] for t, _, _ in apps}
+    for name in [n for n in app_state if n not in enabled_apps]:
+        info(f"removing app no longer in the manifest: {name}")
+        if not args.dry_run:
+            shutil.rmtree(app_root / name, ignore_errors=True)
+            app_state.pop(name)
+
+    if stale and not args.no_prune:
+        for rel in stale:
+            p = (mnt / rel).resolve()
+            if p.is_relative_to(mnt) and p.exists():
+                info(f"removing old {rel}")
+                if not args.dry_run:
+                    p.unlink()
+
+    if args.dry_run:
+        print("\nDry run — nothing was written.")
+        return 0
+
+    # PE launcher index: "Title|relative\path\to.exe" per line (easy to parse from cmd.exe)
+    app_root.mkdir(exist_ok=True)
+    lines = [f"{t['title']}|{t['name']}\\{t.get('entry', '').replace('/', chr(92))}"
+             for t, _, _ in apps if t.get("entry")]
+    (app_root / "apps.txt").write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+    launcher = cfg.repo / "pe" / "launcher"
+    if launcher.is_dir():  # works from any WinPE, including Hiren's
+        for f in launcher.glob("*.cmd"):
+            shutil.copy2(f, app_root / f.name)
+
+    vdir = mnt / "ventoy"
+    vdir.mkdir(exist_ok=True)
+    vjson = vdir / "ventoy.json"
+    if vjson.exists() and state.get("ventoy_json_sha") != file_hash(vjson):
+        backup = vdir / f"ventoy.json.bak-{dt.date.today().isoformat()}"
+        shutil.copy2(vjson, backup)
+        warn(f"your existing ventoy.json was backed up to ventoy/{backup.name}")
+    if cfg.settings.get("theme"):
+        theme_src = cfg.repo / cfg.settings["theme"]
+        if theme_src.is_dir():
+            shutil.copytree(theme_src, vdir / "theme", dirs_exist_ok=True)
+    vjson.write_text(json.dumps(build_ventoy_json(cfg, placed), indent=2) + "\n")
+
+    (mnt / TAG_FILE).write_text(f"Commander Rescue {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n")
+    state_dir.mkdir(exist_ok=True)
+    state_path.write_text(json.dumps({
+        "files": sorted(want_files), "apps": app_state, "ventoy_json_sha": file_hash(vjson),
+        "synced": dt.datetime.now().isoformat(timespec="seconds"), "crescue": __version__,
+    }, indent=2) + "\n")
+    info("flushing writes to the stick…")
+    os.sync()
+    ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
+    return 0
+
+
+def cmd_ventoy_path(cfg: Config, args) -> int:
+    lock = load_lock(cfg)
+    t = next((t for t in cfg.tools if t["kind"] == "ventoy"), None)
+    entry = lock.get(t["name"]) if t else None
+    path = cfg.cache / t["name"] / entry["final"] if entry else None
+    if not path or not (path / "Ventoy2Disk.sh").exists():
+        raise RescueError("Ventoy isn't fetched yet — run `crescue fetch ventoy`")
+    print(path)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="crescue", description="Build and refresh the Commander Rescue USB.")
+    ap.add_argument("--version", action="version", version=f"crescue {__version__}")
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")
+
+    sub.add_parser("list", help="show every tool in the manifest").set_defaults(fn=cmd_list)
+
+    p = sub.add_parser("check", help="compare cached versions with upstream (no downloads)")
+    p.add_argument("tools", nargs="*")
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.set_defaults(fn=cmd_check)
+
+    p = sub.add_parser("fetch", help="download and verify the latest releases")
+    p.add_argument("tools", nargs="*", help="only these tools (default: all enabled)")
+    p.add_argument("--force", action="store_true", help="re-download even if up to date")
+    p.set_defaults(fn=cmd_fetch)
+
+    p = sub.add_parser("sync", help="copy the cache onto a mounted Ventoy stick")
+    p.add_argument("target", help="mount point of the Ventoy data partition")
+    p.add_argument("--init", action="store_true", help="adopt a stick not labelled 'Ventoy'")
+    p.add_argument("--dry-run", action="store_true", help="show what would change")
+    p.add_argument("--verify", action="store_true", help="hash files on the stick (slow)")
+    p.add_argument("--no-prune", action="store_true", help="keep old versions on the stick")
+    p.set_defaults(fn=cmd_sync)
+
+    sub.add_parser("ventoy-path", help="print the extracted Ventoy folder").set_defaults(fn=cmd_ventoy_path)
+
+    args = ap.parse_args(argv)
+    try:
+        return args.fn(Config(), args)
+    except RescueError as e:
+        bad(str(e))
+        return 1
+    except KeyboardInterrupt:
+        print()
+        warn("interrupted — partial downloads are kept and will resume next time")
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())

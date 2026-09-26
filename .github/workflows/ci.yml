@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 9 * * 1"   # Mondays: make sure every upstream still resolves
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Unit + end-to-end tests
+        run: python -m unittest discover -s tests -v
+      - name: Shellcheck
+        run: shellcheck -x install.sh refresh.sh scripts/common.sh
+
+  upstream:
+    # Catches upstreams that renamed their files or moved (asset regex no longer matches).
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Resolve latest releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          ./crescue check --json > upstream.json
+          rc=$?
+          python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d = json.load(open("upstream.json"))
+          print("| tool | latest | file |\n|---|---|---|")
+          for k, v in sorted(d.items()):
+              if "error" in v:
+                  print(f"| {k} | ❌ | {v['error'][:120]} |")
+              else:
+                  print(f"| {k} | {v.get('latest') or '—'} | {v.get('file') or ''} |")
+          EOF
+          exit $rc

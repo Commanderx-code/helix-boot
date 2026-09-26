@@ -1,0 +1,5 @@
+local.toml
+pe/out/*
+!pe/out/.gitkeep
+__pycache__/
+*.pyc
