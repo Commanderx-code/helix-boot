@@ -7,28 +7,21 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe upstream endpoints
+      - name: Probe memtest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
-          UA="commander-rescue/0.1 (+https://github.com/Commanderx-code/commander-rescue)"
-          p() {  # p <label> <url> [curl args]
-            local label=$1 url=$2; shift 2
-            local out code
-            out=$(curl -sL -m 30 -o /tmp/body -w '%{http_code} %{content_type} %{url_effective}' "$@" "$url")
-            echo "::notice title=$label::$out :: $(head -c 300 /tmp/body | tr '\n\r' '  ')"
-          }
-          p sf-rss-ua   "https://sourceforge.net/projects/clonezilla/rss?path=/clonezilla_live_stable&limit=200" -A "$UA"
-          p sf-rss-nolimit "https://sourceforge.net/projects/clonezilla/rss?path=/clonezilla_live_stable" -A "$UA"
-          p sf-rss-curl "https://sourceforge.net/projects/clonezilla/rss?path=/clonezilla_live_stable"
-          p sf-rss-browser "https://sourceforge.net/projects/clonezilla/rss?path=/clonezilla_live_stable" -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36"
-          p sf-rss-root "https://sourceforge.net/projects/hwinfo/rss" -A "$UA"
-          p sf-best     "https://sourceforge.net/projects/clonezilla/best_release.json" -A "$UA"
-          p sf-files    "https://sourceforge.net/projects/clonezilla/files/clonezilla_live_stable/" -A "$UA"
-          p sf-dl-head  "https://downloads.sourceforge.net/project/clonezilla/clonezilla_live_stable/" -A "$UA" -I
-          p mt-gh       "https://api.github.com/repos/memtest86plus/memtest86plus/releases/latest" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"
-          p mt-org-a    "https://memtest.org/download/v8.10/mt86plus_8.10_64.iso.zip" -I
-          p mt-org-b    "https://www.memtest.org/download/v8.10/mt86plus_8.10_64.iso.zip" -I
-          p mt-org-c    "https://memtest.org/download/v8.10/mt86plus_8.10_x86_64.iso.zip" -I
-          p mt-org-page "https://www.memtest.org/"
-          curl -sL -m 30 https://www.memtest.org/ | grep -oE 'href="[^"]*(iso|zip)[^"]*"' | head -20 | while read -r l; do echo "::notice title=mt-link::$l"; done
-          curl -sL -m 30 -A "$UA" "https://sourceforge.net/projects/clonezilla/files/clonezilla_live_stable/" | grep -oE 'href="/projects/clonezilla/files/clonezilla_live_stable/[^"]+"' | head -5 | while read -r l; do echo "::notice title=sf-link::$l"; done
+          {
+            echo "GITHUB RELEASE:"
+            curl -s -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/memtest86plus/memtest86plus/releases?per_page=3 \
+              | python3 -c 'import sys,json
+          for r in json.load(sys.stdin): print(r["tag_name"], r["draft"], r["prerelease"], [a["name"] for a in r["assets"]], (r.get("body") or "")[:300].replace("\n"," "))'
+            echo "MEMTEST.ORG LINKS:"
+            curl -sL -m 30 https://www.memtest.org/ | grep -oE 'href="[^"]*"' | grep -iE 'iso|zip|download' | sort -u | head -30
+            for u in https://www.memtest.org/download/v8.10/mt86plus_8.10_64.iso.zip https://memtest.org/download/v8.10/mt86plus_8.10.iso.zip; do
+              echo "$u -> $(curl -sIL -o /dev/null -w '%{http_code}' "$u")"
+            done
+          } > /tmp/out.txt 2>&1
+          msg=$(sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g' /tmp/out.txt)
+          echo "::notice title=memtest::$msg"
