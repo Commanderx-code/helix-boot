@@ -62,7 +62,7 @@ def ok(msg: str) -> None:
 
 
 def warn(msg: str) -> None:
-    print(f"{C.Y}!{C.X} {msg}")
+    print(f"{C.Y}!{C.X} {msg}", file=sys.stderr)  # stderr: keeps `check --json` output clean
 
 
 def bad(msg: str) -> None:
@@ -932,6 +932,8 @@ def cmd_ventoy_path(cfg: Config, args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)  # keep stdout/stderr in order when both go to one log
     ap = argparse.ArgumentParser(prog="crescue", description="Build and refresh the Commander Rescue USB.")
     ap.add_argument("--version", action="version", version=f"crescue {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")

@@ -487,6 +487,17 @@ class TestFetchAndSync(Base):
         self.assertEqual(self.sync()[0], 0)
         self.assertFalse(placed[0].exists())
 
+    def test_check_json_stays_clean_when_warning(self):
+        Quiet.fail["/sf/systemrescuecd/rss/sysresccd-x86/feed.xml"] = 1   # forces a retry warning
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with redirect_stdout(out), redirect_stderr(err):
+                cr.cmd_check(self.cfg, type("A", (), {"tools": ["systemrescue"], "json": True})())
+        finally:
+            Quiet.fail.clear()
+        self.assertIn("retrying", err.getvalue())
+        self.assertEqual(json.loads(out.getvalue())["systemrescue"]["latest"], "12.02")
+
     def test_dry_run_writes_nothing(self):
         self.fetch("systemrescue")
         rc, out = self.sync(dry_run=True)
