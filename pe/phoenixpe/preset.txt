@@ -1,0 +1,23 @@
+# Commander PE preset: what Apply-CommanderPreset.ps1 switches on or off in
+# PhoenixPE. Anything not listed keeps PhoenixPE's default, which is already a
+# good lean base (Explorer + StartAllBack, networking, audio, ramdisk, 7-Zip,
+# Firefox, ISO output).
+#
+# Format: on|off  <script path under Projects\>   # why
+# Paths are checked against your PhoenixPE release; a renamed script is
+# reported, never guessed at.
+
+# Storage & network drivers: the #1 reason a rescue PE "can't see the disk"
+on   PhoenixPE\Drivers\IntelRSTDriver.script                  # NVMe behind Intel VMD/RST (11th gen+ laptops)
+on   PhoenixPE\Drivers\NetworkDrivers.script                  # Windows' own extra Wi-Fi/Ethernet drivers
+
+# Tools a technician expects
+on   PhoenixPE\Components\WindowsPowerShell.script            # PowerShell (repair scripts, Get-Disk, etc.)
+on   PhoenixPE\Components\TaskMgr.script                      # full Task Manager instead of the WinPE one
+on   PhoenixPE\Components\Visual C++ Runtime\350-VCRedist-14.script  # so portable apps from USB:\Apps run
+
+# Comes from USB:\Apps instead (always current, no rebuild needed)
+off  PhoenixPE\Applications\Productivity\Notepad++.script
+
+# Our launcher
+on   MyApps\Commander Rescue\CommanderRescue.script

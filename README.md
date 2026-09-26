@@ -135,7 +135,8 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, tips
 - [x] Manifest, fetch/verify engine, installer, refresher, Ventoy menu
 - [x] PE app launcher (works in any WinPE)
 - [x] CI: tests, ShellCheck, weekly live resolve + download + verify of every tool
-- [ ] First Commander PE build + recommended PhoenixPE preset
+- [x] Recommended PhoenixPE preset + Commander Rescue add-on ([guide](pe/README.md))
+- [ ] First Commander PE build
 - [ ] Ventoy theme
 - [ ] Commander Toolbox entry
 

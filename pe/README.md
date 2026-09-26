@@ -43,27 +43,41 @@ activating to build PE images. To get the ISO out, add a shared folder
 
 ## Build steps
 
-1. Unpack the PhoenixPE release inside the VM, e.g. `C:\PhoenixPE`, and run
-   `PEBakeryLauncher.exe`.
-2. **Source:** mount your Windows ISO and point PhoenixPE at it. Pick the
-   **Pro** edition index. (Windows S isn't supported.)
-3. **Core:** keep the defaults (Explorer shell, networking, Wi-Fi if offered).
-4. **Drivers:** add storage and network drivers for the machines you service.
-   This matters most on modern Intel laptops: with **Intel VMD/RST** enabled,
-   the NVMe drive is invisible to WinPE unless the Intel RST VMD driver is
-   injected. Drop the extracted `.inf` driver folders into PhoenixPE's driver
-   integration option.
-5. **Apps:** enable only what must be *inside* the image, like a browser, 7-Zip
-   and the built-in utilities you want on the Start menu. Don't enable the ones
-   listed in `tools.toml` under `kind = "app"`, because those come from the USB
-   and stay current.
-6. **Launcher (optional but nice):** add `pe/launcher/CommanderApps.cmd` as an
-   additional file with a desktop shortcut, using PhoenixPE's custom-files /
-   shortcut options (names vary by release; see the PhoenixPE wiki). Without
-   this step you can still run `Apps\CommanderApps.cmd` straight from the USB.
-7. Press **Build**. The first build takes longer because it caches the source.
+1. Unpack the PhoenixPE release inside the VM, e.g. `C:\PhoenixPE`.
+2. Copy this repo's `pe\` folder into the VM too (or share it), then apply the
+   Commander preset from PowerShell:
+
+   ```powershell
+   cd <repo>\pe\phoenixpe
+   powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 C:\PhoenixPE -WhatIf   # preview
+   powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 C:\PhoenixPE
+   ```
+
+   This installs the **Commander Rescue** add-on (the app launcher, with
+   desktop and Start menu shortcuts) and ticks the options in
+   [`phoenixpe/preset.txt`](phoenixpe/preset.txt):
+
+   | | |
+   |---|---|
+   | **Intel RST driver** | NVMe drives behind Intel VMD/RST (most 11th-gen+ Intel laptops) are invisible to WinPE without it |
+   | **Network drivers** | Windows' own extra Wi-Fi and Ethernet drivers |
+   | **PowerShell, Task Manager** | the full versions, not WinPE's cut-down ones |
+   | **VC++ 2015–2026 runtime** | so the portable apps on the USB start |
+   | Notepad++ **off** | it comes from `USB:\Apps` instead, always current |
+
+   Everything else stays at PhoenixPE's defaults: Explorer with StartAllBack,
+   networking, audio, ramdisk, 7-Zip, Firefox. Edit `preset.txt` to taste; a
+   script PhoenixPE has renamed is reported, not guessed at.
+3. Run `PEBakeryLauncher.exe`. **Source:** mount your Windows ISO, point
+   PhoenixPE at it and pick the **Pro** edition index. (Windows S isn't
+   supported.)
+4. **Extra drivers (optional):** for storage or network hardware not covered
+   above, drop the extracted `.inf` driver folders into *Drivers → Driver
+   Integration* and tick it.
+5. Press **Build**. The first build takes longer because it caches the source.
    Later builds take a few minutes.
-8. Test the ISO in the VM (boot it as a CD) before putting it on the stick.
+6. Test the ISO in the VM (boot it as a CD) before putting it on the stick:
+   the desktop should show **Commander Apps**.
 
 ## Put it on the stick
 
