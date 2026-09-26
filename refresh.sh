@@ -74,10 +74,23 @@ if ((upgrade)); then
   vdir=$("$CRESCUE" ventoy-path)
   disk=/dev/$(lsblk -no PKNAME "$part" | head -n1)
   [[ -b $disk ]] || die "can't work out which disk $part is on"
-  head "Upgrading Ventoy on $disk (your files are kept)"
+  want=$(basename "$vdir" | sed 's/^ventoy-//')
   unmount_part "$part"
-  (cd "$vdir" && printf 'y\n' | sudo ./Ventoy2Disk.sh -u "$disk")
-  sudo udevadm settle 2>/dev/null || sleep 3
+  old=$(ventoy_info "$vdir" "$disk")
+  [[ -n $old ]] || die "Ventoy can't find its install on $disk"
+  if [[ ${old%%$'\t'*} == "$want" ]]; then
+    ok "Ventoy is already $want"
+  else
+    head "Upgrading Ventoy ${old%%$'\t'*} → $want on $disk (your files are kept)"
+    # -u turns Secure Boot support on unless told otherwise; keep the stick's setting.
+    flags=(-u)
+    [[ ${old#*$'\t'} == NO ]] && flags+=(-S)
+    (cd "$vdir" && printf 'y\n' | sudo ./Ventoy2Disk.sh "${flags[@]}" "$disk")
+    sudo udevadm settle 2>/dev/null || sleep 3
+    got=$(ventoy_info "$vdir" "$disk")
+    [[ ${got%%$'\t'*} == "$want" ]] || die "Ventoy upgrade on $disk didn't finish — see $vdir/log.txt"
+    ok "Ventoy upgraded to $want"
+  fi
   mnt=$(mount_part "$part")
 fi
 

@@ -63,6 +63,7 @@ if ((list_only)); then
 fi
 [[ $EUID -ne 0 ]] || die "run this as your normal user — it asks for sudo only for the Ventoy step"
 need sudo
+((gpt)) && need parted  # Ventoy can only make GPT sticks with parted
 
 # ── 1. Download + verify everything first ────────────────────────────────
 if ((skip_fetch)); then
@@ -117,10 +118,13 @@ flags=(-I)
 if ((secure)); then flags+=(-s); else flags+=(-S); fi
 [[ -n $reserve ]] && flags+=(-r "$reserve")
 
-head "Installing Ventoy $(basename "$vdir" | sed 's/^ventoy-//')"
+want=$(basename "$vdir" | sed 's/^ventoy-//')
+head "Installing Ventoy $want"
 # Ventoy2Disk.sh asks "Continue?" twice; we've already confirmed above.
 (cd "$vdir" && printf 'y\ny\n' | sudo ./Ventoy2Disk.sh "${flags[@]}" "$dev")
 sudo udevadm settle 2>/dev/null || sleep 3
+got=$(ventoy_info "$vdir" "$dev")
+[[ ${got%%$'\t'*} == "$want" ]] || die "Ventoy didn't install on $dev — see $vdir/log.txt"
 
 part=$(first_partition "$dev")
 [[ -n $part ]] || die "can't find the Ventoy data partition on $dev"

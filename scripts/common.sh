@@ -68,6 +68,16 @@ for d in json.load(sys.stdin)["blockdevices"]:
 '
 }
 
+# What Ventoy says is on a disk, as "VERSION<TAB>YES|NO" (Secure Boot), or
+# nothing if the disk has no Ventoy. Ventoy2Disk.sh exits 0 even when it bails
+# out at a prompt, so this is how we know an install/upgrade really happened.
+ventoy_info() {  # ventoy_info <ventoy dir> <disk>
+  { (cd "$1" && sudo ./Ventoy2Disk.sh -l "$2") 2>/dev/null || true; } | awk -F': *' '
+    /^Ventoy Version in Disk/ {v = $2}
+    /^Secure Boot Support/    {s = $2}
+    END { if (v != "") print v "\t" s }'
+}
+
 first_partition() {
   lsblk -lnpo NAME,TYPE "$1" | awk '$2=="part"{print $1; exit}'
 }
