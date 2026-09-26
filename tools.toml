@@ -20,13 +20,14 @@
 #   category    one of the [[category]] ids below (iso only)
 #   enabled     include in fetch/sync (default true)
 #   source      "github" | "sourceforge" | "url" | "local"
-#     github:       repo = "owner/name"
+#     github:       repo = "owner/name"   (+ optional download_template when the
+#                   release has no files: "https://site/v{version}/file-{version}.iso")
 #     sourceforge:  project = "name", path = "/folder"
 #     url:          url = "https://..."
 #     local:        path = "relative/to/repo.iso"
 #   asset       list of regexes tried in order against release file names;
 #               the first regex that matches anything wins
-#   version     optional regex with one capture group, applied to the file name
+#   version     optional regex applied to the file name (capture groups joined with -)
 #               (falls back to the GitHub release tag, then to the fetch date)
 #   version_pin fixed version string for hand-bumped `url` sources
 #   extract     optional regex: pull a matching member out of a downloaded .zip
@@ -175,10 +176,10 @@ kind = "iso"
 category = "diagnostics"
 source = "github"
 repo = "memtest86plus/memtest86plus"
-asset = ['_64\.iso\.zip$', 'x86_64\.iso\.zip$']
-version = 'mt86plus_([\d.]+)'
+# Releases are tagged on GitHub but the ISOs are published on memtest.org.
+download_template = "https://www.memtest.org/download/v{version}/mt86plus_{version}_x86_64.iso.zip"
 extract = '\.iso$'
-checksum = ["github-digest", "tofu"]
+checksum = [{ sibling = "sha512sum.txt" }, { sibling = "sha256sum.txt" }]
 description = "RAM tester (UEFI and BIOS)."
 
 # ── Secure wipe ───────────────────────────────────────────────────────────
@@ -190,7 +191,7 @@ category = "wipe"
 source = "github"
 repo = "PartialVolume/shredos.x86_64"
 asset = ['x86-64.*\.iso$']
-version = '_x86-64_([\d.]+)_'
+version = 'shredos-([\d.]+_\d+)_x86-64_v?([\d.]+)_'
 checksum = ["github-digest", { asset = '{name}\.sha(1|256)$' }]
 description = "Boots straight into nwipe. DESTROYS DATA on the disks you select."
 

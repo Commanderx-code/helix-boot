@@ -4,22 +4,25 @@ on:
   push:
   pull_request:
   schedule:
-    - cron: "17 9 * * 1"   # Mondays: make sure every upstream still resolves
+    - cron: "17 9 * * 1"   # Mondays: make sure every upstream still resolves and verifies
   workflow_dispatch:
+
+# GitHub shows at most 10 annotations of each level per step, so results are
+# grouped into one annotation per level (lines joined with %0A).
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Unit + end-to-end tests
         run: python -m unittest discover -s tests -v
       - name: Shellcheck
         run: |
-          # gcc format → GitHub annotations on the exact line
+          # gcc format → annotations on the exact line
           shellcheck -x -f gcc install.sh refresh.sh scripts/common.sh \
             | sed -E 's/^([^:]+):([0-9]+):([0-9]+): (error|warning|note): (.*)$/::\4 file=\1,line=\2,col=\3::\5/; s/^::note /::notice /'
           exit "${PIPESTATUS[0]}"
@@ -28,8 +31,8 @@ jobs:
     # Catches upstreams that renamed their files or moved (asset regex no longer matches).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Resolve latest releases
@@ -42,32 +45,31 @@ jobs:
           python - <<'EOF'
           import json, os
           d = json.load(open("upstream.json"))
+          good, bad = [], []
           rows = ["| tool | status | latest | file |", "|---|---|---|---|"]
           for k, v in sorted(d.items()):
               if "error" in v:
-                  print(f"::error title={k}::{v['error']}")
+                  bad.append(f"{k}: {v['error']}")
                   rows.append(f"| {k} | ❌ | | {v['error'][:120]} |")
               else:
-                  print(f"::notice title={k}::{v.get('latest') or '—'}  {v.get('file') or ''}")
+                  good.append(f"{k}: {v.get('latest') or '—'}  {v.get('file') or ''}")
                   rows.append(f"| {k} | ✅ | {v.get('latest') or '—'} | {v.get('file') or ''} |")
+          enc = lambda xs: "%0A".join(x.replace("%", "%25") for x in xs)
+          if good: print(f"::notice title=resolved ({len(good)})::{enc(good)}")
+          if bad:  print(f"::error title=failed ({len(bad)})::{enc(bad)}")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write("\n".join(rows) + "\n")
           EOF
           exit $rc
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: upstream
-          path: upstream.json
 
   fetch:
-    # Real downloads + checksum verification of everything small enough to be quick.
+    # Real downloads + checksum verification of everything (~4 GB).
     runs-on: ubuntu-latest
     needs: upstream
     if: always()
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Fetch and verify
@@ -76,15 +78,17 @@ jobs:
           CRESCUE_CACHE: ${{ runner.temp }}/crescue
           NO_COLOR: "1"
         run: |
-          set -o pipefail
-          ./crescue fetch 2>&1 | tee fetch.log
+          set +e
+          ./crescue fetch > fetch.log 2>&1
           rc=$?
-          grep -E '^(✓|✗|!)' fetch.log | while IFS= read -r l; do
-            case $l in
-              ✗*) echo "::error title=fetch::${l#✗ }" ;;
-              !*) echo "::warning title=fetch::${l#! }" ;;
-              *)  echo "::notice title=fetch::${l#✓ }" ;;
-            esac
-          done
-          du -sh "$CRESCUE_CACHE"/* 2>/dev/null | sed 's/^/::notice title=size::/'
+          cat fetch.log
+          enc() { sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g'; }
+          ok=$(grep '^✓' fetch.log | enc); warn=$(grep '^!' fetch.log | enc); err=$(grep -A2 '^✗' fetch.log | enc)
+          [[ -n $ok ]]   && echo "::notice title=verified::$ok"
+          [[ -n $warn ]] && echo "::warning title=warnings::$warn"
+          [[ -n $err ]]  && echo "::error title=failed::$err"
+          echo "::notice title=cache::$(du -sh "$CRESCUE_CACHE"/* 2>/dev/null | enc)"
+          # Second run must be a no-op (proves "up to date" detection works upstream-side too)
+          ./crescue fetch > again.log 2>&1
+          echo "::notice title=second run::$(grep -c 'up to date' again.log) up to date, $(grep -c 'downloading' again.log) re-downloaded"
           exit $rc

@@ -35,7 +35,7 @@ __version__ = "0.1.0"
 REPO = Path(__file__).resolve().parent
 GITHUB_API = os.environ.get("CRESCUE_GITHUB_API", "https://api.github.com")
 SF_RSS = os.environ.get(
-    "CRESCUE_SF_RSS", "https://sourceforge.net/projects/{project}/rss?path={path}&limit=200"
+    "CRESCUE_SF_RSS", "https://sourceforge.net/projects/{project}/rss?path={path}"  # SourceForge rejects limit > 100
 )
 SF_DL = os.environ.get("CRESCUE_SF_DL", "https://downloads.sourceforge.net/project/{project}{path}")
 USER_AGENT = f"commander-rescue/{__version__} (+https://github.com/Commanderx-code/commander-rescue)"
@@ -137,8 +137,8 @@ class Config:
         for key in SOURCES[src]:
             if key not in t:
                 raise RescueError(f"{where}: source '{src}' needs '{key}'")
-        if src in ("github", "sourceforge") and not t.get("asset"):
-            raise RescueError(f"{where}: needs an 'asset' regex list")
+        if src in ("github", "sourceforge") and not (t.get("asset") or t.get("download_template")):
+            raise RescueError(f"{where}: needs an 'asset' regex list (or a download_template)")
         if t["kind"] == "iso" and t.get("category") not in self.categories:
             raise RescueError(f"{where}: category '{t.get('category')}' isn't a [[category]] id")
         if src != "local" and not t.get("checksum"):
@@ -297,10 +297,16 @@ def _version(tool: dict, filename: str, fallback: str | None) -> str:
     if tool.get("version"):
         m = re.search(tool["version"], filename)
         if m:
-            return m.group(1) if m.groups() else m.group(0)
+            return "-".join(g for g in m.groups() if g) if m.groups() else m.group(0)
     if fallback:
-        return fallback.lstrip("vV")
+        return clean_tag(fallback)
     return dt.date.today().isoformat()
+
+
+def clean_tag(tag: str) -> str:
+    """'v8.10' → '8.10', 'version-1.4.0' → '1.4.0', 'rel_2024' → '2024'."""
+    m = re.search(r"\d[\w.+-]*", tag)
+    return m.group(0) if m else tag
 
 
 def resolve(tool: dict, cfg: Config) -> dict:
@@ -316,6 +322,14 @@ def resolve(tool: dict, cfg: Config) -> dict:
             raise RescueError(f"{tool['repo']} has no published releases on GitHub") from None
         rel = json.loads(raw)
         assets = {a["name"]: a for a in rel.get("assets", [])}
+        if tool.get("download_template"):
+            # GitHub only tells us the version; the file lives on the project's own site.
+            ver = clean_tag(rel.get("tag_name") or "")
+            url = tool["download_template"].format(version=ver, tag=rel.get("tag_name"))
+            res.update(file=urllib.parse.unquote(url.rsplit("/", 1)[-1]), url=url,
+                       dir_url=url.rsplit("/", 1)[0], tag=rel.get("tag_name"), gh_assets=assets)
+            res["version"] = _version(tool, res["file"], ver)
+            return res
         hits = _pick(list(assets), tool["asset"])
         if not hits:
             raise RescueError(

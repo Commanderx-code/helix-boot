@@ -58,7 +58,7 @@ need lsblk util-linux
 need findmnt util-linux
 if ((list_only)); then
   mapfile -t sticks < <(usb_disks)
-  ((${#sticks[@]})) && show_sticks || info "no USB sticks found"
+  if ((${#sticks[@]})); then show_sticks; else info "no USB sticks found"; fi
   exit 0
 fi
 [[ $EUID -ne 0 ]] || die "run this as your normal user — it asks for sudo only for the Ventoy step"
@@ -85,7 +85,7 @@ if [[ -z $dev ]]; then
   head "USB sticks"
   show_sticks
   read -rp "Which one? [1-${#sticks[@]}] " n
-  [[ $n =~ ^[0-9]+$ ]] && ((n >= 1 && n <= ${#sticks[@]})) || die "not a choice: $n"
+  if ! [[ $n =~ ^[0-9]+$ ]] || ((n < 1 || n > ${#sticks[@]})); then die "not a choice: $n"; fi
   dev=${sticks[$((n - 1))]%%$'\t'*}
 fi
 

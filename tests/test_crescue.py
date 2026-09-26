@@ -147,10 +147,9 @@ kind = "iso"
 category = "diagnostics"
 source = "github"
 repo = "memtest86plus/memtest86plus"
-asset = ['_64\\.iso\\.zip$']
-version = 'mt86plus_([\\d.]+)'
+download_template = "{base}/memtest/download/v{{version}}/mt86plus_{{version}}_x86_64.iso.zip"
 extract = '\\.iso$'
-checksum = ["github-digest", "tofu"]
+checksum = [{{ sibling = "sha512sum.txt" }}]
 
 [[tool]]
 name = "commander-pe"
@@ -196,10 +195,11 @@ class Base(unittest.TestCase):
         ])
         put("dl/systemrescuecd/sysresccd-x86/12.02/systemrescue-12.02-amd64.iso.sha512",
             f"{sha(self.sr_new, 'sha512')}  systemrescue-12.02-amd64.iso\n")
-        gh_release("memtest86plus/memtest86plus", "v8.00", {
-            "mt86plus_8.00_64.iso.zip": zipped({"memtest.iso": b"memtest iso"}),
-            "mt86plus_8.00_64.grub.iso.zip": b"nope",
-        })
+        gh_release("memtest86plus/memtest86plus", "v8.10", {})   # no assets: files live on memtest.org
+        mz = zipped({"memtest.iso": b"memtest iso"})
+        put("memtest/download/v8.10/mt86plus_8.10_x86_64.iso.zip", mz)
+        put("memtest/download/v8.10/sha512sum.txt",
+            f"{sha(b'x', 'sha512')}  mt86plus_8.10_i586.iso.zip\n{sha(mz, 'sha512')}  mt86plus_8.10_x86_64.iso.zip\n")
         put("web/SysinternalsSuite.zip", zipped({"procexp64.exe": b"MZ procexp", "Eula.txt": b"eula"}))
         self.cfg = cr.Config(repo=self.repo)
 
@@ -243,6 +243,17 @@ class TestChecksumParsing(unittest.TestCase):
         self.assertIsNone(cr.parse_checksum_text(f"{'a'*64}  a\n{'b'*64}  b\n", "c"))
 
 
+class TestVersions(unittest.TestCase):
+    def test_clean_tag(self):
+        self.assertEqual(cr.clean_tag("v8.10"), "8.10")
+        self.assertEqual(cr.clean_tag("version-1.4.0"), "1.4.0")
+        self.assertEqual(cr.clean_tag("v2025.11_31_x86-64_0.42"), "2025.11_31_x86-64_0.42")
+
+    def test_multi_group_version(self):
+        t = {"version": r"shredos-([\d.]+_\d+)_x86-64_v?([\d.]+)_"}
+        self.assertEqual(cr._version(t, "shredos-2025.11_31_x86-64_v0.42_20260716.iso", None), "2025.11_31-0.42")
+
+
 class TestConfig(Base):
     def test_missing_checksum_rejected(self):
         (self.repo / "tools.toml").write_text(
@@ -276,6 +287,8 @@ class TestFetchAndSync(Base):
         self.assertEqual(lock["ventoy"]["final"], "ventoy-1.1.17")
         self.assertIn("sha256.txt", lock["ventoy"]["verified_by"])
         self.assertEqual(lock["memtest86plus"]["final"], "memtest.iso")
+        self.assertEqual(lock["memtest86plus"]["version"], "8.10")
+        self.assertIn("sha512sum.txt", lock["memtest86plus"]["verified_by"])
         self.assertEqual(lock["sysinternals"]["verified_by"], "unverified (trust on first use)")
 
         # second run: everything current, nothing re-downloaded
