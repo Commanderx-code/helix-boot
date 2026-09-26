@@ -202,6 +202,7 @@ name = "hdat2"
 title = "HDAT2"
 kind = "iso"
 category = "diagnostics"
+enabled = false            # hdat2.com often times out; enable in local.toml if it answers for you
 source = "page"
 page = "https://www.hdat2.com/download.html"
 asset = ['hdat2cd_\d+\.iso$']

@@ -38,7 +38,7 @@ all frozen at 2021 versions. Commander Rescue keeps the idea and drops the rest:
 | Backup & Recovery | Rescuezilla, Clonezilla | GitHub · sha256 / SourceForge · sha512 |
 | Partitioning | GParted Live | SourceForge · sha512 |
 | Hardware Diagnostics | Memtest86+ | memtest.org · sha512 |
-| | HDAT2 *(BIOS boot only)* | hdat2.com · unverified |
+| | HDAT2 *(BIOS boot only; off by default: its site often times out)* | hdat2.com · unverified |
 | Secure Wipe | ShredOS (nwipe) | GitHub · sha256 |
 | Boot Repair | Super GRUB2 Disk | SourceForge · sha256 |
 | | Boot-Repair-Disk | SourceForge · md5 |
@@ -51,7 +51,8 @@ first download and refused if it later changes without a new version (see
 below). Antivirus tools carry their virus definitions, so `./refresh.sh`
 before a job keeps them current. Microsoft Safety Scanner stops working 10
 days after download. Kaspersky refuses downloads from the US, so its two
-tools are off; outside the US, turn them on in `local.toml`:
+tools are off; outside the US, turn them on in `local.toml` (the same goes
+for `hdat2` if its site answers for you):
 
 ```toml
 [overrides.kaspersky-rd]
