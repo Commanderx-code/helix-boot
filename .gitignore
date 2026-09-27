@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 byo/*
 !byo/README.md
+build/
+dist/
+commander-rescue.log

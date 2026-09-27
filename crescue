@@ -83,13 +83,18 @@ class RescueError(Exception):
 
 # ── Config ────────────────────────────────────────────────────────────────
 class Config:
-    def __init__(self, repo: Path = REPO, manifest: Path | None = None):
+    def __init__(self, repo: Path = REPO, manifest: Path | None = None, assets: Path | None = None,
+                 windows: bool | None = None):
+        """repo: your folder (local.toml, byo/). assets: the shipped files (tools.toml, theme/,
+        pe/launcher/), the same folder except in the Windows app, which carries them inside."""
         self.repo = repo
-        path = manifest or repo / "tools.toml"
+        self.assets = assets or repo
+        self.windows = os.name == "nt" if windows is None else windows
+        path = manifest or self.assets / "tools.toml"
         if not path.exists():
             raise RescueError(f"can't find {path}")
         try:
-            data = tomllib.loads(path.read_text())
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
         except tomllib.TOMLDecodeError as e:
             raise RescueError(f"{path.name} has a syntax error: {e}") from None
 
@@ -97,7 +102,7 @@ class Config:
         overrides: dict = {}
         if local.exists() and manifest is None:
             try:
-                ldata = tomllib.loads(local.read_text())
+                ldata = tomllib.loads(local.read_text(encoding="utf-8"))
             except tomllib.TOMLDecodeError as e:
                 raise RescueError(f"local.toml has a syntax error: {e}") from None
             overrides = ldata.get("overrides", {})
@@ -110,6 +115,8 @@ class Config:
         seen = set()
         for t in data.get("tool", []):
             t = {**t, **overrides.get(t.get("name", ""), {})}
+            if self.windows:  # `windows = { asset = [...] }` swaps in the Windows download
+                t.update(t.get("windows", {}))
             self._validate(t, seen)
             seen.add(t["name"])
             self.tools.append(t)
@@ -523,13 +530,13 @@ def expected_hash(tool: dict, res: dict) -> tuple[str, str | None, str]:
 # ── Lock file ─────────────────────────────────────────────────────────────
 def load_lock(cfg: Config) -> dict:
     p = cfg.cache / "lock.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
 def save_lock(cfg: Config, lock: dict) -> None:
     cfg.cache.mkdir(parents=True, exist_ok=True)
     tmp = cfg.cache / "lock.json.tmp"
-    tmp.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n")
+    tmp.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(tmp, cfg.cache / "lock.json")
 
 
@@ -623,6 +630,14 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
             final = Path(m.filename).name
             with zf.open(m) as s, open(tdir / final, "wb") as d:
                 shutil.copyfileobj(s, d)
+    elif tool["kind"] == "ventoy" and zipfile.is_zipfile(dest):  # the Windows package
+        with zipfile.ZipFile(dest) as zf:
+            members = _safe_zip_members(zf)
+            top = {m.filename.split("/", 1)[0] for m in members}
+            zf.extractall(tdir, members=members)
+        if len(top) != 1:
+            raise RescueError(f"unexpected Ventoy archive layout: {sorted(top)}")
+        final = top.pop()
     elif tool["kind"] == "ventoy":
         with tarfile.open(dest) as tar:
             top = {n.split("/", 1)[0] for n in tar.getnames()}
@@ -723,6 +738,11 @@ def cmd_fetch(cfg: Config, args) -> int:
 
 
 def _label_of(mount: Path) -> str | None:
+    if os.name == "nt":
+        import ctypes
+        buf = ctypes.create_unicode_buffer(261)
+        ok = ctypes.windll.kernel32.GetVolumeInformationW(str(mount.anchor), buf, 261, None, None, None, None, 0)
+        return (buf.value or None) if ok else None
     try:
         src = subprocess.run(["findmnt", "-no", "SOURCE", "--target", str(mount)],
                              capture_output=True, text=True, check=True).stdout.strip()
@@ -755,7 +775,7 @@ def build_ventoy_json(cfg: Config, placed: list[dict]) -> dict:
         "menu_alias": alias,
     }
     theme = cfg.settings.get("theme")
-    theme_dir = cfg.repo / theme if theme else None
+    theme_dir = cfg.assets / theme if theme else None
     if tips:
         doc["menu_tip"] = {"left": "10%", "top": "80%", "tips": tips,
                            "color": "#8b98a9" if theme_dir and theme_dir.is_dir() else "#7fb4ff"}
@@ -771,6 +791,24 @@ def build_ventoy_json(cfg: Config, placed: list[dict]) -> dict:
                       for f in sorted(theme_dir.rglob("*.pf2"))],
         }
     return doc
+
+
+def _flush_volume(mnt: Path) -> None:
+    """Push everything written to the stick out of the OS cache."""
+    if hasattr(os, "sync"):  # Linux / macOS
+        os.sync()
+        return
+    if os.name == "nt":  # FlushFileBuffers on the volume (needs admin, which the Windows app has)
+        try:
+            import ctypes
+            k32 = ctypes.windll.kernel32
+            k32.CreateFileW.restype = ctypes.c_void_p
+            h = k32.CreateFileW(f"\\\\.\\{mnt.drive}", 0x40000000, 0x3, None, 3, 0, None)
+            if h not in (None, ctypes.c_void_p(-1).value):
+                k32.FlushFileBuffers(ctypes.c_void_p(h))
+                k32.CloseHandle(ctypes.c_void_p(h))
+        except (OSError, AttributeError):
+            pass  # files are fsynced as they're written; this is belt and braces
 
 
 def _copy(src: Path, dst: Path) -> None:
@@ -797,7 +835,7 @@ def cmd_sync(cfg: Config, args) -> int:
             )
     lock = load_lock(cfg)
     state_path = state_dir / "state.json"
-    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
 
     placed, want_files, missing = [], set(), []
     for t in cfg.enabled(kinds={"iso"}):
@@ -894,7 +932,7 @@ def cmd_sync(cfg: Config, args) -> int:
     lines = [f"{t['title']}|{t['name']}\\{t.get('entry', '').replace('/', chr(92))}"
              for t, _, _ in apps if t.get("entry")]
     (app_root / "apps.txt").write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
-    launcher = cfg.repo / "pe" / "launcher"
+    launcher = cfg.assets / "pe" / "launcher"
     if launcher.is_dir():  # works from any WinPE, including Hiren's
         for f in launcher.glob("*.cmd"):
             shutil.copy2(f, app_root / f.name)
@@ -907,20 +945,21 @@ def cmd_sync(cfg: Config, args) -> int:
         shutil.copy2(vjson, backup)
         warn(f"your existing ventoy.json was backed up to ventoy/{backup.name}")
     if cfg.settings.get("theme"):
-        theme_src = cfg.repo / cfg.settings["theme"]
+        theme_src = cfg.assets / cfg.settings["theme"]
         if theme_src.is_dir():
             shutil.rmtree(vdir / "theme", ignore_errors=True)
-            shutil.copytree(theme_src, vdir / "theme", ignore=shutil.ignore_patterns("*.py"))
-    vjson.write_text(json.dumps(build_ventoy_json(cfg, placed), indent=2) + "\n")
+            shutil.copytree(theme_src, vdir / "theme", ignore=shutil.ignore_patterns("*.py", "*.pyc", "__pycache__"))
+    vjson.write_text(json.dumps(build_ventoy_json(cfg, placed), indent=2) + "\n", encoding="utf-8")
 
-    (mnt / TAG_FILE).write_text(f"Commander Rescue {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n")
+    (mnt / TAG_FILE).write_text(f"Commander Rescue {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n",
+                              encoding="utf-8")
     state_dir.mkdir(exist_ok=True)
     state_path.write_text(json.dumps({
         "files": sorted(want_files), "apps": app_state, "ventoy_json_sha": file_hash(vjson),
         "synced": dt.datetime.now().isoformat(timespec="seconds"), "crescue": __version__,
-    }, indent=2) + "\n")
+    }, indent=2) + "\n", encoding="utf-8")
     info("flushing writes to the stick…")
-    os.sync()
+    _flush_volume(mnt)
     ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
     return 0
 
@@ -930,15 +969,16 @@ def cmd_ventoy_path(cfg: Config, args) -> int:
     t = next((t for t in cfg.tools if t["kind"] == "ventoy"), None)
     entry = lock.get(t["name"]) if t else None
     path = cfg.cache / t["name"] / entry["final"] if entry else None
-    if not path or not (path / "Ventoy2Disk.sh").exists():
+    if not path or not any((path / f).exists() for f in ("Ventoy2Disk.sh", "Ventoy2Disk.exe")):
         raise RescueError("Ventoy isn't fetched yet — run `crescue fetch ventoy`")
     print(path)
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(line_buffering=True)  # keep stdout/stderr in order when both go to one log
+    for stream in (sys.stdout, sys.stderr):  # line-buffered keeps a shared log in order; errors=replace
+        if hasattr(stream, "reconfigure"):     # keeps ✓/✗ from crashing a non-UTF-8 Windows console
+            stream.reconfigure(line_buffering=True, errors="replace")
     ap = argparse.ArgumentParser(prog="crescue", description="Build and refresh the Commander Rescue USB.")
     ap.add_argument("--version", action="version", version=f"crescue {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")

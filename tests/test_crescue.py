@@ -17,6 +17,7 @@ import tarfile
 import tempfile
 import threading
 import unittest
+import unittest.mock
 import zipfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -445,6 +446,8 @@ class TestFetchAndSync(Base):
         (theme / "fonts/b.pf2").write_bytes(b"PFF2")
         (theme / "fonts/a.pf2").write_bytes(b"PFF2")
         (theme / "build-theme.py").write_text("# generator, not for the stick\n")
+        (theme / "__pycache__").mkdir()
+        (theme / "__pycache__/build-theme.cpython-311.pyc").write_bytes(b"pyc")
         (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
         self.cfg = cr.Config(repo=self.repo)
         self.fetch("systemrescue")
@@ -520,6 +523,45 @@ class TestFetchAndSync(Base):
         self.assertIn("Trial Tool|trial\\Trial.exe", apps)
         self.assertIn("Suite|suite\\Suite\\suite.exe", apps)
 
+    def test_windows_gets_the_windows_ventoy_package(self):
+        wzip = zipped({"ventoy-1.1.17/Ventoy2Disk.exe": b"MZ ventoy", "ventoy-1.1.17/ventoy/x.bin": b"x"})
+        gh_release("ventoy/Ventoy", "v1.1.17", {
+            "ventoy-1.1.17-linux.tar.gz": self.ventoy_tgz,
+            "ventoy-1.1.17-windows.zip": wzip,
+            "sha256.txt": f"{sha(self.ventoy_tgz)}  ventoy-1.1.17-linux.tar.gz\n"
+                          f"{sha(wzip)}  ventoy-1.1.17-windows.zip\n".encode(),
+        }, digests=False)
+        (self.repo / "local.toml").write_text(
+            "[overrides.ventoy]\nwindows = { asset = ['^ventoy-[\\d.]+-windows\\.zip$'], "
+            "version = 'ventoy-([\\d.]+)-windows' }\n")
+        self.cfg = cr.Config(repo=self.repo, windows=True)
+        rc, out = self.fetch("ventoy")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("sha256 from sha256.txt", out)
+        entry = cr.load_lock(self.cfg)["ventoy"]
+        self.assertEqual((entry["version"], entry["final"]), ("1.1.17", "ventoy-1.1.17"))
+        self.assertTrue((self.cfg.cache / "ventoy/ventoy-1.1.17/Ventoy2Disk.exe").exists())
+        self.assertEqual(self.run_quiet(cr.cmd_ventoy_path, self.cfg, None)[0], 0)
+        # …and Linux, with the same manifest, still takes the tarball
+        linux = cr.Config(repo=self.repo, windows=False)
+        self.assertEqual(cr.resolve(next(t for t in linux.tools if t["name"] == "ventoy"), linux)["file"],
+                         "ventoy-1.1.17-linux.tar.gz")
+
+    def test_assets_folder_is_separate_from_your_folder(self):
+        assets = self.tmp / "bundle"
+        (assets / "pe/launcher").mkdir(parents=True)
+        shutil.copy2(self.repo / "tools.toml", assets / "tools.toml")
+        (assets / "pe/launcher/CommanderApps.cmd").write_text("rem bundled")
+        mine = self.tmp / "mine"
+        mine.mkdir()
+        (mine / "local.toml").write_text('[overrides.systemrescue]\ntitle = "My SR"\n')
+        cfg = cr.Config(repo=mine, assets=assets)
+        self.assertEqual(next(t for t in cfg.tools if t["name"] == "systemrescue")["title"], "My SR")
+        self.cfg = cfg
+        self.fetch("systemrescue")
+        self.assertEqual(self.sync()[0], 0)
+        self.assertEqual((self.stick / "Apps/CommanderApps.cmd").read_text(), "rem bundled")
+
     def test_dry_run_writes_nothing(self):
         self.fetch("systemrescue")
         rc, out = self.sync(dry_run=True)
@@ -564,6 +606,33 @@ class TestDownloadRetry(unittest.TestCase):
         with self.assertRaisesRegex(cr.RescueError, "HTTP 404"):
             with redirect_stderr(io.StringIO()):
                 cr.download(f"{BASE}/retry/missing.iso", self.tmp / "missing.iso")
+
+
+class TestPortability(unittest.TestCase):
+    def test_flush_without_os_sync(self):
+        # Windows has no os.sync(); sync used to crash there after copying everything.
+        with unittest.mock.patch.object(cr.os, "sync", create=True) as s:
+            cr._flush_volume(Path("/"))
+            s.assert_called_once()
+        saved = cr.os.sync
+        del cr.os.sync
+        try:
+            cr._flush_volume(Path("/"))   # no os.sync, not Windows: quietly nothing
+        finally:
+            cr.os.sync = saved
+
+
+class TestEncoding(unittest.TestCase):
+    def test_text_io_is_always_utf8(self):
+        # Windows defaults to cp1252: tools.toml's "→" would reach the boot menu as "â†’".
+        import ast
+        bad = []
+        for node in ast.walk(ast.parse((ROOT / "crescue").read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                    and node.func.attr in ("read_text", "write_text") \
+                    and not any(k.arg == "encoding" for k in node.keywords):
+                bad.append(node.lineno)
+        self.assertEqual(bad, [], "read_text/write_text without encoding= at these lines")
 
 
 class TestShellHelpers(unittest.TestCase):

@@ -1,0 +1,25 @@
+# PyInstaller build for the Windows app:  pyinstaller windows/CommanderRescue.spec
+# (from the repo root). One file, no console, asks for admin (Ventoy writes to disks).
+import sys
+from pathlib import Path
+
+root = Path(SPECPATH).parent
+datas = [
+    (str(root / "crescue"), "."),
+    (str(root / "tools.toml"), "."),
+    (str(root / "pe" / "launcher"), "pe/launcher"),
+    (str(root / "byo" / "README.md"), "byo"),
+]
+datas += [(str(p), "theme/fonts" if p.parent.name == "fonts" else "theme")
+          for p in (root / "theme").rglob("*")
+          if p.is_file() and p.suffix not in (".py", ".pyc") and "__pycache__" not in p.parts]
+
+a = Analysis([str(root / "windows" / "commander_rescue.py")], datas=datas)
+pyz = PYZ(a.pure)
+exe = EXE(
+    pyz, a.scripts, a.binaries, a.datas,
+    name="CommanderRescue",
+    console=False,
+    uac_admin=sys.platform == "win32",
+    upx=False,
+)
