@@ -17,6 +17,7 @@ import tarfile
 import tempfile
 import threading
 import unittest
+import unittest.mock
 import zipfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -605,6 +606,33 @@ class TestDownloadRetry(unittest.TestCase):
         with self.assertRaisesRegex(cr.RescueError, "HTTP 404"):
             with redirect_stderr(io.StringIO()):
                 cr.download(f"{BASE}/retry/missing.iso", self.tmp / "missing.iso")
+
+
+class TestPortability(unittest.TestCase):
+    def test_flush_without_os_sync(self):
+        # Windows has no os.sync(); sync used to crash there after copying everything.
+        with unittest.mock.patch.object(cr.os, "sync", create=True) as s:
+            cr._flush_volume(Path("/"))
+            s.assert_called_once()
+        saved = cr.os.sync
+        del cr.os.sync
+        try:
+            cr._flush_volume(Path("/"))   # no os.sync, not Windows: quietly nothing
+        finally:
+            cr.os.sync = saved
+
+
+class TestEncoding(unittest.TestCase):
+    def test_text_io_is_always_utf8(self):
+        # Windows defaults to cp1252: tools.toml's "→" would reach the boot menu as "â†’".
+        import ast
+        bad = []
+        for node in ast.walk(ast.parse((ROOT / "crescue").read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                    and node.func.attr in ("read_text", "write_text") \
+                    and not any(k.arg == "encoding" for k in node.keywords):
+                bad.append(node.lineno)
+        self.assertEqual(bad, [], "read_text/write_text without encoding= at these lines")
 
 
 class TestShellHelpers(unittest.TestCase):

@@ -94,7 +94,7 @@ class Config:
         if not path.exists():
             raise RescueError(f"can't find {path}")
         try:
-            data = tomllib.loads(path.read_text())
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
         except tomllib.TOMLDecodeError as e:
             raise RescueError(f"{path.name} has a syntax error: {e}") from None
 
@@ -102,7 +102,7 @@ class Config:
         overrides: dict = {}
         if local.exists() and manifest is None:
             try:
-                ldata = tomllib.loads(local.read_text())
+                ldata = tomllib.loads(local.read_text(encoding="utf-8"))
             except tomllib.TOMLDecodeError as e:
                 raise RescueError(f"local.toml has a syntax error: {e}") from None
             overrides = ldata.get("overrides", {})
@@ -530,13 +530,13 @@ def expected_hash(tool: dict, res: dict) -> tuple[str, str | None, str]:
 # ── Lock file ─────────────────────────────────────────────────────────────
 def load_lock(cfg: Config) -> dict:
     p = cfg.cache / "lock.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
 def save_lock(cfg: Config, lock: dict) -> None:
     cfg.cache.mkdir(parents=True, exist_ok=True)
     tmp = cfg.cache / "lock.json.tmp"
-    tmp.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n")
+    tmp.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(tmp, cfg.cache / "lock.json")
 
 
@@ -793,6 +793,24 @@ def build_ventoy_json(cfg: Config, placed: list[dict]) -> dict:
     return doc
 
 
+def _flush_volume(mnt: Path) -> None:
+    """Push everything written to the stick out of the OS cache."""
+    if hasattr(os, "sync"):  # Linux / macOS
+        os.sync()
+        return
+    if os.name == "nt":  # FlushFileBuffers on the volume (needs admin, which the Windows app has)
+        try:
+            import ctypes
+            k32 = ctypes.windll.kernel32
+            k32.CreateFileW.restype = ctypes.c_void_p
+            h = k32.CreateFileW(f"\\\\.\\{mnt.drive}", 0x40000000, 0x3, None, 3, 0, None)
+            if h not in (None, ctypes.c_void_p(-1).value):
+                k32.FlushFileBuffers(ctypes.c_void_p(h))
+                k32.CloseHandle(ctypes.c_void_p(h))
+        except (OSError, AttributeError):
+            pass  # files are fsynced as they're written; this is belt and braces
+
+
 def _copy(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.name + ".part")
@@ -817,7 +835,7 @@ def cmd_sync(cfg: Config, args) -> int:
             )
     lock = load_lock(cfg)
     state_path = state_dir / "state.json"
-    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
 
     placed, want_files, missing = [], set(), []
     for t in cfg.enabled(kinds={"iso"}):
@@ -931,16 +949,17 @@ def cmd_sync(cfg: Config, args) -> int:
         if theme_src.is_dir():
             shutil.rmtree(vdir / "theme", ignore_errors=True)
             shutil.copytree(theme_src, vdir / "theme", ignore=shutil.ignore_patterns("*.py", "*.pyc", "__pycache__"))
-    vjson.write_text(json.dumps(build_ventoy_json(cfg, placed), indent=2) + "\n")
+    vjson.write_text(json.dumps(build_ventoy_json(cfg, placed), indent=2) + "\n", encoding="utf-8")
 
-    (mnt / TAG_FILE).write_text(f"Commander Rescue {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n")
+    (mnt / TAG_FILE).write_text(f"Commander Rescue {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n",
+                              encoding="utf-8")
     state_dir.mkdir(exist_ok=True)
     state_path.write_text(json.dumps({
         "files": sorted(want_files), "apps": app_state, "ventoy_json_sha": file_hash(vjson),
         "synced": dt.datetime.now().isoformat(timespec="seconds"), "crescue": __version__,
-    }, indent=2) + "\n")
+    }, indent=2) + "\n", encoding="utf-8")
     info("flushing writes to the stick…")
-    os.sync()
+    _flush_volume(mnt)
     ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
     return 0
 
