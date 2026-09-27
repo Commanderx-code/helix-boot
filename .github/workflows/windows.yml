@@ -52,6 +52,7 @@ jobs:
           Run "--fetch ventoy supergrub2 memtest86plus"       # the Windows Ventoy .zip, verified
           $v = Get-ChildItem "$env:LOCALAPPDATA\CommanderRescue\cache\ventoy\*\Ventoy2Disk.exe"
           if (-not $v) { throw "Windows Ventoy package wasn't unpacked" }
+          New-Item -ItemType Directory "$env:RUNNER_TEMP\stick" | Out-Null   # stands in for a mounted stick
           Run "--sync-to $env:RUNNER_TEMP\stick --init"
           foreach ($f in "ventoy\ventoy.json", "Apps\CommanderApps.cmd", "ventoy\theme\theme.txt") {
             if (-not (Test-Path "$env:RUNNER_TEMP\stick\$f")) { throw "missing on the stick: $f" }
