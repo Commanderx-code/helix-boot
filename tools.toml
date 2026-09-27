@@ -106,6 +106,7 @@ source = "github"
 repo = "ventoy/Ventoy"
 asset = ['^ventoy-[\d.]+-linux\.tar\.gz$']
 version = 'ventoy-([\d.]+)-linux'
+windows = { asset = ['^ventoy-[\d.]+-windows\.zip$'], version = 'ventoy-([\d.]+)-windows' }
 checksum = [{ asset = '^sha256\.txt$' }, "github-digest"]
 
 # ── Windows PE ────────────────────────────────────────────────────────────

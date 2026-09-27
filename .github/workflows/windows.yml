@@ -1,0 +1,67 @@
+name: windows
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # attach the .exe to releases on version tags
+
+jobs:
+  app:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: App tests (PowerShell and Ventoy faked)
+        run: python -m unittest tests.test_windows_app -v
+
+      - name: Build CommanderRescue.exe
+        run: |
+          pip install --disable-pip-version-check pyinstaller
+          pyinstaller --noconfirm windows/CommanderRescue.spec
+
+      - name: Smoke test the real .exe
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $dir = "$env:RUNNER_TEMP\app"
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item dist\CommanderRescue.exe $dir
+          $exe = "$dir\CommanderRescue.exe"
+          function Run([string]$argv) {
+            Write-Host "::group::CommanderRescue $argv"
+            $p = Start-Process $exe -ArgumentList $argv -Wait -PassThru -NoNewWindow
+            Get-Content "$dir\commander-rescue.log" -Tail 40
+            Write-Host "::endgroup::"
+            if ($p.ExitCode) { throw "CommanderRescue $argv exited $($p.ExitCode)" }
+          }
+          Run "--list --all"                                  # PowerShell Get-Disk, every disk
+          Run "--list"                                        # USB only: the runner has none
+          Run "--fetch ventoy supergrub2 memtest86plus"       # the Windows Ventoy .zip, verified
+          $v = Get-ChildItem "$env:LOCALAPPDATA\CommanderRescue\cache\ventoy\*\Ventoy2Disk.exe"
+          if (-not $v) { throw "Windows Ventoy package wasn't unpacked" }
+          Run "--sync-to $env:RUNNER_TEMP\stick --init"
+          foreach ($f in "ventoy\ventoy.json", "Apps\CommanderApps.cmd", "ventoy\theme\theme.txt") {
+            if (-not (Test-Path "$env:RUNNER_TEMP\stick\$f")) { throw "missing on the stick: $f" }
+          }
+          Get-ChildItem -Recurse "$env:RUNNER_TEMP\stick\ISO" | Select-Object FullName, Length
+          Run "--selftest-gui"                                # opens the window, closes it
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CommanderRescue-windows
+          path: dist/CommanderRescue.exe
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/CommanderRescue.exe

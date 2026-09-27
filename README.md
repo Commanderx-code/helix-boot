@@ -90,6 +90,25 @@ Later:
 ./refresh.sh --upgrade-ventoy   # …and the Ventoy boot loader too
 ```
 
+### On Windows
+
+Download **`CommanderRescue.exe`** from
+[Releases](https://github.com/Commanderx-code/commander-rescue/releases) (or the
+latest [build](https://github.com/Commanderx-code/commander-rescue/actions/workflows/windows.yml)),
+put it in a folder of its own and run it. It asks for admin rights because
+installing Ventoy writes to the disk.
+
+1. Pick the USB stick. Only USB/SD disks are listed, never the one Windows is
+   running from.
+2. **Install** erases the stick (you type its disk number to confirm), installs
+   Ventoy and copies everything on. **Update** refreshes a stick you already
+   have and keeps your files.
+
+It's the same engine as the Linux scripts, with the same tool list,
+checksums, theme and menu. Your `local.toml` and `byo/` folder live next to
+the `.exe`, and downloads are cached in `%LOCALAPPDATA%\CommanderRescue`. The
+command line works too: `CommanderRescue.exe --help`.
+
 ## `crescue`, the engine
 
 `install.sh` and `refresh.sh` are thin wrappers. The work happens in `crescue`,
@@ -172,6 +191,7 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, tips
 - [x] Recommended PhoenixPE preset + Commander Rescue add-on ([guide](pe/README.md))
 - [ ] First Commander PE build
 - [x] Ventoy theme
+- [x] Windows app (`CommanderRescue.exe`)
 - [ ] Commander Toolbox entry
 
 ## Credits
