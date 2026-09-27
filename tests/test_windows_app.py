@@ -174,5 +174,23 @@ class TestConsole(unittest.TestCase):
         self.assertIn("RuntimeError: boom", log.getvalue())
 
 
+class TestPackaging(unittest.TestCase):
+    def test_app_names_every_module_crescue_imports(self):
+        # PyInstaller can't see inside crescue (it's a data file), so the app imports them for it.
+        import ast
+
+        def imported(path):
+            mods = set()
+            for node in ast.walk(ast.parse(path.read_text())):
+                if isinstance(node, ast.Import):
+                    mods |= {a.name for a in node.names}
+                elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                    mods.add(node.module)
+            return mods - {"__future__"}
+
+        missing = imported(ROOT / "crescue") - imported(ROOT / "windows" / "commander_rescue.py")
+        self.assertEqual(sorted(missing), [], "add these imports to windows/commander_rescue.py")
+
+
 if __name__ == "__main__":
     unittest.main()

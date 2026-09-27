@@ -32,11 +32,16 @@ import time
 from pathlib import Path
 
 # crescue is loaded from a data file, so PyInstaller can't see what it imports; name it here.
+# (tests/test_windows_app.py checks this list against crescue.)
+import ctypes  # noqa: F401
 import email.utils  # noqa: F401
 import hashlib  # noqa: F401
 import html  # noqa: F401
+import re  # noqa: F401
 import tarfile  # noqa: F401
 import tomllib  # noqa: F401
+import urllib.error  # noqa: F401
+import urllib.parse  # noqa: F401
 import urllib.request  # noqa: F401
 import xml.etree.ElementTree  # noqa: F401
 import zipfile  # noqa: F401
