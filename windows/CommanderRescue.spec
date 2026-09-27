@@ -10,7 +10,7 @@ datas = [
     (str(root / "pe" / "launcher"), "pe/launcher"),
     (str(root / "byo" / "README.md"), "byo"),
 ]
-datas += [(str(p), "theme/fonts" if p.parent.name == "fonts" else "theme")
+datas += [(str(p), (Path("theme") / p.parent.relative_to(root / "theme")).as_posix())
           for p in (root / "theme").rglob("*")
           if p.is_file() and p.suffix not in (".py", ".pyc") and "__pycache__" not in p.parts]
 

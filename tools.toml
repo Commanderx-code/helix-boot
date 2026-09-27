@@ -18,6 +18,7 @@
 #   title       pretty name shown in the Ventoy menu / PE app list
 #   kind        "iso" | "app" | "ventoy"
 #   category    one of the [[category]] ids below (iso only)
+#               icon: theme/icons/<name>.png, or your own in byo/icons/<name>.png
 #   enabled     include in fetch/sync (default true)
 #   source      "github" | "sourceforge" | "url" | "local"
 #     github:       repo = "owner/name"   (+ optional download_template when the
@@ -52,50 +53,60 @@ apps_root = "Apps"
 theme     = "theme"   # Ventoy boot-menu theme (folder in this repo); remove for Ventoy's default
 
 # ── Menu categories (folder order = boot menu order) ──────────────────────
+# `description` is the tip under the menu; the icon is theme/icons/cat-<id>.png.
 [[category]]
-id = "windows-pe"
-dir = "1-Windows-PE"
-title = "Windows PE"
-
-[[category]]
-id = "rescue"
-dir = "2-Rescue"
-title = "Rescue Environments"
+id = "antivirus"
+dir = "1-Antivirus"
+title = "Antivirus"
+description = "Scan for viruses and malware."
 
 [[category]]
 id = "imaging"
-dir = "3-Imaging"
-title = "Backup & Recovery"
-
-[[category]]
-id = "partitioning"
-dir = "4-Partitioning"
-title = "Partitioning"
-
-[[category]]
-id = "diagnostics"
-dir = "5-Diagnostics"
-title = "Hardware Diagnostics"
-
-[[category]]
-id = "wipe"
-dir = "6-Data-Wipe"
-title = "Secure Wipe"
+dir = "2-Backup-and-Recovery"
+title = "Backup and Recovery"
+description = "Image, clone and restore disks; recover deleted files."
 
 [[category]]
 id = "boot-repair"
-dir = "7-Boot-Repair"
+dir = "3-Boot-Repair"
 title = "Boot Repair"
+description = "Fix systems that won't boot."
 
 [[category]]
-id = "antivirus"
-dir = "8-Antivirus"
-title = "Malware Scan"
+id = "diagnostics"
+dir = "4-Diagnostic-Tools"
+title = "Diagnostic Tools"
+description = "Test RAM and disks."
+
+[[category]]
+id = "wipe"
+dir = "5-Disk-Wipe"
+title = "Disk Wipe"
+description = "Securely erase disks. DESTROYS DATA."
+
+[[category]]
+id = "live"
+dir = "6-Live-Operating-Systems"
+title = "Live Operating Systems"
+description = "Full Windows PE and Linux desktops that run from the stick."
+
+[[category]]
+id = "partitioning"
+dir = "7-Partition-Tools"
+title = "Partition Tools"
+description = "Resize, move, copy and repair partitions."
+
+[[category]]
+id = "password"
+dir = "8-Password-Removal"
+title = "Password Removal"
+description = "Reset or remove Windows account passwords."
 
 [[category]]
 id = "windows"
-dir = "9-Windows"
-title = "Windows Install & Recovery"
+dir = "9-Windows-Recovery"
+title = "Windows Recovery"
+description = "Windows setup, repair and recovery environments."
 
 # ── Boot loader ───────────────────────────────────────────────────────────
 [[tool]]
@@ -109,12 +120,12 @@ version = 'ventoy-([\d.]+)-linux'
 windows = { asset = ['^ventoy-[\d.]+-windows\.zip$'], version = 'ventoy-([\d.]+)-windows' }
 checksum = [{ asset = '^sha256\.txt$' }, "github-digest"]
 
-# ── Windows PE ────────────────────────────────────────────────────────────
+# ── Live operating systems ────────────────────────────────────────────────
 [[tool]]
 name = "commander-pe"
 title = "Commander PE (Windows 11)"
 kind = "iso"
-category = "windows-pe"
+category = "live"
 source = "local"
 path = "pe/out/CommanderPE.iso"
 description = "Your own PhoenixPE build. Portable apps load from the USB's Apps folder."
@@ -123,18 +134,17 @@ description = "Your own PhoenixPE build. Portable apps load from the USB's Apps 
 name = "hirens"
 title = "Hiren's BootCD PE"
 kind = "iso"
-category = "windows-pe"
+category = "live"
 source = "url"
 url = "https://www.hirensbootcd.org/files/HBCD_PE_x64.iso"
 checksum = ["tofu"]
 description = "Ready-made Win11 PE with its own tool set. The Apps launcher works here too."
 
-# ── Linux rescue ──────────────────────────────────────────────────────────
 [[tool]]
 name = "systemrescue"
 title = "SystemRescue"
 kind = "iso"
-category = "rescue"
+category = "live"
 source = "sourceforge"
 project = "systemrescuecd"
 path = "/sysresccd-x86"
@@ -311,7 +321,7 @@ description = "EaseUS's bootable data-recovery media."
 name = "active-data-studio"
 title = "Active@ Data Studio"
 kind = "iso"
-category = "rescue"
+category = "imaging"
 source = "local"
 byo = true
 path = "byo/active-data-studio.iso"
@@ -421,7 +431,7 @@ description = "Your DaRT recovery image (Microsoft Desktop Optimization Pack, vo
 name = "lockpick"
 title = "Jayro's Lockpick"
 kind = "iso"
-category = "windows"
+category = "password"
 source = "local"
 byo = true
 path = "byo/lockpick.iso"

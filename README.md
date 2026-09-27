@@ -30,18 +30,25 @@ all frozen at 2021 versions. Commander Rescue keeps the idea and drops the rest:
 
 ![The Commander Rescue boot menu in Ventoy](docs/boot-menu.png)
 
+The menu is laid out like MediCat's: nine categories, each with its own icon,
+and every tool inside with an icon too.
+
+![Inside a category](docs/boot-menu-folder.png)
+
 | Menu | Tool | Source |
 |---|---|---|
-| Windows PE | **Commander PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Win11 build | built locally ([guide](pe/README.md)) |
-| | Hiren's BootCD PE, ready-made Win11 PE | hirensbootcd.org · unverified |
-| Rescue Environments | SystemRescue | SourceForge · sha512 |
-| Backup & Recovery | Rescuezilla, Clonezilla | GitHub · sha256 / SourceForge · sha512 |
-| Partitioning | GParted Live | SourceForge · sha512 |
-| Hardware Diagnostics | Memtest86+ | memtest.org · sha512 |
-| Secure Wipe | ShredOS (nwipe) | GitHub · sha256 |
+| Antivirus | Dr.Web LiveDisk, Kaspersky Rescue Disk *(off by default)* | vendor sites · unverified |
+| Backup and Recovery | Rescuezilla, Clonezilla | GitHub · sha256 / SourceForge · sha512 |
 | Boot Repair | Super GRUB2 Disk | SourceForge · sha256 |
 | | Boot-Repair-Disk | SourceForge · md5 |
-| Malware Scan | Dr.Web LiveDisk, Kaspersky Rescue Disk *(off by default)* | vendor sites · unverified |
+| Diagnostic Tools | Memtest86+ | memtest.org · sha512 |
+| Disk Wipe | ShredOS (nwipe) | GitHub · sha256 |
+| Live Operating Systems | **Commander PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Win11 build | built locally ([guide](pe/README.md)) |
+| | Hiren's BootCD PE, ready-made Win11 PE | hirensbootcd.org · unverified |
+| | SystemRescue | SourceForge · sha512 |
+| Partition Tools | GParted Live | SourceForge · sha512 |
+| Password Removal | *bring your own* (Jayro's Lockpick) | [byo/](byo/README.md) |
+| Windows Recovery | *bring your own* (Windows 10/11 setup, DaRT) | [byo/](byo/README.md) |
 | **PE apps** (`USB:\Apps`) | Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO, TestDisk/PhotoRec, ProduKey, DiskGenius Free | various |
 | | Microsoft Safety Scanner, Kaspersky Virus Removal Tool *(off by default)* (malware scans inside the PE) | vendor sites · unverified |
 
@@ -154,7 +161,7 @@ enabled = false             # don't want a wipe tool on this stick
 name = "kali"
 title = "Kali Linux"
 kind = "iso"
-category = "rescue"
+category = "live"
 source = "url"
 url = "https://cdimage.kali.org/current/kali-linux-2026.3-live-amd64.iso"
 version_pin = "2026.3"
@@ -165,16 +172,20 @@ ISOs you drop onto the stick by hand (e.g. in `ISO/Custom/`) are never touched.
 
 The boot-menu theme lives in [`theme/`](theme/). Edit `theme.txt` for layout,
 or the colours and text in `theme/build-theme.py` and re-run it to regenerate
-the images and fonts. For Ventoy's stock look, put `theme = ""` under
+the images, icons and fonts. To use a tool's real logo instead of its letter
+badge, save it as `byo/icons/<tool name>.png` (e.g. `byo/icons/macrium-reflect.png`;
+a square PNG, ideally 40×40) and refresh. `byo/icons/cat-<category id>.png`
+replaces a category's icon the same way. For Ventoy's stock look, put `theme = ""` under
 `[settings]` in `local.toml`.
 
 ## Layout on the stick
 
 ```
-ISO/1-Windows-PE/   ISO/2-Rescue/   ISO/3-Imaging/   ISO/4-Partitioning/
-ISO/5-Diagnostics/  ISO/6-Data-Wipe/
+ISO/1-Antivirus/  ISO/2-Backup-and-Recovery/  ISO/3-Boot-Repair/
+ISO/4-Diagnostic-Tools/  ISO/5-Disk-Wipe/  ISO/6-Live-Operating-Systems/
+ISO/7-Partition-Tools/  ISO/8-Password-Removal/  ISO/9-Windows-Recovery/
 Apps/               portable apps + CommanderApps.cmd launcher
-ventoy/ventoy.json  generated menu: tree view, friendly names, tips
+ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 .commander-rescue/  sync state (which files this project manages)
 ```
 
