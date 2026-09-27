@@ -109,6 +109,10 @@ checksums, theme and menu. Your `local.toml` and `byo/` folder live next to
 the `.exe`, and downloads are cached in `%LOCALAPPDATA%\CommanderRescue`. The
 command line works too: `CommanderRescue.exe --help`.
 
+**Releasing:** push a `v*` tag, or open *Actions → windows → Run workflow* on
+`main` and enter a version (for example `v0.2.0`). Either way the `.exe` is
+built, tested on Windows, and published as a GitHub Release with that tag.
+
 ## `crescue`, the engine
 
 `install.sh` and `refresh.sh` are thin wrappers. The work happens in `crescue`,
