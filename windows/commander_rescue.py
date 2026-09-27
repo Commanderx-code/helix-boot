@@ -276,7 +276,14 @@ class Tee:
 
     def write(self, text):
         for s in self.sinks:
-            s.write(text) if hasattr(s, "write") else s.put(text)
+            if not hasattr(s, "write"):
+                s.put(text)
+                continue
+            try:
+                s.write(text)
+            except UnicodeEncodeError:  # a cp1252 Windows console can't show ✓ / ✗
+                enc = getattr(s, "encoding", None) or "ascii"
+                s.write(text.encode(enc, "replace").decode(enc))
         return len(text)
 
     def flush(self):
@@ -524,9 +531,21 @@ def cli(argv: list[str]) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) > 1:
-        return cli(sys.argv[1:])
-    return gui()
+    try:
+        if len(sys.argv) > 1:
+            return cli(sys.argv[1:])
+        return gui()
+    except Exception:  # noqa: BLE001
+        # The .exe has no console: an uncaught error would pop up PyInstaller's blocking
+        # "Unhandled exception" box. Log it and exit instead.
+        import traceback
+        text = traceback.format_exc()
+        log = open_log(None)
+        if log:
+            log.write(text)
+        if sys.__stderr__:
+            sys.__stderr__.write(text)
+        return 1
 
 
 if __name__ == "__main__":

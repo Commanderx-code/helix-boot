@@ -154,5 +154,25 @@ class TestFlows(unittest.TestCase):
         self.assertIn("--yes", out.getvalue())
 
 
+class TestConsole(unittest.TestCase):
+    def test_cp1252_console_does_not_crash(self):
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding="cp1252", write_through=True)
+        with mock.patch.object(sys, "__stdout__", console), mock.patch.object(app, "open_log", lambda p: None), \
+                mock.patch.object(app, "config", lambda: "cfg"), \
+                mock.patch.object(app, "fetch", lambda cfg, tools=(): print("✓ Ventoy 1.1.17 — verified") or True):
+            self.assertEqual(app.cli(["--fetch", "ventoy"]), 0)
+        self.assertIn(b"? Ventoy 1.1.17 \x97 verified", raw.getvalue())  # ✓ has no cp1252 byte; — does
+
+    def test_unexpected_error_is_logged_not_raised(self):
+        log = io.StringIO()
+        log.close = lambda: None
+        with mock.patch.object(app, "cli", mock.Mock(side_effect=RuntimeError("boom"))), \
+                mock.patch.object(app, "open_log", lambda p: log), mock.patch.object(sys, "argv", ["x", "--list"]), \
+                mock.patch.object(sys, "__stderr__", io.StringIO()):
+            self.assertEqual(app.main(), 1)
+        self.assertIn("RuntimeError: boom", log.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
