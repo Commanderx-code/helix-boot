@@ -110,8 +110,13 @@ Get-Disk | ForEach-Object {
 
 
 def powershell(script: str) -> str:
-    r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-                       capture_output=True, text=True, creationflags=NO_WINDOW if os.name == "nt" else 0)
+    # stdin=DEVNULL: PowerShell started from a windowless app otherwise waits on input forever
+    try:
+        r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120,
+                           creationflags=NO_WINDOW if os.name == "nt" else 0)
+    except subprocess.TimeoutExpired:
+        raise RescueError("PowerShell didn't answer within 2 minutes") from None
     if r.returncode:
         raise RescueError(f"PowerShell failed: {(r.stderr or r.stdout).strip()[:400]}")
     return r.stdout
@@ -180,7 +185,8 @@ def run_ventoy(args: list[str], vdir: Path, progress=lambda pct: None, timeout: 
     done, pct_file, log = vdir / "cli_done.txt", vdir / "cli_percent.txt", vdir / "cli_log.txt"
     for f in (done, pct_file):
         f.unlink(missing_ok=True)
-    proc = subprocess.Popen(args, cwd=vdir, creationflags=NO_WINDOW if os.name == "nt" else 0)
+    proc = subprocess.Popen(args, cwd=vdir, stdin=subprocess.DEVNULL,
+                            creationflags=NO_WINDOW if os.name == "nt" else 0)
     end = time.monotonic() + timeout
     while not done.exists():
         if time.monotonic() > end:
