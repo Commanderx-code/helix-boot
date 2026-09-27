@@ -12,7 +12,7 @@ USB in `Apps/` and are updated by `refresh.sh` **without rebuilding the PE**.
 
 ```
 USB (Ventoy data partition)
-├── ISO/1-Windows-PE/CommanderPE.iso   ← what you build here (rebuild rarely)
+├── ISO/6-Live-Operating-Systems/CommanderPE.iso   ← what you build here (rebuild rarely)
 ├── Apps/                              ← refreshed from Linux, any time
 │   ├── CommanderApps.cmd              ← menu launcher
 │   ├── apps.txt
@@ -111,7 +111,7 @@ Then, on Linux:
 
 ```fish
 ./crescue fetch commander-pe   # registers the local build (hash + date)
-./refresh.sh                   # copies it to ISO/1-Windows-PE/
+./refresh.sh                   # copies it to ISO/6-Live-Operating-Systems/
 ```
 
 `pe/out/` is git-ignored, so the image never gets committed.

@@ -47,6 +47,8 @@ HASH_BY_LEN = {32: "md5", 40: "sha1", 64: "sha256", 128: "sha512"}
 STRENGTH = {"md5": 1, "sha1": 2, "sha256": 3, "sha512": 4}
 STATE_DIR = ".commander-rescue"
 TAG_FILE = "commander-rescue.tag"
+# Category ids from before the MediCat-style menu; local.toml entries using them keep working.
+OLD_CATEGORIES = {"windows-pe": "live", "rescue": "live"}
 
 
 # ── Output ────────────────────────────────────────────────────────────────
@@ -148,6 +150,9 @@ class Config:
                 raise RescueError(f"{where}: source '{src}' needs '{key}'")
         if src in ("github", "sourceforge") and not (t.get("asset") or t.get("download_template")):
             raise RescueError(f"{where}: needs an 'asset' regex list (or a download_template)")
+        if t["kind"] == "iso" and t.get("category") not in self.categories \
+                and OLD_CATEGORIES.get(t.get("category")) in self.categories:
+            t["category"] = OLD_CATEGORIES[t["category"]]
         if t["kind"] == "iso" and t.get("category") not in self.categories:
             raise RescueError(f"{where}: category '{t.get('category')}' isn't a [[category]] id")
         if src != "local" and not t.get("checksum"):
@@ -754,17 +759,35 @@ def _label_of(mount: Path) -> str | None:
         return None
 
 
-def build_ventoy_json(cfg: Config, placed: list[dict]) -> dict:
-    alias, tips = [], []
+def _icons(cfg: Config) -> set[str]:
+    """Icon names available on the stick: the theme's own plus yours from byo/icons/."""
+    theme = cfg.settings.get("theme")
+    dirs = [cfg.assets / theme / "icons"] if theme else []
+    return {f.stem for d in dirs + [cfg.repo / "byo" / "icons"] if d.is_dir() for f in d.glob("*.png")}
+
+
+def build_ventoy_json(cfg: Config, placed: list[dict], icons: set[str] = frozenset()) -> dict:
+    alias, tips, classes, keys = [], [], [], []
     used = {p["category"] for p in placed}
     for cid, c in cfg.categories.items():
         if cid in used:
-            alias.append({"dir": f"/{cfg.iso_root}/{c['dir']}", "alias": c["title"]})
+            path = f"/{cfg.iso_root}/{c['dir']}"
+            alias.append({"dir": path, "alias": f"{c['title']}  \u2192"})
+            if c.get("description"):
+                tips.append({"dir": path, "tip": c["description"]})
+            if f"cat-{cid}" in icons:
+                classes.append({"dir": path, "class": f"cat-{cid}"})
     for p in placed:
         img = f"/{cfg.iso_root}/{cfg.categories[p['category']]['dir']}/{p['file']}"
         alias.append({"image": img, "alias": f"{p['title']}  {p['version']}"})
         if p.get("description"):
             tips.append({"image": img, "tip": p["description"]})
+        # Ventoy matches "key" as a substring that must be shorter than the file name, so
+        # use the name without its extension; longest first, so one never shadows another.
+        stem = p["file"].rsplit(".", 1)[0]
+        if p.get("name") in icons and stem:
+            keys.append({"key": stem, "class": p["name"]})
+    classes += sorted(keys, key=lambda k: -len(k["key"]))
     doc: dict = {
         "control": [
             {"VTOY_DEFAULT_MENU_MODE": "1"},            # tree view: categories as folders
@@ -774,6 +797,8 @@ def build_ventoy_json(cfg: Config, placed: list[dict]) -> dict:
         ],
         "menu_alias": alias,
     }
+    if classes:
+        doc["menu_class"] = classes
     theme = cfg.settings.get("theme")
     theme_dir = cfg.assets / theme if theme else None
     if tips:
@@ -847,7 +872,7 @@ def cmd_sync(cfg: Config, args) -> int:
             continue
         rel = f"{cfg.iso_root}/{cfg.categories[t['category']]['dir']}/{src.name}"
         want_files.add(rel)
-        placed.append({"rel": rel, "src": src, "file": src.name, "title": t["title"],
+        placed.append({"rel": rel, "src": src, "file": src.name, "title": t["title"], "name": t["name"],
                        "version": entry["version"], "category": t["category"],
                        "description": t.get("description"), "sha256": entry.get("sha256")})
     apps = []
@@ -869,8 +894,22 @@ def cmd_sync(cfg: Config, args) -> int:
     stale = [f for f in state.get("files", []) if f not in want_files]
     head(f"Syncing to {mnt}{'  (dry run)' if args.dry_run else ''}")
 
+    # A file that only changed folder (e.g. a category was renamed) is moved, not copied again.
+    moved_from = {Path(f).name: f for f in stale}
     for p in placed:
         dst = mnt / p["rel"]
+        old = moved_from.get(p["file"])
+        if old and not dst.exists():
+            src_old = (mnt / old).resolve()
+            if src_old.is_relative_to(mnt) and src_old.is_file() \
+                    and src_old.stat().st_size == p["src"].stat().st_size:
+                info(f"{p['title']}: moving {old} → {p['rel']}")
+                if not args.dry_run:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(src_old, dst)
+                else:
+                    continue
+
         same = dst.exists() and dst.stat().st_size == p["src"].stat().st_size
         if same and args.verify and p["sha256"]:
             same = file_hash(dst) == p["sha256"]
@@ -922,6 +961,11 @@ def cmd_sync(cfg: Config, args) -> int:
                 info(f"removing old {rel}")
                 if not args.dry_run:
                     p.unlink()
+        if not args.dry_run:  # category folders emptied by a rename or removal
+            root = (mnt / cfg.iso_root).resolve()
+            for d in sorted({(mnt / rel).parent for rel in stale}, key=lambda d: -len(d.parts)):
+                if d.is_dir() and d.resolve() != root and d.resolve().is_relative_to(root) and not any(d.iterdir()):
+                    d.rmdir()
 
     if args.dry_run:
         print("\nDry run — nothing was written.")
@@ -949,7 +993,15 @@ def cmd_sync(cfg: Config, args) -> int:
         if theme_src.is_dir():
             shutil.rmtree(vdir / "theme", ignore_errors=True)
             shutil.copytree(theme_src, vdir / "theme", ignore=shutil.ignore_patterns("*.py", "*.pyc", "__pycache__"))
-    vjson.write_text(json.dumps(build_ventoy_json(cfg, placed), indent=2) + "\n", encoding="utf-8")
+            mine = cfg.repo / "byo" / "icons"      # your own icons win over the theme's
+            if mine.is_dir():
+                (vdir / "theme" / "icons").mkdir(exist_ok=True)
+                for f in mine.glob("*.png"):
+                    shutil.copy2(f, vdir / "theme" / "icons" / f.name)
+    icons = _icons(cfg) if (vdir / "theme").is_dir() and cfg.settings.get("theme") else set()
+    # Ventoy reads UTF-8 but not \u escapes, so write non-ASCII (→, ü …) as is
+    vjson.write_text(json.dumps(build_ventoy_json(cfg, placed, icons), indent=2, ensure_ascii=False) + "\n",
+                     encoding="utf-8")
 
     (mnt / TAG_FILE).write_text(f"Commander Rescue {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n",
                               encoding="utf-8")

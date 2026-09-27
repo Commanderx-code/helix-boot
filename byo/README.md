@@ -56,8 +56,8 @@ ISO:
 name = "acronis"                 # any short id
 title = "Acronis True Image"     # menu text
 kind = "iso"
-category = "imaging"             # rescue, imaging, partitioning, diagnostics,
-source = "local"                 #   wipe, boot-repair, antivirus, windows
+category = "imaging"             # antivirus, imaging, boot-repair, diagnostics, wipe,
+source = "local"                 #   live, partitioning, password, windows
 byo = true
 path = "byo/acronis.iso"
 description = "Shown under the menu when it's highlighted."
@@ -82,3 +82,15 @@ Then `./refresh.sh`. Trial versions work the same way. Note that many of them
 expect activation or an internet connection, which can fail inside WinPE.
 Portable versions are the ones to look for.
 
+
+## Menu icons
+
+Every tool gets a letter badge in the boot menu. To show a tool's real logo
+instead, save it as `byo/icons/<name>.png`, using the tool's `name` from
+`tools.toml` or your `local.toml` (e.g. `byo/icons/macrium-reflect.png`,
+`byo/icons/acronis.png`), and refresh. A category's icon is
+`byo/icons/cat-<id>.png` (e.g. `cat-antivirus.png`).
+
+Use a square, non-interlaced PNG, ideally 40×40 pixels (larger ones are
+scaled down). A tool with no icon at all gets a plain disc. Like everything
+else in `byo/`, your icons stay out of git.
