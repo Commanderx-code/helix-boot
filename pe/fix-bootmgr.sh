@@ -34,7 +34,7 @@ section "Newer boot manager from $(basename "$donor") into $(basename "$pe")"
 [[ -f $work/new/efi/boot/bootx64.efi && -f $work/new/efi/microsoft/boot/efisys_noprompt.bin ]] \
   || die "$(basename "$donor") doesn't look like a Windows ISO (no efi/boot/bootx64.efi)"
 7z x -y -o"$work/iso" "$pe" >/dev/null   # 7-Zip reads the UDF names (xorriso would see 8.3 ones)
-[[ -f $work/iso/sources/boot.wim ]] || die "$(basename "$pe") has no sources/boot.wim"
+[[ -n $(find "$work/iso" -maxdepth 2 -ipath "*/sources/boot.wim" -type f) ]] || die "$(basename "$pe") has no sources/boot.wim"
 
 top=$(find "$work/iso" -maxdepth 1 -iname bootmgr -type f | head -n1)   # keep the ISO's own spelling
 cp -f "$work/new/bootmgr" "${top:-$work/iso/bootmgr}"
