@@ -6,6 +6,10 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- `pe/fix-bootmgr.sh`: puts a current Windows boot manager into a Lazarus PE
+  built from 22H2/23H2, whose 2022 UEFI loader hangs on newer firmware. The
+  PE guide now recommends building from 22H2/23H2 (via UUP dump), where the
+  Start menu works.
 - **PortableApps.com Platform** at the root of the stick, verified against the
   SHA-256 on portableapps.com. It goes on once, then updates itself and the
   apps you pick from its App Store; refresh never overwrites or prunes it.

@@ -1015,7 +1015,7 @@ class TestShellHelpers(unittest.TestCase):
             capture_output=True, text=True, check=True,
         ).stdout.split()
         used = set()  # commands the shell scripts pipe into
-        for f in ("install.sh", "refresh.sh", "scripts/common.sh", "pe/vm/build-vm.sh"):
+        for f in ("install.sh", "refresh.sh", "scripts/common.sh", "pe/vm/build-vm.sh", "pe/fix-bootmgr.sh"):
             used |= set(re.findall(r"(?<!\|)\|(?!\|)\s*([a-z][\w.-]*)", (ROOT / f).read_text()))
         self.assertIn("head", used)
         self.assertEqual(sorted(used & set(names)), [], "helper functions hide commands the scripts use")

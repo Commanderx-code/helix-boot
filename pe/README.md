@@ -119,6 +119,27 @@ tooling and `pull` fetches the ISO.
 7. Test the ISO in the VM (boot it as a CD) before putting it on the stick:
    the desktop should show **Commander Apps**.
 
+## Which Windows to build from
+
+Build from **Windows 11 22H2 or 23H2** (build 22621/22631), as PhoenixPE
+recommends: on 24H2 and later the PE's Start menu doesn't open. Microsoft only
+offers the newest release, so make the older ISO with
+[UUP dump](https://uupdump.net), which assembles it on Linux from Microsoft's
+own update files (search `22631 amd64`, pick *Windows 11, version 23H2*,
+English, Pro, and run its Linux script; it needs `aria2 cabextract wimlib
+chntpw cdrtools`). The Linux converter can't add updates, so the result is the
+original 22H2 build, which is fine for a PE.
+
+Those older discs have a 2022 UEFI boot manager that hangs on newer UEFI
+firmware. After each build, give the PE the boot manager from a current
+Windows 11 ISO (the one on Microsoft's download page):
+
+```fish
+pe/vm/build-vm.sh pull
+pe/fix-bootmgr.sh ~/Downloads/Win11_25H2_English_x64.iso
+./crescue fetch lazarus-pe
+```
+
 ## Put it on the stick
 
 With the build VM: copy the ISO into `CRTRANSFER\out`, shut Windows down, then
