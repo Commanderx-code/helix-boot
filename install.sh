@@ -57,6 +57,7 @@ while (($#)); do
 done
 
 check_python
+[[ -n $from ]] || from=$(bundled_pack "$HERE")
 need lsblk util-linux
 need findmnt util-linux
 if ((list_only)); then

@@ -1055,10 +1055,33 @@ def cmd_sync(cfg: Config, args) -> int:
 
 # ── Packs: the whole stick in one file ────────────────────────────────────
 # A pack is a zip holding the stick exactly as `sync` would lay it out (under stick/),
-# the Ventoy installer (under installer/) and PACK_META, which lists every boot image
-# with its sha256. `unpack` streams it onto a stick, so no downloads are needed.
+# Ventoy and this project's own installer (under installer/), and PACK_META, which lists
+# every boot image with its sha256. `unpack` streams it onto a stick, so no downloads are
+# needed, and the bundled installer means the zip is all another machine needs.
 PACK_META = "commander-rescue-pack.json"
 PACK_FORMAT = 1
+BUNDLED = ["crescue", "tools.toml", "install.sh", "refresh.sh", "scripts/common.sh", "LICENSE"]
+BUNDLED_MARK = "installer/.bundled"   # tells install.sh / refresh.sh to look for the pack beside them
+BUNDLED_README = """Commander Rescue pack
+=====================
+
+Everything for a Commander Rescue USB stick, including your own tools. Keep it private.
+
+On any Linux PC with Python 3.11+, unzip just the installer (a few MB) next to this zip:
+
+    unzip {zip} 'installer/*'         (or: bsdtar -xf {zip} installer)
+
+New stick (ERASES it; you choose the stick and confirm):
+
+    installer/install.sh
+
+Update a stick already made with Commander Rescue:
+
+    installer/refresh.sh
+
+Both find {zip} beside the installer folder and copy everything from it, with no
+downloads. If the zip has been moved or renamed, add --from /path/to/the.zip.
+"""
 
 
 def _zip_file(zf: zipfile.ZipFile, src: Path, arc: str, compress: int = zipfile.ZIP_DEFLATED) -> str:
@@ -1133,6 +1156,12 @@ def cmd_pack(cfg: Config, args) -> int:
                     _zip_file(zf, data, f"stick/{rel}")
             if vsrc:
                 _zip_file(zf, vsrc, f"installer/{vsrc.name}", zipfile.ZIP_STORED)
+            for rel in BUNDLED:  # keeps their executable bits, so `unzip` gives runnable scripts
+                f = (cfg.assets if rel == "tools.toml" else REPO) / rel
+                if f.is_file():
+                    _zip_file(zf, f, f"installer/{rel}")
+            zf.writestr(BUNDLED_MARK, f"{__version__}\n", zipfile.ZIP_DEFLATED)
+            zf.writestr("installer/README.txt", BUNDLED_README.format(zip=out.name), zipfile.ZIP_DEFLATED)
             zf.writestr(PACK_META, json.dumps({
                 "format": PACK_FORMAT, "crescue": __version__,
                 "created": dt.datetime.now().isoformat(timespec="seconds"),
@@ -1146,9 +1175,10 @@ def cmd_pack(cfg: Config, args) -> int:
         raise
     os.replace(part, out)
     ok(f"Pack written: {out} ({_fmt_bytes(out.stat().st_size)})")
-    info("It holds your own tools as well, so keep it somewhere private. To use it:")
+    info("It holds your own tools as well, so keep it somewhere private. To use it here:")
     info(f"  new stick:      ./install.sh --from {out}")
     info(f"  existing stick: ./refresh.sh --from {out}")
+    info(f"On another PC it needs nothing else: unzip {out.name} 'installer/*', then installer/install.sh")
     return 0
 
 

@@ -746,6 +746,35 @@ class TestPack(Base):
         rc, again = self.run_quiet(cr.cmd_ventoy_path, self.cfg, type("A", (), {"from_pack": str(pack)})())
         self.assertEqual(again, out)
 
+    def test_the_zip_is_all_another_pc_needs(self):
+        self.fetch()
+        pack, _ = self.pack(self.tmp / "away" / "commander-rescue-2026-01-01.zip")
+        away = pack.parent
+        with zipfile.ZipFile(pack) as zf:  # like `unzip pack.zip 'installer/*'`: files and their modes
+            for m in zf.infolist():
+                if m.filename.startswith("installer/") and not m.is_dir():
+                    zf.extract(m, away)
+                    os.chmod(away / m.filename, (m.external_attr >> 16) & 0o777 or 0o644)
+        inst = away / "installer"
+        for f in ("crescue", "install.sh", "refresh.sh"):
+            self.assertTrue(os.access(inst / f, os.X_OK), f)
+        self.assertIn(pack.name, (inst / "README.txt").read_text())
+        found = subprocess.run(["bash", "-c", f'source "{inst}/scripts/common.sh"; bundled_pack "{inst}"'],
+                               capture_output=True, text=True)
+        self.assertEqual(found.returncode, 0, found.stderr)
+        self.assertEqual(found.stdout.strip(), str(pack))
+        # outside a pack's installer folder nothing is picked up
+        none = subprocess.run(["bash", "-c", f'source "{ROOT}/scripts/common.sh"; bundled_pack "{ROOT}"'],
+                              capture_output=True, text=True)
+        self.assertEqual((none.returncode, none.stdout), (0, ""))
+        # the bundled crescue fills a stick on its own
+        env = {**os.environ, "CRESCUE_CACHE": str(self.tmp / "away-cache"), "NO_COLOR": "1"}
+        run = subprocess.run([str(inst / "crescue"), "unpack", str(pack), str(self.stick), "--init"],
+                             capture_output=True, text=True, env=env)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertTrue((self.stick / "ISO/5-Diagnostics/memtest.iso").exists())
+        self.assertTrue((self.stick / "Apps/sysinternals/procexp64.exe").exists())
+
     def test_pack_without_ventoy(self):
         self.fetch("systemrescue")
         pack, log = self.pack()

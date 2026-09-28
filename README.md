@@ -155,6 +155,15 @@ one's sha256 is recorded. Extracting streams the files straight onto the stick
 and checks every image against its hash, so a damaged pack is caught, not
 booted. A stick filled from a pack refreshes normally afterwards.
 
+The pack carries its own installer too, so on another Linux PC (Python 3.11+)
+the zip is all you need, no clone:
+
+```fish
+unzip commander-rescue-2026-09-27.zip 'installer/*'   # a few MB
+installer/install.sh                                   # new stick, from the zip beside it
+installer/refresh.sh                                   # or update one
+```
+
 A pack holds your paid tools as well, so keep it private: on a drive, a NAS
 or your own cloud storage, not a public repo or release. `*.zip` packs made in
 this folder are git-ignored.

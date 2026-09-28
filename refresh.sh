@@ -48,6 +48,7 @@ done
 
 [[ $EUID -ne 0 ]] || die "run this as your normal user"
 check_python
+[[ -n $from ]] || from=$(bundled_pack "$HERE")
 if [[ -n $from ]]; then
   [[ -f $from ]] || die "can't find the pack $from"
   from=$(realpath -- "$from")
