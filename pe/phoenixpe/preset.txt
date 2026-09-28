@@ -16,6 +16,9 @@ on   PhoenixPE\Components\WindowsPowerShell.script            # PowerShell (repa
 on   PhoenixPE\Components\TaskMgr.script                      # full Task Manager instead of the WinPE one
 on   PhoenixPE\Components\Visual C++ Runtime\350-VCRedist-14.script  # so portable apps from USB:\Apps run
 
+# Needs Microsoft's MDOP media, which the build halts without
+off  PhoenixPE\Applications\Diagnostics & Repair\MS-DaRT.script
+
 # Comes from USB:\Apps instead (always current, no rebuild needed)
 off  PhoenixPE\Applications\Productivity\Notepad++.script
 
