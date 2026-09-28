@@ -1,6 +1,6 @@
 # Copy to local.toml (git-ignored) for personal tweaks.
 
-# Stopgap Windows PE until your own Commander PE is built:
+# Stopgap Windows PE until your own Lazarus PE is built:
 # [overrides.hirens]
 # enabled = true
 

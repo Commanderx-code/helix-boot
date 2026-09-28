@@ -5,6 +5,10 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Changed
+- The Windows PE is now called **Lazarus PE**: tool id `lazarus-pe`, built as
+  `pe/out/LazarusPE.iso`.
+
 ## [0.3.0] - 2026-09-27
 
 ### Added

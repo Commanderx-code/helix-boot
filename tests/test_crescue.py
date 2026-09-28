@@ -166,12 +166,12 @@ extract = '\\.iso$'
 checksum = [{{ sibling = "sha512sum.txt" }}]
 
 [[tool]]
-name = "commander-pe"
-title = "Commander PE"
+name = "lazarus-pe"
+title = "Lazarus PE"
 kind = "iso"
 category = "windows-pe"
 source = "local"
-path = "pe/out/CommanderPE.iso"
+path = "pe/out/LazarusPE.iso"
 
 [[tool]]
 name = "sysinternals"
@@ -425,15 +425,15 @@ class TestFetchAndSync(Base):
         self.assertNotEqual(cr.load_lock(self.cfg)["sysinternals"]["version"], v1)
 
     def test_local_pe_build_is_picked_up(self):
-        pe = self.repo / "pe/out/CommanderPE.iso"
+        pe = self.repo / "pe/out/LazarusPE.iso"
         pe.parent.mkdir(parents=True)
         pe.write_bytes(b"winpe")
-        rc, out = self.fetch("commander-pe")
+        rc, out = self.fetch("lazarus-pe")
         self.assertEqual(rc, 0, out)
         self.fetch("systemrescue")
         rc, out = self.sync()
         self.assertEqual(rc, 0, out)
-        self.assertEqual((self.stick / "ISO/1-Windows-PE/CommanderPE.iso").read_bytes(), b"winpe")
+        self.assertEqual((self.stick / "ISO/1-Windows-PE/LazarusPE.iso").read_bytes(), b"winpe")
 
     def test_sync_refuses_non_ventoy_without_init(self):
         self.fetch("systemrescue")
@@ -485,7 +485,7 @@ class TestFetchAndSync(Base):
         (self.repo / "byo/icons/cat-diagnostics.png").write_bytes(b"my category icon")
         (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
         self.cfg = cr.Config(repo=self.repo)
-        self.fetch("systemrescue", "memtest86plus", "commander-pe")
+        self.fetch("systemrescue", "memtest86plus", "lazarus-pe")
         rc, out = self.sync()
         self.assertEqual(rc, 0, out)
         icons = self.stick / "ventoy/theme/icons"

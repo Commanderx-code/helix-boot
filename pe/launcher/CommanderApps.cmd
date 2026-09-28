@@ -1,7 +1,7 @@
 @echo off
 rem Commander Rescue - portable app launcher for WinPE.
 rem Finds the USB (by commander-rescue.tag), reads Apps\apps.txt and offers a menu.
-rem Works in Commander PE, Hiren's, or plain Windows.
+rem Works in Lazarus PE, Hiren's, or plain Windows.
 setlocal EnableDelayedExpansion
 title Commander Rescue - Apps
 

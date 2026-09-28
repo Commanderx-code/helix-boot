@@ -1,6 +1,6 @@
-# Commander PE — building the Windows side
+# Lazarus PE — building the Windows side
 
-Commander PE is a Windows 11 recovery desktop you build yourself with
+Lazarus PE is a Windows 11 recovery desktop you build yourself with
 [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE). You build it rather than
 download it because a WinPE image contains Microsoft files, which can't be
 legally redistributed. This repo ships the recipe, and your own Windows ISO
@@ -12,7 +12,7 @@ USB in `Apps/` and are updated by `refresh.sh` **without rebuilding the PE**.
 
 ```
 USB (Ventoy data partition)
-├── ISO/6-Live-Operating-Systems/CommanderPE.iso   ← what you build here (rebuild rarely)
+├── ISO/6-Live-Operating-Systems/LazarusPE.iso   ← what you build here (rebuild rarely)
 ├── Apps/                              ← refreshed from Linux, any time
 │   ├── CommanderApps.cmd              ← menu launcher
 │   ├── apps.txt
@@ -109,13 +109,13 @@ With the build VM: copy the ISO into `CRTRANSFER\out`, shut Windows down, then
 run `pe/vm/build-vm.sh pull`. Otherwise, copy it into this repo yourself as:
 
 ```
-pe/out/CommanderPE.iso
+pe/out/LazarusPE.iso
 ```
 
 Then, on Linux:
 
 ```fish
-./crescue fetch commander-pe   # registers the local build (hash + date)
+./crescue fetch lazarus-pe   # registers the local build (hash + date)
 ./refresh.sh                   # copies it to ISO/6-Live-Operating-Systems/
 ```
 
@@ -124,7 +124,7 @@ Then, on Linux:
 ## Until the PE is built
 
 Hiren's BootCD PE is on the stick too: a free, ready-made Win11 PE. It covers
-for Commander PE until yours is built, and `Apps\CommanderApps.cmd` works from
+for Lazarus PE until yours is built, and `Apps\CommanderApps.cmd` works from
 it as well. To leave it off, set `enabled = false` under `[overrides.hirens]`
 in `local.toml`.
 

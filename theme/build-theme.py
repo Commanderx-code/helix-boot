@@ -47,7 +47,7 @@ CATEGORY_COLOURS = {
 # Badge text for tools whose initials don't read well; the rest use their title's initials.
 # Drop a real logo in byo/icons/<name>.png to replace any of these on your stick.
 BADGES = {
-    "commander-pe": "PE", "hirens": "HB", "systemrescue": "SR", "rescuezilla": "RZ", "clonezilla": "CZ",
+    "lazarus-pe": "LZ", "hirens": "HB", "systemrescue": "SR", "rescuezilla": "RZ", "clonezilla": "CZ",
     "gparted": "GP", "memtest86plus": "M+", "shredos": "SH", "dban": "DB", "supergrub2": "SG", "boot-repair-disk": "BR",
     "kaspersky-rd": "K", "drweb-livedisk": "DW", "macrium-reflect": "MR", "aomei-backupper": "AB",
     "easeus-todo-backup": "ET", "easeus-data-recovery": "ED", "active-data-studio": "A@", "aomei-pa": "AP",

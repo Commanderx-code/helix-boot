@@ -122,12 +122,12 @@ checksum = [{ asset = '^sha256\.txt$' }, "github-digest"]
 
 # ── Live operating systems ────────────────────────────────────────────────
 [[tool]]
-name = "commander-pe"
-title = "Commander PE (Windows 11)"
+name = "lazarus-pe"
+title = "Lazarus PE (Windows 11)"
 kind = "iso"
 category = "live"
 source = "local"
-path = "pe/out/CommanderPE.iso"
+path = "pe/out/LazarusPE.iso"
 description = "Your own PhoenixPE build. Portable apps load from the USB's Apps folder."
 
 [[tool]]
@@ -450,7 +450,7 @@ byo = true
 path = "byo/lockpick.iso"
 description = "Windows password removal. No official download to verify; supply the ISO yourself."
 
-# ── Portable apps (loaded by Commander PE from USB:\Apps) ─────────────────
+# ── Portable apps (loaded by Lazarus PE from USB:\Apps) ───────────────────
 [[tool]]
 name = "sysinternals"
 title = "Sysinternals Suite"
@@ -547,7 +547,7 @@ version = 'DGEng(\d+)_x64'
 entry = "DiskGenius/DiskGenius.exe"
 checksum = ["tofu"]
 
-# Malware scanners that run inside Commander PE / Hiren's from USB:\Apps.
+# Malware scanners that run inside Lazarus PE / Hiren's from USB:\Apps.
 # Single self-contained .exe files with today's definitions.
 [[tool]]
 name = "kvrt"

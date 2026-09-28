@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Set up a PhoenixPE folder for the Commander PE build.
+  Set up a PhoenixPE folder for the Lazarus PE build.
 
 .DESCRIPTION
   1. Copies the Commander Rescue add-on (CommanderRescue.script + the app

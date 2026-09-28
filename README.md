@@ -15,7 +15,7 @@ Current tools, verified downloads, a MediCat-style boot menu, and room for your 
 [Quick start](#quick-start) ·
 [What's on the stick](#whats-on-the-stick) ·
 [Packs](#packs-the-whole-stick-in-one-file) ·
-[Commander PE](pe/README.md) ·
+[Lazarus PE](pe/README.md) ·
 [Customising](#customising) ·
 [Changelog](CHANGELOG.md)
 
@@ -84,7 +84,7 @@ and a one-line tip.
 | Diagnostic Tools | Memtest86+ | memtest.org · sha512 |
 | Disk Wipe | ShredOS (nwipe) | GitHub · sha256 |
 | | DBAN (BIOS boot only) | SourceForge · md5 |
-| Live Operating Systems | **Commander PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Windows 11 build | built locally · [guide](pe/README.md) |
+| Live Operating Systems | **Lazarus PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Windows 11 build | built locally · [guide](pe/README.md) |
 | | Hiren's BootCD PE | hirensbootcd.org · unverified |
 | | SystemRescue | SourceForge · sha512 |
 | Partition Tools | GParted Live | SourceForge · sha512 |
@@ -178,14 +178,14 @@ theme and menu. Your `local.toml` and `byo/` folder live next to the `.exe`, and
 downloads are cached in `%LOCALAPPDATA%\CommanderRescue`. The command line
 works too: `CommanderRescue.exe --help`. Packs are Linux-only for now.
 
-## Commander PE
+## Lazarus PE
 
-Commander PE is the stick's Windows 11 desktop, filling the role of MediCat's
+Lazarus PE is the stick's Windows 11 desktop, filling the role of MediCat's
 Mini Windows. You build it yourself with PhoenixPE from your own Windows ISO,
 because WinPE images contain Microsoft files that can't be redistributed. The
 image stays lean: drivers, networking and Explorer. The portable apps live on
 the stick and update without a rebuild. On Linux, `pe/vm/build-vm.sh` sets up
-the build VM for you. See the [Commander PE guide](pe/README.md).
+the build VM for you. See the [Lazarus PE guide](pe/README.md).
 
 Until yours is built, Hiren's BootCD PE covers for it, and the app launcher
 works there too.
@@ -277,7 +277,7 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 - [x] Windows app (`CommanderRescue.exe`)
 - [x] Packs: offline, self-installing zip of the whole stick
 - [x] PhoenixPE preset, Commander Rescue add-on and build VM ([guide](pe/README.md))
-- [ ] First Commander PE build *(in progress)*
+- [ ] First Lazarus PE build *(in progress)*
 - [ ] Packs in the Windows app
 - [ ] Commander Toolbox entry
 

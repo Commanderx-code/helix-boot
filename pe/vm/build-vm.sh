@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Commander Rescue — a Windows 11 VM for building Commander PE.
+# Commander Rescue — a Windows 11 VM for building Lazarus PE.
 #
 #   pe/vm/build-vm.sh create ~/Downloads/Win11.iso   make the VM, start Windows setup
 #   pe/vm/build-vm.sh push                           copy pe/ tooling onto the transfer disk
 #   pe/vm/build-vm.sh start                          boot the VM and open its window
-#   pe/vm/build-vm.sh pull                           copy the built ISO to pe/out/CommanderPE.iso
+#   pe/vm/build-vm.sh pull                           copy the built ISO to pe/out/LazarusPE.iso
 #
 # No root needed: the VM runs in your user's libvirt session (qemu:///session),
 # and files move through a small FAT32 "transfer" disk that this script reads
@@ -35,7 +35,7 @@ Usage: pe/vm/build-vm.sh <command>
   start                 boot the VM and open its window
   push                  refresh the transfer disk with this repo's pe/ folder (VM must be off)
   pull                  copy the newest ISO from the transfer disk's out folder to
-                        pe/out/CommanderPE.iso (VM must be off)
+                        pe/out/LazarusPE.iso (VM must be off)
   status                show the VM's state and what's on the transfer disk
   destroy               delete the VM and its disks
 
@@ -153,10 +153,10 @@ case ${1:-} in
     newest=$(find "$tmp" -maxdepth 1 -iname '*.iso' -printf '%T@\t%p\n' | sort -rn | head -n1 | cut -f2)
     if [[ -z $newest ]]; then rm -rf "$tmp"; die "no .iso in the transfer disk's out folder — copy the build there first"; fi
     mkdir -p "$REPO/pe/out"
-    mv -f "$newest" "$REPO/pe/out/CommanderPE.iso"
+    mv -f "$newest" "$REPO/pe/out/LazarusPE.iso"
     rm -rf "$tmp"
-    ok "pe/out/CommanderPE.iso ← $(basename "$newest") ($(du -h "$REPO/pe/out/CommanderPE.iso" | cut -f1))"
-    info "next: ./crescue fetch commander-pe && ./refresh.sh"
+    ok "pe/out/LazarusPE.iso ← $(basename "$newest") ($(du -h "$REPO/pe/out/LazarusPE.iso" | cut -f1))"
+    info "next: ./crescue fetch lazarus-pe && ./refresh.sh"
     ;;
   status)
     if exists; then info "VM '$VM': $(virsh_ domstate "$VM")"; else info "VM '$VM': not created"; fi
