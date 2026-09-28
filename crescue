@@ -851,6 +851,8 @@ def _plan(cfg: Config, lock: dict) -> tuple[list[dict], list[tuple], list[str]]:
     placed, missing = [], []
     for t in cfg.enabled(kinds={"iso"}):
         entry = lock.get(t["name"])
+        if not entry and t.get("byo"):  # an empty bring-your-own slot isn't "missing"
+            continue
         src = (Path(entry["path"]) if entry and entry.get("path")
                else cfg.cache / t["name"] / entry["final"] if entry else None)
         if not src or not src.exists():
