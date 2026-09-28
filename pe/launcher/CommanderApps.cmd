@@ -35,6 +35,7 @@ for /f "usebackq tokens=1,2 delims=|" %%A in ("%APPS%\apps.txt") do (
   if !n! lss 10 (echo     !n!^)  %%A) else (echo    !n!^)  %%A)
 )
 echo.
+if exist "%CR%\Start.exe" echo     p^)  PortableApps.com menu
 echo     o^)  Open the Apps folder
 echo     q^)  Quit
 echo.
@@ -42,6 +43,10 @@ set "pick="
 set /p "pick=  Choose: "
 if not defined pick goto menu
 if /i "%pick%"=="q" exit /b 0
+if /i "%pick%"=="p" if exist "%CR%\Start.exe" (
+  start "" /d "%CR%\" "%CR%\Start.exe"
+  goto menu
+)
 if /i "%pick%"=="o" (
   start "" explorer.exe "%APPS%"
   goto menu

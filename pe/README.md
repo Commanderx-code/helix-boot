@@ -78,7 +78,8 @@ tooling and `pull` fetches the ISO.
    ```
 
    This installs the **Commander Rescue** add-on (the app launcher, with
-   desktop and Start menu shortcuts) and ticks the options in
+   desktop and Start menu shortcuts, and the PortableApps.com Platform opening
+   from the USB when the desktop loads) and ticks the options in
    [`phoenixpe/preset.txt`](phoenixpe/preset.txt):
 
    | | |

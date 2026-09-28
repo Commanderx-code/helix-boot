@@ -38,6 +38,7 @@ if ($PSCmdlet.ShouldProcess($addonDir, 'Install Commander Rescue add-on')) {
   New-Item -ItemType Directory -Force $addonDir | Out-Null
   Copy-Item (Join-Path $here 'CommanderRescue.script') $addonDir -Force
   Copy-Item $launcher $addonDir -Force
+  Copy-Item (Join-Path (Split-Path $launcher) 'StartPortableApps.cmd') $addonDir -Force
   Write-Host "+ add-on installed in $addonDir"
 }
 

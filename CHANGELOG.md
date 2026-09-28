@@ -6,6 +6,15 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- **PortableApps.com Platform** at the root of the stick, verified against the
+  SHA-256 on portableapps.com. It goes on once, then updates itself and the
+  apps you pick from its App Store; refresh never overwrites or prunes it.
+  Lazarus PE opens it when the desktop loads (after the next PE build), and the
+  Commander Apps menu gains **p) PortableApps.com menu**.
+- `kind = "tree"` tools: an archive unpacked with 7-Zip into `dest`, installed
+  only while its `once` file is missing.
+- Checksums read from a web page that names the file (`{ url, regex }`), and
+  `user_agent = "browser"` for sites that turn other clients away.
 - Ventoy's wimboot plugin (`ventoy/ventoy_wimboot.img`, pinned sha256), so
   `.wim` boot images such as WinRE and Malwarebytes appear in the menu. Ventoy
   hides `.wim` files without it.

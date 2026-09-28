@@ -17,6 +17,7 @@
 #   name        unique id (also the cache folder name)
 #   title       pretty name shown in the Ventoy menu / PE app list
 #   kind        "iso" | "app" | "ventoy" | "file" (copied to `dest` on the stick)
+#               | "tree" (unpacked with 7-Zip into `dest`, installed once: see portableapps)
 #   category    one of the [[category]] ids below (iso only)
 #               icon: theme/icons/<name>.png, or your own in byo/icons/<name>.png
 #   enabled     include in fetch/sync (default true)
@@ -39,11 +40,13 @@
 #       { asset = "regex" }        another asset in the same GitHub release
 #       { sibling = "file" }       a file next to the download ({name} = file name)
 #       { url = "https://..." }    a checksum file anywhere
+#       { url = "...", regex = "…(hex)…" }  a hash shown on a web page that names the file
 #       { sha256 = "hex" }         pinned hash
 #       "sf-md5"                   SourceForge's own MD5 (integrity only)
 #       "tofu"                     trust on first use: no upstream hash exists,
 #                                  so record ours and warn if it ever changes
 #                                  without a version bump
+#   user_agent  "browser" for sites that refuse anything but a browser (pages and hashes)
 #   description short tip shown at the bottom of the Ventoy menu
 
 [settings]
@@ -462,6 +465,26 @@ source = "local"
 byo = true
 path = "byo/lockpick.iso"
 description = "Windows password removal. No official download to verify; supply the ISO yourself."
+
+# ── PortableApps.com Platform ─────────────────────────────────────────────
+# Start.exe and PortableApps\ at the root of the stick, like MediCat. It goes on
+# once; after that you add apps from its App Store and it updates them (and
+# itself), so refresh.sh never overwrites or prunes it. Lazarus PE opens it at
+# startup. Unpacking the installer needs 7-Zip, so the Windows app skips it.
+[[tool]]
+name = "portableapps"
+title = "PortableApps.com Platform"
+kind = "tree"
+dest = ""
+once = "PortableApps/PortableApps.com/PortableAppsPlatform.exe"
+drop = ['^\$PLUGINSDIR(/|$)']
+source = "page"
+page = "https://portableapps.com/download"
+user_agent = "browser"     # portableapps.com turns away other user agents
+asset = ['(?<=downloads\.sourceforge\.net/portableapps/)PortableApps\.com_Platform_Setup_[\d.]+\.paf\.exe$']
+version = 'Platform_Setup_([\d.]+)\.paf'
+checksum = [{ url = "https://portableapps.com/download", regex = 'SHA256 Hash ?: ?([0-9a-fA-F]{64})' }]
+windows = { enabled = false }
 
 # ── Portable apps (loaded by Lazarus PE from USB:\Apps) ───────────────────
 [[tool]]

@@ -770,6 +770,49 @@ class TestPack(Base):
         self.assertEqual(self.unpack(pack, other)[0], 0)
         self.assertEqual((other / "ventoy/ventoy_wimboot.img").read_bytes(), b"wimboot plugin")
 
+    @unittest.skipUnless(shutil.which("7z") or shutil.which("7za") or shutil.which("7zz"), "needs 7-Zip")
+    def test_tree_goes_on_once_and_is_then_left_alone(self):
+        setup = zipped({"Start.exe": b"MZ start", "PortableApps/PortableApps.com/PortableAppsPlatform.exe": b"MZ pa",
+                        "$PLUGINSDIR/junk.dll": b"x"})
+        put("pa/download.html", f'<a href="{BASE}/pa/files/Platform_Setup_2.0.paf.exe">get it</a>'
+                                f'<p>SHA256 Hash <b>:</b> {sha(setup)}</p>')
+        put("pa/files/Platform_Setup_2.0.paf.exe", setup)
+        (self.repo / "local.toml").write_text(
+            '[[tool]]\nname = "pa"\ntitle = "Platform"\nkind = "tree"\ndest = ""\n'
+            'once = "PortableApps/PortableApps.com/PortableAppsPlatform.exe"\ndrop = [\'^\\$PLUGINSDIR(/|$)\']\n'
+            f'source = "page"\npage = "{BASE}/pa/download.html"\nuser_agent = "browser"\n'
+            "asset = ['Platform_Setup_[\\d.]+\\.paf\\.exe$']\nversion = 'Setup_([\\d.]+)\\.paf'\n"
+            f'checksum = [{{ url = "{BASE}/pa/download.html", regex = \'SHA256 Hash ?: ?([0-9a-f]{{64}})\' }}]\n')
+        self.cfg = cr.Config(repo=self.repo)
+        rc, out = self.fetch()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Platform 2.0 — sha256 from", out)
+        self.assertEqual(self.sync()[0], 0)
+        self.assertEqual((self.stick / "Start.exe").read_bytes(), b"MZ start")
+        self.assertFalse((self.stick / "$PLUGINSDIR").exists())
+        # The Platform updates itself and you install apps into it: sync must leave all that be
+        (self.stick / "Start.exe").write_bytes(b"MZ newer, self-updated")
+        (self.stick / "PortableApps/FirefoxPortable").mkdir(parents=True)
+        (self.stick / "PortableApps/FirefoxPortable/FirefoxPortable.exe").write_bytes(b"MZ ff")
+        rc, out = self.sync()
+        self.assertIn("already on stick (it updates itself)", out)
+        self.assertEqual((self.stick / "Start.exe").read_bytes(), b"MZ newer, self-updated")
+        self.assertTrue((self.stick / "PortableApps/FirefoxPortable/FirefoxPortable.exe").exists())
+        pack, _ = self.pack()                                   # same rules through a pack
+        other = self.tmp / "stick2"
+        other.mkdir()
+        self.assertEqual(self.unpack(pack, other)[0], 0)
+        self.assertEqual((other / "PortableApps/PortableApps.com/PortableAppsPlatform.exe").read_bytes(), b"MZ pa")
+        rc, out = self.unpack(pack)
+        self.assertIn("already on stick (it updates itself)", out)
+        self.assertEqual((self.stick / "Start.exe").read_bytes(), b"MZ newer, self-updated")
+
+    def test_page_hash_must_name_the_file(self):
+        put("pa/download.html", f'<a href="{BASE}/pa/files/Other_1.0.paf.exe">x</a><p>SHA256 Hash: {"0" * 64}</p>')
+        tool = {"name": "pa", "title": "Pa", "checksum": [{"url": f"{BASE}/pa/download.html", "regex": "SHA256 Hash ?: ?([0-9a-f]{64})"}]}
+        with self.assertRaisesRegex(cr.RescueError, "couldn't find an upstream checksum"):
+            cr.expected_hash(tool, {"file": "Platform_Setup_2.0.paf.exe"})
+
     def test_file_tool_needs_a_safe_dest(self):
         (self.repo / "local.toml").write_text(
             '[[tool]]\nname = "bad"\ntitle = "Bad"\nkind = "file"\ndest = "../etc/x"\nsource = "local"\npath = "x"\n')

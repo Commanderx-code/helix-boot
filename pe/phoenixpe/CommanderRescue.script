@@ -3,6 +3,7 @@
 // Puts the Commander Rescue app launcher inside the PE with desktop and Start
 // menu shortcuts. The apps themselves stay on the USB in Apps\ and are updated
 // from Linux by refresh.sh, so this never needs changing when they do.
+// Also starts the PortableApps.com Platform from the USB when the desktop loads.
 //
 // Installed into Projects\MyApps\Commander Rescue\ by Apply-CommanderPreset.ps1,
 // next to a copy of CommanderApps.cmd.
@@ -14,12 +15,13 @@ Author=Commander Rescue
 Level=5
 Selected=True
 Mandatory=False
-Version=1.0.0.0
+Version=1.1.0.0
 Date=2026-09-26
 
 [Variables]
 %ProgramFolder%="Commander Rescue"
 %ProgramExe%="CommanderApps.cmd"
+%PAHelper%="StartPortableApps.cmd"
 
 [Process]
 Echo,"Processing %ScriptTitle%..."
@@ -27,8 +29,15 @@ Echo,"Processing %ScriptTitle%..."
 StrFormat,DirPath,%ScriptFile%,%SrcDir%
 If,Not,ExistFile,"%SrcDir%%ProgramExe%",Halt,"%ProgramExe% is missing next to %ScriptFile%. Re-run Apply-CommanderPreset.ps1."
 
+If,Not,ExistFile,"%SrcDir%%PAHelper%",Halt,"%PAHelper% is missing next to %ScriptFile%. Re-run Apply-CommanderPreset.ps1."
+
 DirMake,"%TargetPrograms%\%ProgramFolder%"
 FileCopy,"%SrcDir%%ProgramExe%","%TargetPrograms%\%ProgramFolder%"
+FileCopy,"%SrcDir%%PAHelper%","%TargetPrograms%\%ProgramFolder%"
+
+// PortableApps.com Platform on the USB (X:\Start.exe): open it with the desktop
+If,%cb_AutoPortableApps%,Equal,True,AddAutoRun,PostShell,HideNoWait,"","%PEPrograms%\%ProgramFolder%\%PAHelper%"
+If,%cb_PortableAppsShc%,Equal,True,AddShortcut,Desktop,"","PortableApps","%PEPrograms%\%ProgramFolder%\%PAHelper%","","%PEPrograms%\%ProgramFolder%","","","Minimized"
 
 If,%cb_DesktopShc%,Equal,True,AddShortcut,Desktop,"",%txt_ShortcutName%,"%PEPrograms%\%ProgramFolder%\%ProgramExe%","","%PEPrograms%\%ProgramFolder%"
 If,%cb_StartMenuShc%,Equal,True,AddShortcut,StartMenu,%txt_StartMenuFolder%,%txt_ShortcutName%,"%PEPrograms%\%ProgramFolder%\%ProgramExe%","","%PEPrograms%\%ProgramFolder%"
@@ -39,3 +48,5 @@ cb_DesktopShc=Desktop,1,3,10,40,200,18,True
 cb_StartMenuShc="Start Menu",1,3,10,62,200,18,True
 txt_StartMenuFolder="Start Menu Folder:",1,0,10,100,200,21,"System Tools"
 txt_ShortcutName="Shortcut Name:",1,0,10,142,200,21,"Commander Apps"
+cb_AutoPortableApps="Start PortableApps.com with the desktop",1,3,10,184,300,18,True
+cb_PortableAppsShc="PortableApps desktop shortcut",1,3,10,206,300,18,True

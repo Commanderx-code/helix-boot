@@ -132,6 +132,15 @@ enabled = true
 
 Every tool is described in [`tools.toml`](tools.toml); adding one is a few lines.
 
+### PortableApps.com
+
+The [PortableApps.com Platform](https://portableapps.com) sits at the root of
+the stick (`Start.exe`), like on MediCat: run it on any Windows PC, and
+Lazarus PE opens it by itself when the desktop loads. Pick apps from its App
+Store; it keeps them and itself up to date. Commander Rescue puts the Platform
+on once and never overwrites or prunes it, so your apps survive every refresh.
+The Commander Apps menu also has **p) PortableApps.com menu**.
+
 ### Bring your own tools
 
 Paid and licence-restricted tools get menu slots you fill with your own copy:

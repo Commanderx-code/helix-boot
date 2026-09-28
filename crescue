@@ -40,7 +40,9 @@ SF_RSS = os.environ.get(
 )
 SF_DL = os.environ.get("CRESCUE_SF_DL", "https://downloads.sourceforge.net/project/{project}{path}")
 USER_AGENT = f"commander-rescue/{__version__} (+https://github.com/Commanderx-code/commander-rescue)"
-KINDS = {"iso", "app", "ventoy", "file"}
+# For the few sites that turn away anything but a browser (`user_agent = "browser"` on a tool)
+BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+KINDS = {"iso", "app", "ventoy", "file", "tree"}
 SOURCES = {"github": ["repo"], "sourceforge": ["project", "path"], "url": ["url"], "page": ["page", "asset", "version"],
            "local": ["path"]}
 HASH_BY_LEN = {32: "md5", 40: "sha1", 64: "sha256", 128: "sha512"}
@@ -146,6 +148,12 @@ class Config:
             dest = t.get("dest") or ""
             if not dest or dest.startswith("/") or ".." in dest.split("/"):
                 raise RescueError(f"{where}: a file needs 'dest', a path on the stick such as ventoy/x.img")
+        if t["kind"] == "tree":
+            for key in ("dest", "once"):
+                v = t.get(key)
+                if v is None or v.startswith("/") or ".." in v.split("/") or (key == "once" and not v):
+                    raise RescueError(f"{where}: a tree needs 'dest' (\"\" for the stick's root) and 'once', "
+                                      "the file whose presence means it's installed")
         src = t.get("source")
         if src not in SOURCES:
             raise RescueError(f"{where}: source must be one of {sorted(SOURCES)}")
@@ -188,6 +196,10 @@ def _request(url: str, headers: dict | None = None) -> urllib.request.Request:
     if url.startswith(GITHUB_API) and os.environ.get("GITHUB_TOKEN"):
         h["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
     return urllib.request.Request(url, headers=h)
+
+
+def _ua(tool: dict) -> dict | None:
+    return {"User-Agent": BROWSER_UA} if tool.get("user_agent") == "browser" else None
 
 
 def http_get(url: str, headers: dict | None = None, timeout: int = 60) -> bytes:
@@ -506,7 +518,7 @@ def resolve(tool: dict, cfg: Config) -> dict:
 
     elif src == "page":
         # A download page whose links carry the version (hdat2cd_76.iso, DGEng6201829_x64.zip)
-        text = http_get(tool["page"]).decode("utf-8", "replace")
+        text = http_get(tool["page"], _ua(tool)).decode("utf-8", "replace")
         hrefs = [urllib.parse.urljoin(tool["page"], html.unescape(h))
                  for h in re.findall(r"""href\s*=\s*["']([^"']+)""", text, re.I)]
         hits: list[tuple[str, str]] = []
@@ -575,6 +587,18 @@ def expected_hash(tool: dict, res: dict) -> tuple[str, str | None, str]:
             elif "sibling" in strat:
                 tried.append(strat["sibling"])
                 url = f"{res['dir_url']}/{urllib.parse.quote(strat['sibling'].format(name=res['file']))}" if res.get("dir_url") else None
+            elif "url" in strat and "regex" in strat:  # a hash shown on a web page, next to the file name
+                tried.append(strat["url"])
+                try:
+                    raw = html.unescape(http_get(strat["url"], _ua(tool)).decode("utf-8", "replace"))
+                except (FileNotFoundError, RescueError):
+                    continue
+                text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw))  # the page as it reads
+                m = re.search(strat["regex"], text)
+                if m and res["file"] in raw and len(m.group(1)) in HASH_BY_LEN:
+                    algo = HASH_BY_LEN[len(m.group(1))]
+                    return algo, m.group(1).lower(), f"{algo} from {urllib.parse.urlsplit(strat['url']).netloc}"
+                continue
             elif "url" in strat:
                 tried.append(strat["url"])
                 url = strat["url"]
@@ -716,6 +740,23 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
         if len(top) != 1:
             raise RescueError(f"unexpected Ventoy archive layout: {sorted(top)}")
         final = top.pop()
+    elif tool["kind"] == "tree":  # e.g. a PortableApps.com .paf.exe (NSIS): only 7-Zip opens those
+        seven = shutil.which("7z") or shutil.which("7za") or shutil.which("7zz")
+        if not seven:
+            dest.unlink(missing_ok=True)
+            raise RescueError(f"{tool['title']}: unpacking needs 7-Zip. Install it (e.g. sudo pacman -S 7zip) and fetch again.")
+        final = f"tree-{re.sub(r'[^A-Za-z0-9._-]', '_', res['version'] or 'x')}"
+        out = tdir / final
+        shutil.rmtree(out, ignore_errors=True)
+        r = subprocess.run([seven, "x", "-y", f"-o{out}", str(dest)], capture_output=True, text=True)
+        if r.returncode:
+            raise RescueError(f"{tool['title']}: 7-Zip couldn't unpack {res['file']}: {r.stderr.strip() or r.stdout[-300:]}")
+        for f in sorted(out.rglob("*"), key=lambda f: -len(f.parts)):
+            rel = f.relative_to(out).as_posix()
+            if any(re.search(pat, rel) for pat in tool.get("drop", [])):
+                shutil.rmtree(f) if f.is_dir() else f.unlink(missing_ok=True)
+        if not (out / tool["once"]).exists():
+            raise RescueError(f"{tool['title']}: {tool['once']} isn't in {res['file']}; the layout has changed")
     elif tool["kind"] == "ventoy":
         with tarfile.open(dest) as tar:
             top = {t for t in map(_top_dir, tar.getnames()) if t}  # Ventoy's tarball says ./ventoy-x/…
@@ -1030,6 +1071,23 @@ def _plan(cfg: Config, lock: dict) -> tuple[list[dict], list[tuple], list[str]]:
     return placed, apps, missing
 
 
+def _trees(cfg: Config, lock: dict) -> list[tuple[dict, dict, Path]]:
+    """Fetched `kind = "tree"` tools: (tool, lock entry, unpacked folder)."""
+    out = []
+    for t in cfg.enabled(kinds={"tree"}):
+        entry = lock.get(t["name"])
+        src = cfg.cache / t["name"] / entry["final"] if entry and entry.get("final") else None
+        if src and src.is_dir():
+            out.append((t, entry, src))
+        else:
+            warn(f"{t['title']}: not fetched yet — run `crescue fetch` (skipping)")
+    return out
+
+
+def _tree_files(src: Path) -> list[tuple[str, Path]]:
+    return [(f.relative_to(src).as_posix(), f) for f in sorted(src.rglob("*")) if f.is_file()]
+
+
 def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tuple[str, Path | bytes]]:
     """The small files that go with the boot images: app launcher, theme, boot menu and
     `kind = "file"` tools such as Ventoy's wimboot plugin."""
@@ -1214,6 +1272,24 @@ def cmd_sync(cfg: Config, args) -> int:
     if stale and not args.no_prune:
         _prune(mnt, cfg.iso_root, stale, args.dry_run)
 
+    # Trees (the PortableApps.com Platform) go on once and then look after themselves:
+    # never overwritten with an older copy, never pruned.
+    for t, entry, src in _trees(cfg, load_lock(cfg)):
+        base = mnt / t["dest"]
+        if (base / t["once"]).exists():
+            ok(f"{t['title']} — already on stick (it updates itself)")
+            continue
+        files = _tree_files(src)
+        info(f"{t['title']} {entry['version']} → /{t['dest']}")
+        if args.dry_run:
+            continue
+        prog = Progress(sum(f.stat().st_size for _, f in files))
+        prog.file(t["title"], 0)
+        for rel, f in files:
+            _copy(f, base / rel, prog)
+        prog.clear()
+        ok(f"{t['title']} installed")
+
     if args.dry_run:
         print("\nDry run — nothing was written.")
         return 0
@@ -1328,6 +1404,12 @@ def cmd_pack(cfg: Config, args) -> int:
                     zf.writestr(f"stick/{rel}", data, zipfile.ZIP_DEFLATED)
                 else:
                     _zip_file(zf, data, f"stick/{rel}")
+            trees = []
+            for t, entry, src in _trees(cfg, lock):
+                for rel, f in _tree_files(src):
+                    _zip_file(zf, f, f"once/{t['name']}/{rel}")
+                trees.append({"name": t["name"], "title": t["title"], "dest": t["dest"], "once": t["once"],
+                              "version": entry["version"]})
             if vsrc:
                 _zip_file(zf, vsrc, f"installer/{vsrc.name}", zipfile.ZIP_STORED)
             for rel in BUNDLED:  # keeps their executable bits, so `unzip` gives runnable scripts
@@ -1342,6 +1424,7 @@ def cmd_pack(cfg: Config, args) -> int:
                 "iso_root": cfg.iso_root, "apps_root": cfg.apps_root, "isos": isos,
                 "apps": {t["name"]: e["version"] for t, e, _ in apps},
                 "ventoy": {"file": f"installer/{vsrc.name}", "version": ventry["version"]} if vsrc else None,
+                "trees": trees,
                 "fresh_theme": any(rel.startswith("ventoy/theme/") for rel, _ in extras),
             }, indent=2), zipfile.ZIP_DEFLATED)
     except BaseException:
@@ -1365,7 +1448,8 @@ def _read_pack(zf: zipfile.ZipFile) -> dict:
         raise RescueError(f"this pack is format {meta.get('format')}; this crescue reads format {PACK_FORMAT}. "
                           "Update Commander Rescue.")
     _safe_zip_members(zf)
-    for rel in [i["rel"] for i in meta["isos"]] + list(meta["apps"]):
+    for rel in ([i["rel"] for i in meta["isos"]] + list(meta["apps"])
+                + [t[k] for t in meta.get("trees", []) for k in ("dest", "once", "name") if t[k]]):
         if Path(rel).is_absolute() or ".." in Path(rel).parts:
             raise RescueError(f"refusing unsafe path in pack: {rel}")
     return meta
@@ -1487,6 +1571,20 @@ def cmd_unpack(cfg: Config, args) -> int:
         stale = [f for f in state.get("files", []) if f not in want_files]
         if stale and not args.no_prune:
             _prune(mnt, iso_root, stale, args.dry_run)
+
+        for t in meta.get("trees", []):
+            base = mnt / t["dest"]
+            if (base / t["once"]).exists():
+                ok(f"{t['title']} — already on stick (it updates itself)")
+                continue
+            info(f"{t['title']} {t['version']} → /{t['dest']}")
+            if args.dry_run:
+                continue
+            prefix = f"once/{t['name']}/"
+            for m in sorted(names):
+                if m.startswith(prefix) and not m.endswith("/"):
+                    _unzip_to(zf, m, base / m[len(prefix):])
+            ok(f"{t['title']} installed")
 
         if args.dry_run:
             print("\nDry run — nothing was written.")
