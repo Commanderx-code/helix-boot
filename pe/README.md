@@ -108,9 +108,11 @@ tooling and `pull` fetches the ISO.
 4. Run `PEBakeryLauncher.exe` as administrator. In **Source Config**, set the
    source to the Windows DVD drive root (e.g. `E:\`), keep the base image at
    **2 (Windows Setup)**, pick the **Pro** edition for `install.wim` (Windows S
-   isn't supported), and tick **Run all programs from RAM** so nothing depends
-   on the ISO staying reachable after boot. A fresh PhoenixPE folder forgets
-   these settings.
+   isn't supported), and leave **Run all programs from RAM** unticked. Apps
+   then load from the stick when opened, so the boot image stays small: it
+   boots faster, needs less RAM, and works in legacy BIOS mode, where an image
+   over about 1.5 GB fails with *not enough memory to create a ramdisk device*.
+   A fresh PhoenixPE folder forgets these settings.
 5. **Extra drivers (optional):** for storage or network hardware not covered
    above, drop the extracted `.inf` driver folders into *Drivers → Driver
    Integration* and tick it.
