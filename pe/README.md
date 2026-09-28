@@ -27,7 +27,7 @@ USB (Ventoy data partition)
 | Build host | Windows 10/11 **x64**. On Linux, `pe/vm/build-vm.sh` makes a VM for you (below). |
 | Source | A Windows 11 ISO. PhoenixPE recommends **Win11 23H2** for the fewest quirks. 24H2 and 25H2 work, but taskbar pins can misbehave. Win10 2004 also works. |
 | Disk | ~40 GB free on Linux for the VM (its disk grows as it fills, up to 64 GB) |
-| PhoenixPE | Latest release from [PhoenixPE releases](https://github.com/PhoenixPE/PhoenixPE/releases). It bundles the PEBakery build engine. |
+| PhoenixPE | Latest release from [PhoenixPE releases](https://github.com/PhoenixPE/PhoenixPE/releases). It bundles the PEBakery build engine. With the build VM, save the `PhoenixPE-*.7z` in `~/.local/share/commander-rescue/vm/` and it goes onto the transfer disk for you. |
 
 ### VM on Garuda (one-time)
 
@@ -55,6 +55,9 @@ sudo pacman -S --needed qemu-desktop libvirt virt-install virt-viewer edk2-ovmf 
 3. Later: `pe/vm/build-vm.sh start` boots it again and `status` shows where
    things stand. `destroy` deletes it all.
 
+If your user's core-dump limit is 0 (Garuda's default), `create` adds
+`max_core = 0` to `~/.config/libvirt/qemu.conf`; without it QEMU won't start.
+
 The Windows ISO stays in the VM's DVD drive, which is also PhoenixPE's source.
 The transfer disk shows up in Explorer as **CRTRANSFER**, with a README.txt of
 these steps. Files move only while the VM is **shut down**: `push` refreshes the
@@ -62,7 +65,9 @@ tooling and `pull` fetches the ISO.
 
 ## Build steps
 
-1. Unpack the PhoenixPE release inside the VM, e.g. `C:\PhoenixPE`.
+1. Unpack the PhoenixPE release inside the VM to `C:\PhoenixPE` (the `.7z` has no
+   top folder, so extract into that folder). With the build VM it's on the
+   transfer disk: right-click it, *Extract All*.
 2. Apply the Commander preset from PowerShell, using the copy of `pe\` on the
    transfer disk (`CRTRANSFER\commander`), or this repo if you build elsewhere:
 
