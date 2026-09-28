@@ -5,19 +5,12 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
-### Added
-- Chris Titus Tech's WinUtil in the portable apps, verified against GitHub's
-  sha256 digest, for tweaking the repaired Windows from the stick.
-- The app launcher runs `.ps1` apps with PowerShell instead of opening them in
-  Notepad.
-
-### Changed
-- The Windows PE is now called **Lazarus PE**: tool id `lazarus-pe`, built as
-  `pe/out/LazarusPE.iso`.
-
-## [0.3.0] - 2026-09-27
+## [0.3.0] - 2026-09-28
 
 ### Added
+- **Lazarus PE**, the first build of the stick's own Windows 11 PE (formerly
+  "Commander PE"): tool id `lazarus-pe`, built as `pe/out/LazarusPE.iso`. It
+  boots to a desktop with the Commander Apps launcher and network support.
 - **Packs.** `crescue pack` writes the whole stick (boot images, unpacked apps,
   menu, theme), your bring-your-own tools and the Ventoy installer into one zip,
   recording each image's sha256. `crescue unpack` streams a pack onto a stick
@@ -27,12 +20,21 @@ tagged releases also publish the Windows app.
 - Packs carry their own installer: unzip `installer/` beside the pack on
   another Linux PC and run `installer/install.sh`, no clone needed.
 - DBAN in the Disk Wipe menu, verified against SourceForge's MD5.
+- Chris Titus Tech's WinUtil in the portable apps, verified against GitHub's
+  sha256 digest, for tweaking the repaired Windows from the stick.
+- The app launcher runs `.ps1` apps with PowerShell instead of opening them in
+  Notepad.
 - `crescue ventoy-path --from PACK` extracts the pack's Ventoy installer.
+- Changelog, contributing guide, security policy and issue forms.
 
 ### Changed
+- README reworked around quick start, the tool list and packs.
 - Empty bring-your-own ISO slots no longer warn on `sync` and `pack`.
 - Build VM: PhoenixPE saved in the VM folder is copied onto the transfer disk,
-  so Windows doesn't need to download it.
+  so Windows doesn't need to download it. The PE guide covers Defender
+  exclusions and the Source Config settings.
+- The PhoenixPE preset keeps Microsoft DaRT off; it needs MDOP media and halts
+  the build without it.
 
 ### Fixed
 - Build VM on systems with a zero core-dump limit (Garuda's default): `create`
