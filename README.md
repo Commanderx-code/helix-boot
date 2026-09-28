@@ -121,6 +121,12 @@ enabled = true
 
 </details>
 
+> [!TIP]
+> DBAN and ShredOS overwrite **hard drives**. For SSDs and NVMe drives use
+> Parted Magic's *Erase Disk*, which runs the drive's own secure erase or
+> sanitize command and reaches the spare flash an overwrite can miss. The
+> boot menu says so too.
+
 Every tool is described in [`tools.toml`](tools.toml); adding one is a few lines.
 
 ### Bring your own tools

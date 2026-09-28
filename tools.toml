@@ -82,7 +82,7 @@ description = "Test RAM and disks."
 id = "wipe"
 dir = "5-Disk-Wipe"
 title = "Disk Wipe"
-description = "Securely erase disks. DESTROYS DATA."
+description = "Securely erase disks. DESTROYS DATA. SSD or NVMe? Use Parted Magic's Erase Disk instead (Partition Tools)."
 
 [[category]]
 id = "live"
@@ -220,7 +220,7 @@ repo = "PartialVolume/shredos.x86_64"
 asset = ['x86-64.*\.iso$']
 version = 'shredos-([\d.]+_\d+)_x86-64_v?([\d.]+)_'
 checksum = ["github-digest", { asset = '{name}\.sha(1|256)$' }]
-description = "Boots straight into nwipe. DESTROYS DATA on the disks you select."
+description = "Overwrites hard drives with nwipe. Not for SSDs: use Parted Magic's Erase Disk. DESTROYS DATA."
 
 [[tool]]
 name = "dban"
@@ -233,7 +233,7 @@ path = "/dban"
 asset = ['^dban-[\d.]+_i586\.iso$']
 version = 'dban-([\d.]+)_i586'
 checksum = ["sf-md5"]
-description = "Darik's Boot and Nuke, the classic wiper. BIOS/legacy boot only. DESTROYS DATA."
+description = "Darik's Boot and Nuke, for hard drives only (not SSDs). BIOS/legacy boot only. DESTROYS DATA."
 
 # ── Boot repair ───────────────────────────────────────────────────────────
 [[tool]]
@@ -368,7 +368,7 @@ category = "partitioning"
 source = "local"
 byo = true
 path = "byo/parted-magic.iso"
-description = "The ISO from your Parted Magic purchase."
+description = "Partitioning, cloning, and Erase Disk: firmware secure erase for SSDs and NVMe drives."
 
 [[tool]]
 name = "bootit-bm"

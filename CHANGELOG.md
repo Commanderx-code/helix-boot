@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- Boot-menu tips steer SSD and NVMe wiping to Parted Magic's Erase Disk
+  (firmware secure erase); DBAN and ShredOS are labelled for hard drives.
 - Progress while filling a stick: `unpack` shows one bar for the whole job
   (bytes, speed, ETA, current file); `sync` shows each file with a counter.
 
