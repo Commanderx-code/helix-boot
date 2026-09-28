@@ -783,6 +783,34 @@ class TestPack(Base):
             self.run_quiet(cr.cmd_ventoy_path, self.cfg, type("A", (), {"from_pack": str(pack)})())
 
 
+class TestProgress(unittest.TestCase):
+    def test_whole_job_line(self):
+        p = cr.Progress(total=4 << 30)
+        p.start = 0.0
+        p.file("(3/31) LazarusPE.iso", 3 << 30)
+        p.tty = False                     # add() only counts; line() is what a terminal would see
+        p.add(1 << 30)
+        line = p.line(now=10.0)           # 1 GiB in 10 s
+        self.assertIn("[=====>", line)
+        self.assertIn(" 25%", line)
+        self.assertIn("1.0 GiB/4.0 GiB", line)
+        self.assertIn("102.4 MiB/s", line)
+        self.assertIn("ETA 0m30s", line)
+        self.assertIn("(3/31) LazarusPE.iso", line)
+
+    def test_single_file_line(self):
+        p = cr.Progress()
+        p.tty = False
+        p.file("(1/2) a.iso", 200)
+        p.fstart = 0.0
+        p.add(50)
+        self.assertIn("a.iso  25%", p.line(now=1.0))
+
+    def test_eta_format(self):
+        self.assertEqual(cr._fmt_eta(75), "1m15s")
+        self.assertEqual(cr._fmt_eta(3725), "1h02m")
+
+
 class TestDownloadRetry(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="crescue-test-"))

@@ -5,6 +5,14 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- Progress while filling a stick: `unpack` shows one bar for the whole job
+  (bytes, speed, ETA, current file); `sync` shows each file with a counter.
+
+### Fixed
+- `--verify` now reads each image back from the stick. It used to hash the
+  copy still cached in memory, which couldn't catch a failing stick.
+
 ## [0.3.0] - 2026-09-28
 
 ### Added

@@ -240,6 +240,55 @@ def _fmt_bytes(n: float) -> str:
     return f"{n:.1f} GiB"
 
 
+def _fmt_eta(seconds: float) -> str:
+    s = int(seconds)
+    return f"{s // 3600}h{s % 3600 // 60:02d}m" if s >= 3600 else f"{s // 60}m{s % 60:02d}s"
+
+
+class Progress:
+    """One status line on stderr for long copies. With a known total it shows the whole
+    job (bar, bytes, speed, ETA); otherwise just the current file. Silent unless stderr
+    is a terminal, so logs and the Windows app stay clean."""
+
+    def __init__(self, total: int = 0):
+        self.total, self.done = total, 0
+        self.tty = sys.stderr.isatty()
+        self.start = self.last = time.monotonic()
+        self.label, self.fsize, self.fdone, self.fstart = "", 0, 0, self.start
+
+    def file(self, label: str, size: int) -> None:
+        self.label, self.fsize, self.fdone, self.fstart = label, size, 0, time.monotonic()
+
+    def add(self, n: int) -> None:
+        self.done += n
+        self.fdone += n
+        now = time.monotonic()
+        if self.tty and now - self.last > 0.25:
+            self.last = now
+            print("\r" + self.line(now), end="", file=sys.stderr)
+
+    def line(self, now: float) -> str:
+        width = shutil.get_terminal_size((100, 20)).columns - 1
+        if self.total:
+            frac = min(self.done / self.total, 1.0)
+            rate = self.done / max(now - self.start, 1e-6)
+            fill = int(frac * 20)
+            bar = "=" * fill + (">" if fill < 20 else "") + " " * max(19 - fill, 0)
+            text = (f"  [{bar}] {frac * 100:3.0f}%  {_fmt_bytes(self.done)}/{_fmt_bytes(self.total)}"
+                    f"  {_fmt_bytes(rate)}/s  ETA {_fmt_eta((self.total - self.done) / rate if rate else 0)}"
+                    f"  {self.label}")
+        else:
+            rate = self.fdone / max(now - self.fstart, 1e-6)
+            pct = self.fdone * 100 // self.fsize if self.fsize else 0
+            text = (f"  -> {self.label} {pct:3d}%  {_fmt_bytes(self.fdone)}/{_fmt_bytes(self.fsize)}"
+                    f"  {_fmt_bytes(rate)}/s")
+        return text[:width].ljust(width)
+
+    def clear(self) -> None:
+        if self.tty:
+            print("\r" + " " * (shutil.get_terminal_size((100, 20)).columns - 1) + "\r", end="", file=sys.stderr)
+
+
 RETRY_DELAYS = (2, 5, 10)  # seconds to wait before each retry of a failed request
 
 
@@ -302,12 +351,25 @@ def download(url: str, dest: Path) -> None:
     os.replace(part, dest)
 
 
-def file_hash(path: Path, algo: str = "sha256") -> str:
+def file_hash(path: Path, algo: str = "sha256", progress: "Progress | None" = None) -> str:
     h = hashlib.new(algo)
     with open(path, "rb") as f:
         while chunk := f.read(1 << 20):
             h.update(chunk)
+            if progress:
+                progress.add(len(chunk))
     return h.hexdigest()
+
+
+def _uncached(path: Path) -> None:
+    """Have the OS drop its cached copy of path, so hashing it next really reads the disk.
+    Without this, verifying a file just written to a stick would read it back from RAM."""
+    if hasattr(os, "posix_fadvise"):
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        finally:
+            os.close(fd)
 
 
 def remote_id(url: str) -> str | None:
@@ -836,11 +898,23 @@ def _flush_volume(mnt: Path) -> None:
             pass  # files are fsynced as they're written; this is belt and braces
 
 
-def _copy(src: Path, dst: Path) -> None:
+FLUSH_EVERY = 256 << 20  # fsync this often while copying, so progress tracks what's really on the stick
+
+
+def _copy(src: Path, dst: Path, progress: Progress | None = None) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.name + ".part")
     with open(src, "rb") as s, open(tmp, "wb") as d:
-        shutil.copyfileobj(s, d, 8 << 20)
+        since = 0
+        while chunk := s.read(8 << 20):
+            d.write(chunk)
+            since += len(chunk)
+            if since >= FLUSH_EVERY:
+                d.flush()
+                os.fsync(d.fileno())
+                since = 0
+            if progress:
+                progress.add(len(chunk))
         d.flush()
         os.fsync(d.fileno())
     os.replace(tmp, dst)
@@ -981,7 +1055,7 @@ def cmd_sync(cfg: Config, args) -> int:
 
     # A file that only changed folder (e.g. a category was renamed) is moved, not copied again.
     moved_from = {Path(f).name: f for f in stale}
-    for p in placed:
+    for n, p in enumerate(placed, 1):
         dst = mnt / p["rel"]
         old = moved_from.get(p["file"])
         if old and not dst.exists():
@@ -1003,9 +1077,17 @@ def cmd_sync(cfg: Config, args) -> int:
             continue
         info(f"{p['title']} {p['version']} → {p['rel']}")
         if not args.dry_run:
-            _copy(p["src"], dst)
-            if args.verify and p["sha256"] and file_hash(dst) != p["sha256"]:
-                raise RescueError(f"{p['rel']} doesn't match after copying — the stick may be failing.")
+            prog = Progress()
+            prog.file(f"({n}/{len(placed)}) {p['file']}", p["src"].stat().st_size)
+            _copy(p["src"], dst, prog)
+            if args.verify and p["sha256"]:
+                _uncached(dst)
+                prog.file(f"({n}/{len(placed)}) verifying {p['file']}", dst.stat().st_size)
+                good = file_hash(dst, progress=prog) == p["sha256"]
+                prog.clear()
+                if not good:
+                    raise RescueError(f"{p['rel']} doesn't match after copying — the stick may be failing.")
+            prog.clear()
             ok(f"{p['title']} copied")
 
     app_state = dict(state.get("apps", {}))
@@ -1209,16 +1291,24 @@ def _open_pack(path: str) -> zipfile.ZipFile:
         raise RescueError(f"{p.name} isn't a zip file (or it's incomplete)") from None
 
 
-def _unzip_to(zf: zipfile.ZipFile, member: str, dst: Path) -> str:
+def _unzip_to(zf: zipfile.ZipFile, member: str, dst: Path, progress: Progress | None = None) -> str:
     """Stream one member to dst (via a .part file, fsynced); return its sha256."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.name + ".part")
     h = hashlib.sha256()
     try:
         with zf.open(member) as s, open(tmp, "wb") as d:  # zipfile checks the CRC as it reads
+            since = 0
             while chunk := s.read(8 << 20):
                 h.update(chunk)
                 d.write(chunk)
+                since += len(chunk)
+                if since >= FLUSH_EVERY:
+                    d.flush()
+                    os.fsync(d.fileno())
+                    since = 0
+                if progress:
+                    progress.add(len(chunk))
             d.flush()
             os.fsync(d.fileno())
     except zipfile.BadZipFile as e:
@@ -1247,7 +1337,9 @@ def cmd_unpack(cfg: Config, args) -> int:
         if need > free and not args.dry_run:
             raise RescueError(f"the stick needs {_fmt_bytes(need)} free for this pack but has {_fmt_bytes(free)}")
 
-        for i in meta["isos"]:
+        # Writing counts once; with --verify, reading each image back from the stick counts again.
+        prog = Progress(need * (2 if args.verify else 1))
+        for n, i in enumerate(meta["isos"], 1):
             if i not in todo:
                 ok(f"{i['title']} {i['version']} — already on stick")
                 continue
@@ -1257,12 +1349,22 @@ def cmd_unpack(cfg: Config, args) -> int:
             if f"stick/{i['rel']}" not in names:
                 raise RescueError(f"the pack is missing {i['rel']}")
             dst = mnt / i["rel"]
-            if _unzip_to(zf, f"stick/{i['rel']}", dst) != i["sha256"]:
+            name = Path(i["rel"]).name
+            prog.file(f"({n}/{len(meta['isos'])}) {name}", i["size"])
+            got = _unzip_to(zf, f"stick/{i['rel']}", dst, prog)
+            if got != i["sha256"]:
+                prog.clear()
                 dst.unlink()
                 raise RescueError(f"{i['title']}: the copy in the pack doesn't match its checksum. "
                                   "The pack is damaged; make a new one.")
-            if args.verify and file_hash(dst) != i["sha256"]:
-                raise RescueError(f"{i['rel']} doesn't match after copying — the stick may be failing.")
+            if args.verify:
+                _uncached(dst)
+                prog.file(f"({n}/{len(meta['isos'])}) verifying {name}", i["size"])
+                good = file_hash(dst, progress=prog) == i["sha256"]
+                if not good:
+                    prog.clear()
+                    raise RescueError(f"{i['rel']} doesn't match after copying — the stick may be failing.")
+            prog.clear()
             ok(f"{i['title']} copied")
 
         app_state = dict(state.get("apps", {}))
