@@ -3,6 +3,7 @@
 #
 #   ./install.sh                 pick a USB stick interactively
 #   ./install.sh /dev/sdX        use that stick
+#   ./install.sh --from pack.zip  fill it from a pack (`crescue pack`), no downloads
 #
 # Everything is downloaded and verified BEFORE the stick is touched, and you
 # must type the device name to confirm the wipe.
@@ -25,12 +26,13 @@ Options:
   --no-secure-boot   don't add Ventoy's Secure Boot shim
   --reserve MB       leave MB of unallocated space at the end of the stick
   --skip-fetch       use what's already cached; don't check upstream
+  --from PACK        use a pack made by "crescue pack" instead of downloading
   --list             just list USB sticks and exit
   -h, --help         this help
 EOF
 }
 
-gpt=1 secure=1 reserve='' skip_fetch=0 dev='' list_only=0
+gpt=1 secure=1 reserve='' skip_fetch=0 dev='' list_only=0 from=''
 
 show_sticks() {
   local i p s m
@@ -45,6 +47,7 @@ while (($#)); do
     --no-secure-boot) secure=0 ;;
     --reserve) reserve=${2:?--reserve needs a size in MB}; shift ;;
     --skip-fetch) skip_fetch=1 ;;
+    --from) from=${2:?--from needs a pack .zip}; shift ;;
     --list) list_only=1 ;;
     -h|--help) usage; exit 0 ;;
     /dev/*) dev=$1 ;;
@@ -66,7 +69,11 @@ need sudo
 ((gpt)) && need parted  # Ventoy can only make GPT sticks with parted
 
 # ── 1. Download + verify everything first ────────────────────────────────
-if ((skip_fetch)); then
+if [[ -n $from ]]; then
+  [[ -f $from ]] || die "can't find the pack $from"
+  from=$(realpath -- "$from")
+  info "using the pack $from (no downloads)"
+elif ((skip_fetch)); then
   "$CRESCUE" ventoy-path >/dev/null 2>&1 || "$CRESCUE" fetch ventoy
 else
   if ! "$CRESCUE" fetch; then
@@ -75,7 +82,7 @@ else
     [[ ${a,,} == y* ]] || die "stopped — nothing was written to any disk"
   fi
 fi
-vdir=$("$CRESCUE" ventoy-path)
+if [[ -n $from ]]; then vdir=$("$CRESCUE" ventoy-path --from "$from"); else vdir=$("$CRESCUE" ventoy-path); fi
 
 # ── 2. Pick the stick ────────────────────────────────────────────────────
 mapfile -t sticks < <(usb_disks)
@@ -133,7 +140,11 @@ mnt=$(mount_part "$part")
 ok "Ventoy installed, data partition mounted at $mnt"
 
 # ── 5. Fill it ───────────────────────────────────────────────────────────
-"$CRESCUE" sync "$mnt" --init --verify
+if [[ -n $from ]]; then
+  "$CRESCUE" unpack "$from" "$mnt" --init --verify
+else
+  "$CRESCUE" sync "$mnt" --init --verify
+fi
 
 section "Finishing"
 unmount_part "$part"

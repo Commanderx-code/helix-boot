@@ -8,3 +8,5 @@ byo/*
 build/
 dist/
 commander-rescue.log
+commander-rescue-*.zip
+commander-rescue-*.zip.part

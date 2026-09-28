@@ -132,6 +132,32 @@ a single standard-library Python script:
 | `crescue check [--json]` | compares your cache against upstream, no downloads |
 | `crescue fetch [tool…] [--force]` | downloads, verifies, caches (`~/.cache/commander-rescue`), resumes interrupted downloads |
 | `crescue sync <mount> [--dry-run] [--verify]` | copies the cache to a Ventoy stick, prunes old versions, writes `ventoy.json` |
+| `crescue pack [file.zip]` | puts the whole stick, your own tools and Ventoy into one `.zip` ([packs](#packs-the-whole-stick-in-one-file)) |
+| `crescue unpack <pack.zip> <mount> [--dry-run] [--verify]` | fills a Ventoy stick from a pack, no downloads |
+
+### Packs: the whole stick in one file
+
+Like MediCat's download, a pack is one file with every tool in it, ready to
+extract onto a stick. It is made from your cache, so it includes what you put
+in `byo/`, plus the Ventoy installer, so a new stick needs no internet:
+
+```fish
+./crescue fetch                    # bring everything up to date first
+./crescue pack                     # → commander-rescue-<date>.zip
+./install.sh --from commander-rescue-2026-09-27.zip   # new stick
+./refresh.sh --from commander-rescue-2026-09-27.zip   # update a stick
+```
+
+Inside is the stick laid out exactly as `crescue sync` writes it (boot images
+in their category folders, apps already unpacked, the menu and theme). The
+boot images are stored uncompressed, since they don't compress, and each
+one's sha256 is recorded. Extracting streams the files straight onto the stick
+and checks every image against its hash, so a damaged pack is caught, not
+booted. A stick filled from a pack refreshes normally afterwards.
+
+A pack holds your paid tools as well, so keep it private: on a drive, a NAS
+or your own cloud storage, not a public repo or release. `*.zip` packs made in
+this folder are git-ignored.
 
 ### How verification works
 

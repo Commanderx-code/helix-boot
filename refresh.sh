@@ -4,6 +4,7 @@
 #
 #   ./refresh.sh                 find the plugged-in Ventoy stick and update it
 #   ./refresh.sh --upgrade-ventoy  also update the Ventoy boot loader itself
+#   ./refresh.sh --from pack.zip   update it from a pack (`crescue pack`), no downloads
 set -Eeuo pipefail
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/common.sh
@@ -21,6 +22,7 @@ onto your Ventoy stick. Files you added yourself are left alone.
 Options:
   --upgrade-ventoy   also upgrade Ventoy on the stick (non-destructive, needs sudo)
   --skip-fetch       only sync what's already cached
+  --from PACK        update from a pack made by "crescue pack" instead of downloading
   --verify           re-hash every file on the stick after copying (slow)
   --dry-run          show what would change
   --eject            unmount when finished
@@ -28,11 +30,12 @@ Options:
 EOF
 }
 
-upgrade=0 skip_fetch=0 eject=0 target='' sync_args=()
+upgrade=0 skip_fetch=0 eject=0 target='' sync_args=() from=''
 while (($#)); do
   case $1 in
     --upgrade-ventoy) upgrade=1 ;;
     --skip-fetch) skip_fetch=1 ;;
+    --from) from=${2:?--from needs a pack .zip}; shift ;;
     --verify) sync_args+=(--verify) ;;
     --dry-run) sync_args+=(--dry-run) ;;
     --eject) eject=1 ;;
@@ -45,6 +48,10 @@ done
 
 [[ $EUID -ne 0 ]] || die "run this as your normal user"
 check_python
+if [[ -n $from ]]; then
+  [[ -f $from ]] || die "can't find the pack $from"
+  from=$(realpath -- "$from")
+fi
 need lsblk util-linux
 need findmnt util-linux
 
@@ -70,8 +77,12 @@ ok "Stick: ${part:-?} at $mnt"
 # ── Ventoy upgrade (optional) ────────────────────────────────────────────
 if ((upgrade)); then
   need sudo
-  "$CRESCUE" fetch ventoy
-  vdir=$("$CRESCUE" ventoy-path)
+  if [[ -n $from ]]; then
+    vdir=$("$CRESCUE" ventoy-path --from "$from")
+  else
+    "$CRESCUE" fetch ventoy
+    vdir=$("$CRESCUE" ventoy-path)
+  fi
   disk=/dev/$(lsblk -no PKNAME "$part" | head -n1)
   [[ -b $disk ]] || die "can't work out which disk $part is on"
   want=$(basename "$vdir" | sed 's/^ventoy-//')
@@ -95,10 +106,14 @@ if ((upgrade)); then
 fi
 
 # ── Fetch + sync ─────────────────────────────────────────────────────────
-if ! ((skip_fetch)); then
-  "$CRESCUE" fetch || warn "some downloads failed — syncing everything else"
+if [[ -n $from ]]; then
+  "$CRESCUE" unpack "$from" "$mnt" "${sync_args[@]}"
+else
+  if ! ((skip_fetch)); then
+    "$CRESCUE" fetch || warn "some downloads failed — syncing everything else"
+  fi
+  "$CRESCUE" sync "$mnt" "${sync_args[@]}"
 fi
-"$CRESCUE" sync "$mnt" "${sync_args[@]}"
 
 if ((eject)) && [[ -n $part ]]; then
   unmount_part "$part"

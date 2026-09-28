@@ -647,6 +647,113 @@ class TestFetchAndSync(Base):
         self.assertEqual(list(self.stick.iterdir()), [])
 
 
+class TestPack(Base):
+    def pack(self, out=None):
+        out = out or self.tmp / "pack.zip"
+        rc, log = self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(out)})())
+        self.assertEqual(rc, 0, log)
+        return out, log
+
+    def unpack(self, pack, target=None, **kw):
+        args = dict(pack=str(pack), target=str(target or self.stick), init=True, dry_run=False,
+                    verify=True, no_prune=False)
+        args.update(kw)
+        return self.run_quiet(cr.cmd_unpack, self.cfg, type("A", (), args)())
+
+    def tree(self, root: Path) -> dict:
+        skip = {cr.TAG_FILE, f"{cr.STATE_DIR}/state.json"}
+        return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*"))
+                if p.is_file() and p.relative_to(root).as_posix() not in skip}
+
+    def test_unpack_gives_the_same_stick_as_sync(self):
+        self.assertEqual(self.fetch()[0], 0)
+        (self.repo / "byo").mkdir()
+        (self.repo / "byo/mine.iso").write_bytes(b"licensed iso")
+        (self.repo / "local.toml").write_text(
+            '[[tool]]\nname = "mine"\ntitle = "Mine"\nkind = "iso"\ncategory = "rescue"\n'
+            'source = "local"\nbyo = true\npath = "byo/mine.iso"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("mine")
+        self.assertEqual(self.sync()[0], 0)
+        pack, _ = self.pack()
+        other = self.tmp / "stick2"
+        other.mkdir()
+        rc, out = self.unpack(pack, other)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.tree(other), self.tree(self.stick))
+        self.assertIn(b"licensed iso", self.tree(other)["ISO/2-Rescue/mine.iso"])
+        state = json.loads((other / cr.STATE_DIR / "state.json").read_text())
+        self.assertIn("ISO/2-Rescue/mine.iso", state["files"])
+        self.assertEqual(state["apps"], {"sysinternals": cr.load_lock(self.cfg)["sysinternals"]["version"]})
+        # a second run copies nothing, and a later sync (refresh.sh) sees the stick as its own
+        rc, out = self.unpack(pack, other)
+        self.assertNotIn("copied", out)
+        rc, out = self.run_quiet(cr.cmd_sync, self.cfg, type("A", (), dict(
+            target=str(other), init=False, dry_run=False, verify=False, no_prune=False))())
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("copied", out)
+        self.assertNotIn("backed up", out)
+
+    def test_nothing_fetched(self):
+        with self.assertRaisesRegex(cr.RescueError, "nothing to pack"):
+            self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(self.tmp / "p.zip")})())
+        self.assertFalse((self.tmp / "p.zip").exists())
+
+    def test_damaged_iso_in_pack_is_refused(self):
+        self.fetch()
+        pack, _ = self.pack()
+        with zipfile.ZipFile(pack) as zf:
+            meta = json.loads(zf.read(cr.PACK_META))
+            items = [(i, zf.read(i)) for i in zf.namelist()]
+        meta["isos"][0]["sha256"] = "0" * 64
+        bad = self.tmp / "bad.zip"
+        with zipfile.ZipFile(bad, "w") as zf:
+            for name, data in items:
+                zf.writestr(name, json.dumps(meta) if name == cr.PACK_META else data)
+        with self.assertRaisesRegex(cr.RescueError, "damaged"):
+            self.unpack(bad)
+        self.assertEqual(list(self.stick.rglob("*.iso")), [])
+
+    def test_not_a_pack(self):
+        z = self.tmp / "x.zip"
+        z.write_bytes(zipped({"hello.txt": b"hi"}))
+        with self.assertRaisesRegex(cr.RescueError, "not a Commander Rescue pack"):
+            self.unpack(z)
+
+    def test_unpack_prunes_what_the_pack_dropped(self):
+        self.fetch()
+        self.assertEqual(self.sync()[0], 0)
+        old = self.stick / "ISO/2-Rescue/systemrescue-12.02-amd64.iso"
+        self.assertTrue(old.exists())
+        (self.repo / "local.toml").write_text('[overrides.systemrescue]\nenabled = false\n')
+        self.cfg = cr.Config(repo=self.repo)
+        pack, _ = self.pack()
+        rc, out = self.unpack(pack)
+        self.assertEqual(rc, 0, out)
+        self.assertFalse(old.exists())
+        self.assertTrue((self.stick / "ISO/5-Diagnostics/memtest.iso").exists())
+
+    def test_ventoy_comes_out_of_the_pack_offline(self):
+        self.fetch()
+        pack, _ = self.pack()
+        shutil.rmtree(WEB)          # no network from here on
+        WEB.mkdir()
+        rc, out = self.run_quiet(cr.cmd_ventoy_path, self.cfg, type("A", (), {"from_pack": str(pack)})())
+        self.assertEqual(rc, 0, out)
+        v = Path(out.strip())
+        self.assertEqual(v.name, "ventoy-1.1.17")
+        self.assertTrue(os.access(v / "Ventoy2Disk.sh", os.X_OK))
+        rc, again = self.run_quiet(cr.cmd_ventoy_path, self.cfg, type("A", (), {"from_pack": str(pack)})())
+        self.assertEqual(again, out)
+
+    def test_pack_without_ventoy(self):
+        self.fetch("systemrescue")
+        pack, log = self.pack()
+        self.assertIn("can refresh a stick but not set up a new one", log)
+        with self.assertRaisesRegex(cr.RescueError, "no Ventoy installer"):
+            self.run_quiet(cr.cmd_ventoy_path, self.cfg, type("A", (), {"from_pack": str(pack)})())
+
+
 class TestDownloadRetry(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="crescue-test-"))

@@ -31,7 +31,7 @@ if sys.version_info < (3, 11):
     sys.exit("✗ crescue needs Python 3.11 or newer (for tomllib).")
 import tomllib  # noqa: E402
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 REPO = Path(__file__).resolve().parent
 GITHUB_API = os.environ.get("CRESCUE_GITHUB_API", "https://api.github.com")
@@ -846,23 +846,9 @@ def _copy(src: Path, dst: Path) -> None:
     os.replace(tmp, dst)
 
 
-def cmd_sync(cfg: Config, args) -> int:
-    mnt = Path(args.target).expanduser().resolve()
-    if not mnt.is_dir():
-        raise RescueError(f"{mnt} isn't a mounted folder. Plug the stick in and pass its mount point.")
-    state_dir = mnt / STATE_DIR
-    if not state_dir.exists():
-        label = _label_of(mnt)
-        if not args.init and label != "Ventoy":
-            raise RescueError(
-                f"{mnt} doesn't look like a Ventoy stick (label: {label or 'unknown'}). "
-                "If you're sure, rerun with --init."
-            )
-    lock = load_lock(cfg)
-    state_path = state_dir / "state.json"
-    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
-
-    placed, want_files, missing = [], set(), []
+def _plan(cfg: Config, lock: dict) -> tuple[list[dict], list[tuple], list[str]]:
+    """What belongs on the stick: (boot images, apps, titles of tools not fetched yet)."""
+    placed, missing = [], []
     for t in cfg.enabled(kinds={"iso"}):
         entry = lock.get(t["name"])
         src = (Path(entry["path"]) if entry and entry.get("path")
@@ -871,10 +857,10 @@ def cmd_sync(cfg: Config, args) -> int:
             missing.append(t["title"])
             continue
         rel = f"{cfg.iso_root}/{cfg.categories[t['category']]['dir']}/{src.name}"
-        want_files.add(rel)
         placed.append({"rel": rel, "src": src, "file": src.name, "title": t["title"], "name": t["name"],
                        "version": entry["version"], "category": t["category"],
-                       "description": t.get("description"), "sha256": entry.get("sha256")})
+                       "description": t.get("description"), "sha256": entry.get("sha256"),
+                       "local": t["source"] == "local"})
     apps = []
     for t in cfg.enabled(kinds={"app"}):
         entry = lock.get(t["name"])
@@ -888,6 +874,103 @@ def cmd_sync(cfg: Config, args) -> int:
             missing.append(t["title"])
             continue
         apps.append((t, entry, src))
+    return placed, apps, missing
+
+
+def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tuple[str, Path | bytes]]:
+    """The small files that go with the boot images: app launcher, theme and boot menu."""
+    out: list[tuple[str, Path | bytes]] = []
+    # PE launcher index: "Title|relative\path\to.exe" per line (easy to parse from cmd.exe)
+    lines = [f"{t['title']}|{t['name']}\\{t.get('entry', '').replace('/', chr(92))}"
+             for t, _, _ in apps if t.get("entry")]
+    out.append((f"{cfg.apps_root}/apps.txt", ("\r\n".join(lines) + "\r\n").encode("utf-8")))
+    launcher = cfg.assets / "pe" / "launcher"
+    if launcher.is_dir():  # works from any WinPE, including Hiren's
+        out += [(f"{cfg.apps_root}/{f.name}", f) for f in sorted(launcher.glob("*.cmd"))]
+    theme_src = cfg.assets / cfg.settings["theme"] if cfg.settings.get("theme") else None
+    if theme_src and theme_src.is_dir():
+        files = {f.relative_to(theme_src).as_posix(): f for f in sorted(theme_src.rglob("*"))
+                 if f.is_file() and f.suffix not in (".py", ".pyc") and "__pycache__" not in f.parts}
+        mine = cfg.repo / "byo" / "icons"      # your own icons win over the theme's
+        if mine.is_dir():
+            files.update({f"icons/{f.name}": f for f in sorted(mine.glob("*.png"))})
+        out += [(f"ventoy/theme/{rel}", f) for rel, f in files.items()]
+    icons = _icons(cfg) if theme_src and theme_src.is_dir() else set()
+    # Ventoy reads UTF-8 but not \u escapes, so write non-ASCII (→, ü …) as is
+    vjson = json.dumps(build_ventoy_json(cfg, placed, icons), indent=2, ensure_ascii=False) + "\n"
+    out.append(("ventoy/ventoy.json", vjson.encode("utf-8")))
+    return out
+
+
+def _open_stick(mnt: Path, init: bool) -> tuple[Path, dict]:
+    """Check the target is a Ventoy stick (or one we've filled before); return its state."""
+    if not mnt.is_dir():
+        raise RescueError(f"{mnt} isn't a mounted folder. Plug the stick in and pass its mount point.")
+    state_dir = mnt / STATE_DIR
+    if not state_dir.exists():
+        label = _label_of(mnt)
+        if not init and label != "Ventoy":
+            raise RescueError(
+                f"{mnt} doesn't look like a Ventoy stick (label: {label or 'unknown'}). "
+                "If you're sure, rerun with --init."
+            )
+    state_path = state_dir / "state.json"
+    return state_dir, json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+
+
+def _prune(mnt: Path, iso_root: str, stale: list[str], dry_run: bool) -> None:
+    """Delete boot images this project put on the stick that are no longer wanted."""
+    for rel in stale:
+        p = (mnt / rel).resolve()
+        if p.is_relative_to(mnt) and p.exists():
+            info(f"removing old {rel}")
+            if not dry_run:
+                p.unlink()
+    if not dry_run:  # category folders emptied by a rename or removal
+        root = (mnt / iso_root).resolve()
+        for d in sorted({(mnt / rel).parent for rel in stale}, key=lambda d: -len(d.parts)):
+            if d.is_dir() and d.resolve() != root and d.resolve().is_relative_to(root) and not any(d.iterdir()):
+                d.rmdir()
+
+
+def _write_extras(mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]], fresh_theme: bool) -> Path:
+    """Write the launcher, theme and boot menu, keeping a copy of a ventoy.json someone edited."""
+    vdir = mnt / "ventoy"
+    vdir.mkdir(exist_ok=True)
+    vjson = vdir / "ventoy.json"
+    if vjson.exists() and state.get("ventoy_json_sha") != file_hash(vjson):
+        backup = vdir / f"ventoy.json.bak-{dt.date.today().isoformat()}"
+        shutil.copy2(vjson, backup)
+        warn(f"your existing ventoy.json was backed up to ventoy/{backup.name}")
+    if fresh_theme:
+        shutil.rmtree(vdir / "theme", ignore_errors=True)
+    for rel, data in extras:
+        dst = mnt / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(data, bytes):
+            dst.write_bytes(data)
+        else:
+            shutil.copy2(data, dst)
+    return vjson
+
+
+def _finish(mnt: Path, state_dir: Path, files: set[str], app_state: dict, vjson: Path, extra: dict) -> None:
+    (mnt / TAG_FILE).write_text(f"Commander Rescue {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n",
+                                encoding="utf-8")
+    state_dir.mkdir(exist_ok=True)
+    (state_dir / "state.json").write_text(json.dumps({
+        "files": sorted(files), "apps": app_state, "ventoy_json_sha": file_hash(vjson),
+        "synced": dt.datetime.now().isoformat(timespec="seconds"), "crescue": __version__, **extra,
+    }, indent=2) + "\n", encoding="utf-8")
+    info("flushing writes to the stick…")
+    _flush_volume(mnt)
+
+
+def cmd_sync(cfg: Config, args) -> int:
+    mnt = Path(args.target).expanduser().resolve()
+    state_dir, state = _open_stick(mnt, args.init)
+    placed, apps, missing = _plan(cfg, load_lock(cfg))
+    want_files = {p["rel"] for p in placed}
     for m in missing:
         warn(f"{m}: not fetched yet — run `crescue fetch` (skipping)")
 
@@ -955,68 +1038,278 @@ def cmd_sync(cfg: Config, args) -> int:
             app_state.pop(name)
 
     if stale and not args.no_prune:
-        for rel in stale:
-            p = (mnt / rel).resolve()
-            if p.is_relative_to(mnt) and p.exists():
-                info(f"removing old {rel}")
-                if not args.dry_run:
-                    p.unlink()
-        if not args.dry_run:  # category folders emptied by a rename or removal
-            root = (mnt / cfg.iso_root).resolve()
-            for d in sorted({(mnt / rel).parent for rel in stale}, key=lambda d: -len(d.parts)):
-                if d.is_dir() and d.resolve() != root and d.resolve().is_relative_to(root) and not any(d.iterdir()):
-                    d.rmdir()
+        _prune(mnt, cfg.iso_root, stale, args.dry_run)
 
     if args.dry_run:
         print("\nDry run — nothing was written.")
         return 0
 
-    # PE launcher index: "Title|relative\path\to.exe" per line (easy to parse from cmd.exe)
     app_root.mkdir(exist_ok=True)
-    lines = [f"{t['title']}|{t['name']}\\{t.get('entry', '').replace('/', chr(92))}"
-             for t, _, _ in apps if t.get("entry")]
-    (app_root / "apps.txt").write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
-    launcher = cfg.assets / "pe" / "launcher"
-    if launcher.is_dir():  # works from any WinPE, including Hiren's
-        for f in launcher.glob("*.cmd"):
-            shutil.copy2(f, app_root / f.name)
-
-    vdir = mnt / "ventoy"
-    vdir.mkdir(exist_ok=True)
-    vjson = vdir / "ventoy.json"
-    if vjson.exists() and state.get("ventoy_json_sha") != file_hash(vjson):
-        backup = vdir / f"ventoy.json.bak-{dt.date.today().isoformat()}"
-        shutil.copy2(vjson, backup)
-        warn(f"your existing ventoy.json was backed up to ventoy/{backup.name}")
-    if cfg.settings.get("theme"):
-        theme_src = cfg.assets / cfg.settings["theme"]
-        if theme_src.is_dir():
-            shutil.rmtree(vdir / "theme", ignore_errors=True)
-            shutil.copytree(theme_src, vdir / "theme", ignore=shutil.ignore_patterns("*.py", "*.pyc", "__pycache__"))
-            mine = cfg.repo / "byo" / "icons"      # your own icons win over the theme's
-            if mine.is_dir():
-                (vdir / "theme" / "icons").mkdir(exist_ok=True)
-                for f in mine.glob("*.png"):
-                    shutil.copy2(f, vdir / "theme" / "icons" / f.name)
-    icons = _icons(cfg) if (vdir / "theme").is_dir() and cfg.settings.get("theme") else set()
-    # Ventoy reads UTF-8 but not \u escapes, so write non-ASCII (→, ü …) as is
-    vjson.write_text(json.dumps(build_ventoy_json(cfg, placed, icons), indent=2, ensure_ascii=False) + "\n",
-                     encoding="utf-8")
-
-    (mnt / TAG_FILE).write_text(f"Commander Rescue {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n",
-                              encoding="utf-8")
-    state_dir.mkdir(exist_ok=True)
-    state_path.write_text(json.dumps({
-        "files": sorted(want_files), "apps": app_state, "ventoy_json_sha": file_hash(vjson),
-        "synced": dt.datetime.now().isoformat(timespec="seconds"), "crescue": __version__,
-    }, indent=2) + "\n", encoding="utf-8")
-    info("flushing writes to the stick…")
-    _flush_volume(mnt)
+    theme_src = cfg.assets / cfg.settings["theme"] if cfg.settings.get("theme") else None
+    vjson = _write_extras(mnt, state, _stick_extras(cfg, placed, apps),
+                          fresh_theme=bool(theme_src and theme_src.is_dir()))
+    _finish(mnt, state_dir, want_files, app_state, vjson, {})
     ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
     return 0
 
 
+# ── Packs: the whole stick in one file ────────────────────────────────────
+# A pack is a zip holding the stick exactly as `sync` would lay it out (under stick/),
+# the Ventoy installer (under installer/) and PACK_META, which lists every boot image
+# with its sha256. `unpack` streams it onto a stick, so no downloads are needed.
+PACK_META = "commander-rescue-pack.json"
+PACK_FORMAT = 1
+
+
+def _zip_file(zf: zipfile.ZipFile, src: Path, arc: str, compress: int = zipfile.ZIP_DEFLATED) -> str:
+    """Add src to the zip as arc; return its sha256, taken from the bytes as they went in."""
+    zi = zipfile.ZipInfo.from_file(src, arc, strict_timestamps=False)
+    zi.compress_type = compress
+    h = hashlib.sha256()
+    with open(src, "rb") as s, zf.open(zi, "w", force_zip64=True) as d:
+        while chunk := s.read(8 << 20):
+            h.update(chunk)
+            d.write(chunk)
+    return h.hexdigest()
+
+
+def cmd_pack(cfg: Config, args) -> int:
+    lock = load_lock(cfg)
+    placed, apps, missing = _plan(cfg, lock)
+    for m in missing:
+        warn(f"{m}: not fetched yet — run `crescue fetch` (leaving it out of the pack)")
+    if not placed:
+        raise RescueError("nothing to pack yet — run `crescue fetch` first")
+    out = Path(args.output or f"commander-rescue-{dt.date.today().isoformat()}.zip").expanduser().resolve()
+    if out.suffix.lower() != ".zip":
+        raise RescueError(f"{out.name}: a pack must end in .zip")
+
+    vt = next((t for t in cfg.tools if t["kind"] == "ventoy"), None)
+    ventry = lock.get(vt["name"]) if vt else None
+    vsrc = cfg.cache / vt["name"] / ventry["source_file"] if ventry and ventry.get("source_file") else None
+    if not vsrc or not vsrc.is_file():
+        warn("Ventoy isn't fetched, so this pack can refresh a stick but not set up a new one "
+             "(`crescue fetch ventoy` fixes that)")
+        vsrc = None
+
+    size = sum(p["src"].stat().st_size for p in placed) + sum(s.stat().st_size for _, _, s in apps)
+    size += vsrc.stat().st_size if vsrc else 0
+    out.parent.mkdir(parents=True, exist_ok=True)
+    free = shutil.disk_usage(out.parent).free
+    if size > free:
+        raise RescueError(f"the pack needs {_fmt_bytes(size)} but {out.parent} has {_fmt_bytes(free)} free")
+
+    head(f"Packing {len(placed)} boot image(s) and {len(apps)} app(s) into {out} (~{_fmt_bytes(size)})")
+    part = out.with_name(out.name + ".part")
+    isos = []
+    try:
+        with zipfile.ZipFile(part, "w", allowZip64=True) as zf:
+            for p in placed:
+                info(f"{p['title']} {p['version']} ({_fmt_bytes(p['src'].stat().st_size)})")
+                sha = _zip_file(zf, p["src"], f"stick/{p['rel']}", zipfile.ZIP_STORED)  # ISOs don't compress
+                if p["sha256"] and sha != p["sha256"] and not p["local"]:
+                    raise RescueError(f"{p['title']}: the cached {p['file']} has changed since it was verified. "
+                                      f"Run `crescue fetch --force {p['name']}`.")
+                isos.append({"rel": p["rel"], "title": p["title"], "version": p["version"], "sha256": sha,
+                             "size": p["src"].stat().st_size})
+            for t, entry, src in apps:
+                base = f"stick/{cfg.apps_root}/{t['name']}"
+                if zipfile.is_zipfile(src):  # unpacked now, exactly as `sync` would
+                    with zipfile.ZipFile(src) as zs:
+                        for m in _safe_zip_members(zs):
+                            if m.is_dir():
+                                continue
+                            zi = zipfile.ZipInfo(f"{base}/{m.filename}", m.date_time)
+                            zi.compress_type = zipfile.ZIP_DEFLATED
+                            with zs.open(m) as s, zf.open(zi, "w", force_zip64=True) as d:
+                                shutil.copyfileobj(s, d, 8 << 20)
+                else:
+                    _zip_file(zf, src, f"{base}/{src.name}")
+            extras = _stick_extras(cfg, placed, apps)
+            for rel, data in extras:
+                if isinstance(data, bytes):
+                    zf.writestr(f"stick/{rel}", data, zipfile.ZIP_DEFLATED)
+                else:
+                    _zip_file(zf, data, f"stick/{rel}")
+            if vsrc:
+                _zip_file(zf, vsrc, f"installer/{vsrc.name}", zipfile.ZIP_STORED)
+            zf.writestr(PACK_META, json.dumps({
+                "format": PACK_FORMAT, "crescue": __version__,
+                "created": dt.datetime.now().isoformat(timespec="seconds"),
+                "iso_root": cfg.iso_root, "apps_root": cfg.apps_root, "isos": isos,
+                "apps": {t["name"]: e["version"] for t, e, _ in apps},
+                "ventoy": {"file": f"installer/{vsrc.name}", "version": ventry["version"]} if vsrc else None,
+                "fresh_theme": any(rel.startswith("ventoy/theme/") for rel, _ in extras),
+            }, indent=2), zipfile.ZIP_DEFLATED)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+    os.replace(part, out)
+    ok(f"Pack written: {out} ({_fmt_bytes(out.stat().st_size)})")
+    info("It holds your own tools as well, so keep it somewhere private. To use it:")
+    info(f"  new stick:      ./install.sh --from {out}")
+    info(f"  existing stick: ./refresh.sh --from {out}")
+    return 0
+
+
+def _read_pack(zf: zipfile.ZipFile) -> dict:
+    try:
+        meta = json.loads(zf.read(PACK_META))
+    except KeyError:
+        raise RescueError(f"not a Commander Rescue pack (no {PACK_META} inside)") from None
+    if meta.get("format") != PACK_FORMAT:
+        raise RescueError(f"this pack is format {meta.get('format')}; this crescue reads format {PACK_FORMAT}. "
+                          "Update Commander Rescue.")
+    _safe_zip_members(zf)
+    for rel in [i["rel"] for i in meta["isos"]] + list(meta["apps"]):
+        if Path(rel).is_absolute() or ".." in Path(rel).parts:
+            raise RescueError(f"refusing unsafe path in pack: {rel}")
+    return meta
+
+
+def _open_pack(path: str) -> zipfile.ZipFile:
+    p = Path(path).expanduser()
+    if not p.is_file():
+        raise RescueError(f"can't find the pack {p}")
+    try:
+        return zipfile.ZipFile(p)
+    except zipfile.BadZipFile:
+        raise RescueError(f"{p.name} isn't a zip file (or it's incomplete)") from None
+
+
+def _unzip_to(zf: zipfile.ZipFile, member: str, dst: Path) -> str:
+    """Stream one member to dst (via a .part file, fsynced); return its sha256."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(dst.name + ".part")
+    h = hashlib.sha256()
+    try:
+        with zf.open(member) as s, open(tmp, "wb") as d:  # zipfile checks the CRC as it reads
+            while chunk := s.read(8 << 20):
+                h.update(chunk)
+                d.write(chunk)
+            d.flush()
+            os.fsync(d.fileno())
+    except zipfile.BadZipFile as e:
+        tmp.unlink(missing_ok=True)
+        raise RescueError(f"the pack is damaged ({member}: {e})") from None
+    os.replace(tmp, dst)
+    return h.hexdigest()
+
+
+def cmd_unpack(cfg: Config, args) -> int:
+    mnt = Path(args.target).expanduser().resolve()
+    state_dir, state = _open_stick(mnt, args.init)
+    with _open_pack(args.pack) as zf:
+        meta = _read_pack(zf)
+        names = set(zf.namelist())
+        iso_root, apps_root = meta["iso_root"], meta["apps_root"]
+        want_files = {i["rel"] for i in meta["isos"]}
+        head(f"Unpacking {Path(args.pack).name} (made {meta['created'][:10]}) to {mnt}"
+             f"{'  (dry run)' if args.dry_run else ''}")
+
+        todo = [i for i in meta["isos"]
+                if not ((mnt / i["rel"]).is_file() and (mnt / i["rel"]).stat().st_size == i["size"])
+                or args.verify and file_hash(mnt / i["rel"]) != i["sha256"]]
+        need = sum(i["size"] for i in todo)
+        free = shutil.disk_usage(mnt).free
+        if need > free and not args.dry_run:
+            raise RescueError(f"the stick needs {_fmt_bytes(need)} free for this pack but has {_fmt_bytes(free)}")
+
+        for i in meta["isos"]:
+            if i not in todo:
+                ok(f"{i['title']} {i['version']} — already on stick")
+                continue
+            info(f"{i['title']} {i['version']} → {i['rel']}")
+            if args.dry_run:
+                continue
+            if f"stick/{i['rel']}" not in names:
+                raise RescueError(f"the pack is missing {i['rel']}")
+            dst = mnt / i["rel"]
+            if _unzip_to(zf, f"stick/{i['rel']}", dst) != i["sha256"]:
+                dst.unlink()
+                raise RescueError(f"{i['title']}: the copy in the pack doesn't match its checksum. "
+                                  "The pack is damaged; make a new one.")
+            if args.verify and file_hash(dst) != i["sha256"]:
+                raise RescueError(f"{i['rel']} doesn't match after copying — the stick may be failing.")
+            ok(f"{i['title']} copied")
+
+        app_state = dict(state.get("apps", {}))
+        app_root = mnt / apps_root
+        for name, version in meta["apps"].items():
+            dst = app_root / name
+            if app_state.get(name) == version and dst.exists():
+                ok(f"{name} {version} — already on stick")
+                continue
+            info(f"{name} {version} → {apps_root}/{name}/")
+            if args.dry_run:
+                continue
+            new = app_root / f".{name}.new"
+            shutil.rmtree(new, ignore_errors=True)
+            prefix = f"stick/{apps_root}/{name}/"
+            for m in names:
+                if m.startswith(prefix) and not m.endswith("/"):
+                    _unzip_to(zf, m, new / m[len(prefix):])
+            if dst.exists():
+                shutil.rmtree(dst)
+            os.replace(new, dst)
+            app_state[name] = version
+            ok(f"{name} unpacked")
+        for name in [n for n in app_state if n not in meta["apps"]]:
+            info(f"removing app that isn't in this pack: {name}")
+            if not args.dry_run:
+                shutil.rmtree(app_root / name, ignore_errors=True)
+                app_state.pop(name)
+
+        stale = [f for f in state.get("files", []) if f not in want_files]
+        if stale and not args.no_prune:
+            _prune(mnt, iso_root, stale, args.dry_run)
+
+        if args.dry_run:
+            print("\nDry run — nothing was written.")
+            return 0
+
+        app_root.mkdir(exist_ok=True)
+        app_dirs = tuple(f"stick/{apps_root}/{n}/" for n in meta["apps"])
+        extras = [(m[len("stick/"):], zf.read(m)) for m in sorted(names)
+                  if m.startswith("stick/") and not m.endswith("/") and m[len("stick/"):] not in want_files
+                  and not m.startswith(app_dirs)]
+        vjson = _write_extras(mnt, state, extras, fresh_theme=meta.get("fresh_theme", False))
+    _finish(mnt, state_dir, want_files, app_state, vjson, {"pack": meta["created"]})
+    ok(f"Stick is up to date from the pack: {len(meta['isos'])} boot image(s), {len(meta['apps'])} app(s).")
+    return 0
+
+
+def _ventoy_from_pack(cfg: Config, pack: str) -> Path:
+    """Unpack the pack's Ventoy installer into the cache (once) and return its folder."""
+    with _open_pack(pack) as zf:
+        v = _read_pack(zf).get("ventoy")
+        if not v:
+            raise RescueError("this pack has no Ventoy installer. Make it again after `crescue fetch ventoy`.")
+        dest = cfg.cache / "ventoy-from-pack" / v["version"]
+        tops = [d for d in dest.iterdir() if d.is_dir()] if dest.is_dir() else []
+        if len(tops) == 1 and any((tops[0] / f).exists() for f in ("Ventoy2Disk.sh", "Ventoy2Disk.exe")):
+            return tops[0]
+        shutil.rmtree(dest, ignore_errors=True)
+        dest.mkdir(parents=True)
+        archive = dest / Path(v["file"]).name
+        _unzip_to(zf, v["file"], archive)
+    if zipfile.is_zipfile(archive):
+        with zipfile.ZipFile(archive) as z:
+            z.extractall(dest, members=_safe_zip_members(z))
+    else:
+        with tarfile.open(archive) as tar:
+            _safe_extract_tar(tar, dest)  # keeps the tools' executable bits
+    archive.unlink()
+    tops = [d for d in dest.iterdir() if d.is_dir()]
+    if len(tops) != 1:
+        raise RescueError(f"unexpected Ventoy archive layout in the pack: {sorted(d.name for d in tops)}")
+    return tops[0]
+
+
 def cmd_ventoy_path(cfg: Config, args) -> int:
+    if getattr(args, "from_pack", None):
+        print(_ventoy_from_pack(cfg, args.from_pack))
+        return 0
     lock = load_lock(cfg)
     t = next((t for t in cfg.tools if t["kind"] == "ventoy"), None)
     entry = lock.get(t["name"]) if t else None
@@ -1055,7 +1348,22 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-prune", action="store_true", help="keep old versions on the stick")
     p.set_defaults(fn=cmd_sync)
 
-    sub.add_parser("ventoy-path", help="print the extracted Ventoy folder").set_defaults(fn=cmd_ventoy_path)
+    p = sub.add_parser("pack", help="put the whole stick (and Ventoy) into one .zip for offline use")
+    p.add_argument("output", nargs="?", help="where to write it (default: commander-rescue-<date>.zip here)")
+    p.set_defaults(fn=cmd_pack)
+
+    p = sub.add_parser("unpack", help="fill a mounted Ventoy stick from a pack")
+    p.add_argument("pack", help="the .zip made by `crescue pack`")
+    p.add_argument("target", help="mount point of the Ventoy data partition")
+    p.add_argument("--init", action="store_true", help="adopt a stick not labelled 'Ventoy'")
+    p.add_argument("--dry-run", action="store_true", help="show what would change")
+    p.add_argument("--verify", action="store_true", help="hash files on the stick (slow)")
+    p.add_argument("--no-prune", action="store_true", help="keep old versions on the stick")
+    p.set_defaults(fn=cmd_unpack)
+
+    p = sub.add_parser("ventoy-path", help="print the extracted Ventoy folder")
+    p.add_argument("--from", dest="from_pack", metavar="PACK", help="use the Ventoy inside a pack")
+    p.set_defaults(fn=cmd_ventoy_path)
 
     args = ap.parse_args(argv)
     try:
