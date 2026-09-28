@@ -92,15 +92,30 @@ tooling and `pull` fetches the ISO.
    Everything else stays at PhoenixPE's defaults: Explorer with StartAllBack,
    networking, audio, ramdisk, 7-Zip, Firefox. Edit `preset.txt` to taste; a
    script PhoenixPE has renamed is reported, not guessed at.
-3. Run `PEBakeryLauncher.exe`. **Source:** point PhoenixPE at the Windows DVD
-   drive (or a mounted Windows ISO) and pick the **Pro** edition index. (Windows S isn't
-   supported.)
-4. **Extra drivers (optional):** for storage or network hardware not covered
+3. **Exclude the build from Defender first.** Some of PhoenixPE's tools are
+   flagged as hack tools or PUAs, and quarantined files break the build. Turn
+   *Tamper Protection* off in Windows Security, then in an admin terminal:
+
+   ```powershell
+   Add-MpPreference -ExclusionPath 'C:\PhoenixPE','D:\'   # D: = CRTRANSFER
+   (Get-MpPreference).ExclusionPath                        # both should be listed
+   ```
+
+   Exclusions stay put even when Defender switches its protection back on. If
+   Defender already quarantined anything, extract PhoenixPE afresh and rerun
+   the preset.
+4. Run `PEBakeryLauncher.exe` as administrator. In **Source Config**, set the
+   source to the Windows DVD drive root (e.g. `E:\`), keep the base image at
+   **2 (Windows Setup)**, pick the **Pro** edition for `install.wim` (Windows S
+   isn't supported), and tick **Run all programs from RAM** so nothing depends
+   on the ISO staying reachable after boot. A fresh PhoenixPE folder forgets
+   these settings.
+5. **Extra drivers (optional):** for storage or network hardware not covered
    above, drop the extracted `.inf` driver folders into *Drivers → Driver
    Integration* and tick it.
-5. Press **Build**. The first build takes longer because it caches the source.
+6. Press **Build**. The first build takes longer because it caches the source.
    Later builds take a few minutes.
-6. Test the ISO in the VM (boot it as a CD) before putting it on the stick:
+7. Test the ISO in the VM (boot it as a CD) before putting it on the stick:
    the desktop should show **Commander Apps**.
 
 ## Put it on the stick

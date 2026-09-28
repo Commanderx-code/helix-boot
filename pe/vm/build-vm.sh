@@ -86,10 +86,16 @@ push() {
   printf '%s\r\n' \
     'Commander Rescue transfer disk' \
     '' \
+    'Before anything else: Windows Security > Virus & threat protection > Manage settings >' \
+    'Tamper Protection off, then in Terminal (Admin):' \
+    "     Add-MpPreference -ExclusionPath 'C:\\PhoenixPE','D:\\'" \
+    '  (D: is this disk.) Defender flags some PhoenixPE tools; exclusions stop it for good.' \
+    '' \
     "$step1" \
     '2. In PowerShell, from commander\phoenixpe on this disk:' \
     '     powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 C:\PhoenixPE' \
-    '3. Run C:\PhoenixPE\PEBakeryLauncher.exe, set Source to the Windows DVD drive, Build.' \
+    '3. Run C:\PhoenixPE\PEBakeryLauncher.exe as administrator. Source Config: the Windows DVD' \
+    '   drive root, base image 2, the Pro edition, "Run all programs from RAM" ticked. Build.' \
     '4. Copy the finished .iso into the out folder on this disk, then shut Windows down.' \
     '5. On Linux: pe/vm/build-vm.sh pull' > "$DIR/README.txt"
   mcopy -i "$M" -o "$DIR/README.txt" ::/README.txt
