@@ -135,6 +135,7 @@ case ${1:-} in
     ok "Windows setup is starting in the VM window."
     info "If it says 'Press any key to boot from CD', click in the window and press a key."
     info "No product key needed: choose 'I don't have a product key', edition Windows 11 Pro."
+    info "Setup's first restart powers the VM off (virt-install does that once). Run 'start' to carry on."
     info "Then follow the transfer disk's README.txt (it shows up as a drive in Explorer)."
     ;;
   start)
