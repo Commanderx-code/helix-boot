@@ -75,17 +75,25 @@ push() {
   mdeltree -i "$M" ::/commander 2>/dev/null || true
   mmd -i "$M" ::/commander
   mcopy -i "$M" -s -m "$REPO/pe/phoenixpe" "$REPO/pe/launcher" "$REPO/pe/README.md" ::/commander/
+  # A PhoenixPE release saved in $DIR rides along, so Windows needn't download it
+  local pe_zip='' step1='1. Unpack PhoenixPE (https://github.com/PhoenixPE/PhoenixPE/releases) to C:\PhoenixPE'
+  pe_zip=$(find "$DIR" -maxdepth 1 -name 'PhoenixPE-*.7z' -printf '%f\n' | sort -V | tail -n1)
+  if [[ -n $pe_zip ]]; then
+    mdel -i "$M" '::/PhoenixPE-*.7z' 2>/dev/null || true
+    mcopy -i "$M" -o -m "$DIR/$pe_zip" ::/
+    step1="1. Right-click $pe_zip on this disk, Extract All, and extract to C:\PhoenixPE"
+  fi
   printf '%s\r\n' \
     'Commander Rescue transfer disk' \
     '' \
-    '1. Unpack PhoenixPE (https://github.com/PhoenixPE/PhoenixPE/releases) to C:\PhoenixPE' \
+    "$step1" \
     '2. In PowerShell, from commander\phoenixpe on this disk:' \
     '     powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 C:\PhoenixPE' \
     '3. Run C:\PhoenixPE\PEBakeryLauncher.exe, set Source to the Windows DVD drive, Build.' \
     '4. Copy the finished .iso into the out folder on this disk, then shut Windows down.' \
     '5. On Linux: pe/vm/build-vm.sh pull' > "$DIR/README.txt"
   mcopy -i "$M" -o "$DIR/README.txt" ::/README.txt
-  ok "transfer disk updated (commander\\ and README.txt)"
+  ok "transfer disk updated (commander\\, README.txt${pe_zip:+ and $pe_zip})"
 }
 
 case ${1:-} in
@@ -101,6 +109,15 @@ case ${1:-} in
     need mcopy mtools
     [[ -e /dev/kvm ]] || die "/dev/kvm is missing — enable virtualization (VT-x/AMD-V) in your BIOS"
     exists && die "VM '$VM' already exists. Use 'start', or 'destroy' to begin again."
+    # The session libvirt raises QEMU's core-dump limit to unlimited unless told otherwise,
+    # which fails where the hard limit is 0 (Garuda's default). Pin it to 0 instead.
+    qconf=${XDG_CONFIG_HOME:-$HOME/.config}/libvirt/qemu.conf
+    if [[ $(ulimit -Hc) == 0 ]] && ! grep -qs '^[[:space:]]*max_core' "$qconf"; then
+      mkdir -p "$(dirname "$qconf")"
+      printf '# Added by Commander Rescue: core dumps are disabled for this user\nmax_core = 0\n' >> "$qconf"
+      pkill -u "$(id -u)" -x virtqemud || true  # restarts on demand with the new setting
+      info "set max_core = 0 in $qconf (core dumps are off for your user)"
+    fi
     mkdir -p "$DIR"
     [[ -f $XFER ]] || make_transfer
     push
