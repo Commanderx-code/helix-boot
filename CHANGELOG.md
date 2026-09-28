@@ -5,6 +5,12 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- Chris Titus Tech's WinUtil in the portable apps, verified against GitHub's
+  sha256 digest, for tweaking the repaired Windows from the stick.
+- The app launcher runs `.ps1` apps with PowerShell instead of opening them in
+  Notepad.
+
 ### Changed
 - The Windows PE is now called **Lazarus PE**: tool id `lazarus-pe`, built as
   `pe/out/LazarusPE.iso`.

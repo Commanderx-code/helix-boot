@@ -54,5 +54,12 @@ if not exist "!target!" (
   pause
   goto menu
 )
-for %%F in ("!target!") do start "" /d "%%~dpF" "%%~fF"
+rem A .ps1 would open in Notepad, so scripts go to PowerShell
+for %%F in ("!target!") do (
+  if /i "%%~xF"==".ps1" (
+    start "" /d "%%~dpF" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%%~fF"
+  ) else (
+    start "" /d "%%~dpF" "%%~fF"
+  )
+)
 goto menu

@@ -547,6 +547,19 @@ version = 'DGEng(\d+)_x64'
 entry = "DiskGenius/DiskGenius.exe"
 checksum = ["tofu"]
 
+# For the repaired Windows, not the PE: run it from the stick's launcher once the
+# PC boots again, to debloat, tweak or reinstall apps. The launcher runs .ps1 files
+# with PowerShell, and WinUtil asks for admin rights itself.
+[[tool]]
+name = "winutil"
+title = "Chris Titus Tech WinUtil (run in Windows)"
+kind = "app"
+source = "github"
+repo = "ChrisTitusTech/winutil"
+asset = ['^winutil\.ps1$']
+entry = "winutil.ps1"
+checksum = ["github-digest"]
+
 # Malware scanners that run inside Lazarus PE / Hiren's from USB:\Apps.
 # Single self-contained .exe files with today's definitions.
 [[tool]]

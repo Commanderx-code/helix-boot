@@ -94,7 +94,10 @@ and a one-line tip.
 **Portable apps** for any Windows PE, in `USB:\Apps` with a menu launcher:
 Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO,
 TestDisk & PhotoRec, ProduKey, DiskGenius Free, Microsoft Safety Scanner and
-Kaspersky Virus Removal Tool *(off by default)*.
+Kaspersky Virus Removal Tool *(off by default)*. The launcher also carries
+[Chris Titus Tech's WinUtil](https://github.com/ChrisTitusTech/winutil) for
+after a repair: run it from the stick in the fixed Windows to debloat, tweak
+or reinstall apps.
 
 <details>
 <summary><b>Notes on unverified tools, antivirus and Kaspersky</b></summary>
