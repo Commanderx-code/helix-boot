@@ -16,7 +16,7 @@
 # ── Schema ─────────────────────────────────────────────────────────────────
 #   name        unique id (also the cache folder name)
 #   title       pretty name shown in the Ventoy menu / PE app list
-#   kind        "iso" | "app" | "ventoy"
+#   kind        "iso" | "app" | "ventoy" | "file" (copied to `dest` on the stick)
 #   category    one of the [[category]] ids below (iso only)
 #               icon: theme/icons/<name>.png, or your own in byo/icons/<name>.png
 #   enabled     include in fetch/sync (default true)
@@ -119,6 +119,19 @@ asset = ['^ventoy-[\d.]+-linux\.tar\.gz$']
 version = 'ventoy-([\d.]+)-linux'
 windows = { asset = ['^ventoy-[\d.]+-windows\.zip$'], version = 'ventoy-([\d.]+)-windows' }
 checksum = [{ asset = '^sha256\.txt$' }, "github-digest"]
+
+# Ventoy only lists .wim boot images (WinRE, WinPE tools) when this plugin is on the
+# stick. Published on its own by the Ventoy project; its 2020 release has no GitHub
+# digest, so the hash is pinned.
+[[tool]]
+name = "ventoy-wimboot"
+title = "Ventoy wimboot plugin"
+kind = "file"
+dest = "ventoy/ventoy_wimboot.img"
+source = "github"
+repo = "ventoy/wimiso"
+asset = ['^ventoy_wimboot\.img$']
+checksum = [{ sha256 = "05e3aadd3374737546a8545c29405933cff5325b0e26cc605da942bf41a93137" }]
 
 # ── Live operating systems ────────────────────────────────────────────────
 [[tool]]

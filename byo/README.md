@@ -85,8 +85,16 @@ Portable versions are the ones to look for.
 
 ## Menu icons
 
-Every tool gets a letter badge in the boot menu. To show a tool's real logo
-instead, save it as `byo/icons/<name>.png`, using the tool's `name` from
+Every tool in `tools.toml` has a letter badge in the boot menu. Tools you add
+in `local.toml` get theirs with one command (it needs Pillow, and never
+overwrites an icon already in `byo/icons/`):
+
+```fish
+theme/build-theme.py --local
+```
+
+Add `badge = "XX"` to a tool's entry to choose its letters. To show a tool's
+real logo instead, save it as `byo/icons/<name>.png`, using the tool's `name` from
 `tools.toml` or your `local.toml` (e.g. `byo/icons/macrium-reflect.png`,
 `byo/icons/acronis.png`), and refresh. A category's icon is
 `byo/icons/cat-<id>.png` (e.g. `cat-antivirus.png`).

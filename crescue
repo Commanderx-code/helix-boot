@@ -40,7 +40,7 @@ SF_RSS = os.environ.get(
 )
 SF_DL = os.environ.get("CRESCUE_SF_DL", "https://downloads.sourceforge.net/project/{project}{path}")
 USER_AGENT = f"commander-rescue/{__version__} (+https://github.com/Commanderx-code/commander-rescue)"
-KINDS = {"iso", "app", "ventoy"}
+KINDS = {"iso", "app", "ventoy", "file"}
 SOURCES = {"github": ["repo"], "sourceforge": ["project", "path"], "url": ["url"], "page": ["page", "asset", "version"],
            "local": ["path"]}
 HASH_BY_LEN = {32: "md5", 40: "sha1", 64: "sha256", 128: "sha512"}
@@ -142,6 +142,10 @@ class Config:
             raise RescueError(f"{where} is defined twice")
         if t.get("kind") not in KINDS:
             raise RescueError(f"{where}: kind must be one of {sorted(KINDS)}")
+        if t["kind"] == "file":
+            dest = t.get("dest") or ""
+            if not dest or dest.startswith("/") or ".." in dest.split("/"):
+                raise RescueError(f"{where}: a file needs 'dest', a path on the stick such as ventoy/x.img")
         src = t.get("source")
         if src not in SOURCES:
             raise RescueError(f"{where}: source must be one of {sorted(SOURCES)}")
@@ -619,6 +623,12 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest: Path) -> None:
     tar.extractall(dest)
 
 
+def _top_dir(name: str) -> str | None:
+    """First real folder of an archive member: 'ventoy-1.1.17' for both 'ventoy-1.1.17/x' and './ventoy-1.1.17/x'."""
+    parts = [p for p in name.replace("\\", "/").split("/") if p not in ("", ".")]
+    return parts[0] if parts else None
+
+
 def _safe_zip_members(zf: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     for m in zf.infolist():
         p = Path(m.filename)
@@ -651,7 +661,8 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
         return "new"
 
     tdir = cfg.cache / name
-    cached = bool(prev and prev.get("final") and (tdir / prev["final"]).exists())
+    # final "." is what older versions recorded for Ventoy's ./-prefixed tarball: not really cached
+    cached = bool(prev and prev.get("final") not in (None, "", ".") and (tdir / prev["final"]).exists())
     if not force and cached and is_current(prev, res):
         ok(f"{tool['title']} {prev['version']} — up to date")
         return "current"
@@ -700,14 +711,14 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
     elif tool["kind"] == "ventoy" and zipfile.is_zipfile(dest):  # the Windows package
         with zipfile.ZipFile(dest) as zf:
             members = _safe_zip_members(zf)
-            top = {m.filename.split("/", 1)[0] for m in members}
+            top = {t for t in map(_top_dir, (m.filename for m in members)) if t}
             zf.extractall(tdir, members=members)
         if len(top) != 1:
             raise RescueError(f"unexpected Ventoy archive layout: {sorted(top)}")
         final = top.pop()
     elif tool["kind"] == "ventoy":
         with tarfile.open(dest) as tar:
-            top = {n.split("/", 1)[0] for n in tar.getnames()}
+            top = {t for t in map(_top_dir, tar.getnames()) if t}  # Ventoy's tarball says ./ventoy-x/…
             _safe_extract_tar(tar, tdir)
         if len(top) != 1:
             raise RescueError(f"unexpected Ventoy archive layout: {sorted(top)}")
@@ -841,7 +852,8 @@ def build_ventoy_json(cfg: Config, placed: list[dict], icons: set[str] = frozens
                 classes.append({"dir": path, "class": f"cat-{cid}"})
     for p in placed:
         img = f"/{cfg.iso_root}/{cfg.categories[p['category']]['dir']}/{p['file']}"
-        alias.append({"image": img, "alias": f"{p['title']}  {p['version']}"})
+        only = {frozenset({"bios"}): "  [BIOS]", frozenset({"uefi"}): "  [UEFI]"}.get(frozenset(p.get("modes") or ()), "")
+        alias.append({"image": img, "alias": f"{p['title']}{only}  {p['version']}"})
         if p.get("description"):
             tips.append({"image": img, "tip": p["description"]})
         # Ventoy matches "key" as a substring that must be shorter than the file name, so
@@ -920,6 +932,71 @@ def _copy(src: Path, dst: Path, progress: Progress | None = None) -> None:
     os.replace(tmp, dst)
 
 
+def _iso_has_file(f, want: list[str]) -> bool:
+    """Is want (e.g. ["EFI", "BOOT", "BOOTX64.EFI"]) in the ISO 9660 filesystem open as f?"""
+    f.seek(16 * 2048)
+    pvd = f.read(2048)
+    if pvd[0] != 1 or pvd[1:6] != b"CD001":
+        return False
+    lba, size = int.from_bytes(pvd[158:162], "little"), int.from_bytes(pvd[166:170], "little")
+    for depth, part in enumerate(want):
+        f.seek(lba * 2048)
+        data, found = f.read(min(size, 1 << 20)), None
+        i = 0
+        while i < len(data):
+            n = data[i]
+            if n == 0:  # records never cross a sector: skip to the next one
+                i = (i // 2048 + 1) * 2048
+                continue
+            name = data[i + 33:i + 33 + data[i + 32]].decode("ascii", "replace").split(";")[0].rstrip(".")
+            if name.upper() == part.upper() and bool(data[i + 25] & 2) == (depth < len(want) - 1):
+                found = (int.from_bytes(data[i + 2:i + 6], "little"), int.from_bytes(data[i + 10:i + 14], "little"))
+                break
+            i += n
+        if not found:
+            return False
+        lba, size = found
+    return True
+
+
+def _boot_modes(path: Path) -> set[str] | None:
+    """Which firmware can start this ISO: {"bios"}, {"uefi"} or both. None when it can't be
+    told (not an ISO, no El Torito record), so a tool never gets a wrong label."""
+    if path.suffix.lower() != ".iso":
+        return None
+    try:
+        with open(path, "rb") as f:
+            f.seek(17 * 2048)
+            brvd = f.read(2048)
+            if brvd[0] != 0 or brvd[1:6] != b"CD001" or not brvd[7:30].startswith(b"EL TORITO SPECIFICATION"):
+                return None
+            f.seek(int.from_bytes(brvd[0x47:0x4B], "little") * 2048)
+            cat = f.read(2048)
+            if cat[0] != 1:
+                return None
+            platforms = {cat[1]} if cat[32] == 0x88 else set()   # validation + default entry
+            i = 64
+            while i + 32 <= len(cat) and cat[i] in (0x90, 0x91):  # section headers
+                plat, count, last = cat[i + 1], int.from_bytes(cat[i + 2:i + 4], "little"), cat[i] == 0x91
+                i += 32
+                for _ in range(count):
+                    if i + 32 > len(cat):
+                        break
+                    if cat[i] == 0x88:
+                        platforms.add(plat)
+                    i += 32
+                    while i + 32 <= len(cat) and cat[i] == 0x44:  # extension records
+                        i += 32
+                if last:
+                    break
+            modes = {"bios"} if 0 in platforms else set()
+            if 0xEF in platforms or _iso_has_file(f, ["EFI", "BOOT", "BOOTX64.EFI"]):
+                modes.add("uefi")
+            return modes or None
+    except (OSError, IndexError):
+        return None
+
+
 def _plan(cfg: Config, lock: dict) -> tuple[list[dict], list[tuple], list[str]]:
     """What belongs on the stick: (boot images, apps, titles of tools not fetched yet)."""
     placed, missing = [], []
@@ -936,7 +1013,7 @@ def _plan(cfg: Config, lock: dict) -> tuple[list[dict], list[tuple], list[str]]:
         placed.append({"rel": rel, "src": src, "file": src.name, "title": t["title"], "name": t["name"],
                        "version": entry["version"], "category": t["category"],
                        "description": t.get("description"), "sha256": entry.get("sha256"),
-                       "local": t["source"] == "local"})
+                       "local": t["source"] == "local", "modes": _boot_modes(src)})
     apps = []
     for t in cfg.enabled(kinds={"app"}):
         entry = lock.get(t["name"])
@@ -954,8 +1031,18 @@ def _plan(cfg: Config, lock: dict) -> tuple[list[dict], list[tuple], list[str]]:
 
 
 def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tuple[str, Path | bytes]]:
-    """The small files that go with the boot images: app launcher, theme and boot menu."""
+    """The small files that go with the boot images: app launcher, theme, boot menu and
+    `kind = "file"` tools such as Ventoy's wimboot plugin."""
     out: list[tuple[str, Path | bytes]] = []
+    lock = load_lock(cfg)
+    for t in cfg.enabled(kinds={"file"}):
+        entry = lock.get(t["name"])
+        src = (Path(entry["path"]) if entry and entry.get("path")
+               else cfg.cache / t["name"] / entry["final"] if entry else None)
+        if src and src.is_file():
+            out.append((t["dest"], src))
+        else:
+            warn(f"{t['title']}: not fetched yet — run `crescue fetch` (skipping)")
     # PE launcher index: "Title|relative\path\to.exe" per line (easy to parse from cmd.exe)
     lines = [f"{t['title']}|{t['name']}\\{t.get('entry', '').replace('/', chr(92))}"
              for t, _, _ in apps if t.get("entry")]
@@ -972,6 +1059,9 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
             files.update({f"icons/{f.name}": f for f in sorted(mine.glob("*.png"))})
         out += [(f"ventoy/theme/{rel}", f) for rel, f in files.items()]
     icons = _icons(cfg) if theme_src and theme_src.is_dir() else set()
+    bare = [p["title"] for p in placed if icons and p["name"] not in icons]
+    if bare:
+        info(f"no menu icon for {', '.join(bare)}: `theme/build-theme.py --local` makes letter badges")
     # Ventoy reads UTF-8 but not \u escapes, so write non-ASCII (→, ü …) as is
     vjson = json.dumps(build_ventoy_json(cfg, placed, icons), indent=2, ensure_ascii=False) + "\n"
     out.append(("ventoy/ventoy.json", vjson.encode("utf-8")))

@@ -6,6 +6,10 @@ Needs Pillow, grub-mkfont (grub package) and the DejaVu fonts:
 
     sudo pacman -S --needed python-pillow grub ttf-dejavu
     theme/build-theme.py
+
+Tools you add in local.toml get their letter badges (into byo/icons/) with:
+
+    theme/build-theme.py --local
 """
 import math
 import shutil
@@ -166,9 +170,9 @@ class Pen:
         self.d.polygon(self.xy(px + tx * h, py + ty * h, px + nx * h, py + ny * h, px - nx * h, py - ny * h),
                        fill=fill)
 
-    def save(self, name):
-        out = HERE / "icons"
-        out.mkdir(exist_ok=True)
+    def save(self, name, out=None):
+        out = out or HERE / "icons"
+        out.mkdir(parents=True, exist_ok=True)
         self.im.resize((ICON, ICON), Image.LANCZOS).save(out / f"{name}.png", optimize=True)
 
 
@@ -226,6 +230,36 @@ def initials(title: str) -> str:
     return "".join(w[0] for w in words[:2]).upper() or "?"
 
 
+def badge(t: dict, out=None) -> None:
+    """A tool's letter badge, tinted by its category. `badge = "XX"` in the manifest wins."""
+    col = CATEGORY_COLOURS.get(t.get("category"), MUTED)
+    tile = tuple(round(c * .28 + b * .72) for c, b in zip(col, (20, 29, 44)))
+    pen = Pen(bg=(*tile, 255))
+    pen.d.rounded_rectangle((0, 0, pen.n - 1, pen.n - 1), radius=pen.n * .22,
+                            outline=(*col, 255), width=pen.w(.05))
+    text = t.get("badge") or BADGES.get(t["name"]) or initials(t["title"])
+    size = pen.n * (.46 if len(text) < 3 else .36)
+    font = ImageFont.truetype(str(ttf("DejaVuSans-Bold.ttf")), round(size))
+    pen.d.text((pen.n / 2, pen.n / 2), text, font=font, fill=(255, 255, 255, 255), anchor="mm")
+    pen.save(t["name"], out)
+
+
+def local_badges() -> None:
+    """Badges for the boot tools in local.toml, written to byo/icons/ (git-ignored).
+    An icon already there, such as a real logo you saved, is left alone."""
+    local = HERE.parent / "local.toml"
+    if not local.exists():
+        print("no local.toml, so no local tools to badge")
+        return
+    out = HERE.parent / "byo" / "icons"
+    made = []
+    for t in tomllib.loads(local.read_text(encoding="utf-8")).get("tool", []):
+        if t.get("kind") == "iso" and not (out / f"{t['name']}.png").exists():
+            badge(t, out)
+            made.append(t["name"])
+    print(f"badges written to {out}: {', '.join(made)}" if made else "every local tool already has an icon")
+
+
 def icons() -> None:
     manifest = tomllib.loads((HERE.parent / "tools.toml").read_text(encoding="utf-8"))
     shutil.rmtree(HERE / "icons", ignore_errors=True)
@@ -235,20 +269,9 @@ def icons() -> None:
         glyph(cid, pen, white, (*col, 255))
         pen.save(f"cat-{cid}")
 
-    bold = str(ttf("DejaVuSans-Bold.ttf"))
     for t in manifest.get("tool", []):
-        if t.get("kind") != "iso":
-            continue
-        col = CATEGORY_COLOURS.get(t.get("category"), MUTED)
-        tile = tuple(round(c * .28 + b * .72) for c, b in zip(col, (20, 29, 44)))
-        pen = Pen(bg=(*tile, 255))
-        pen.d.rounded_rectangle((0, 0, pen.n - 1, pen.n - 1), radius=pen.n * .22,
-                                outline=(*col, 255), width=pen.w(.05))
-        text = BADGES.get(t["name"]) or initials(t["title"])
-        size = pen.n * (.46 if len(text) < 3 else .36)
-        font = ImageFont.truetype(bold, round(size))
-        pen.d.text((pen.n / 2, pen.n / 2), text, font=font, fill=white, anchor="mm")
-        pen.save(t["name"])
+        if t.get("kind") == "iso":
+            badge(t)
 
     # Ventoy's own classes: folders, the "go back" entry and files without an icon of their own
     pen = Pen()
@@ -270,6 +293,9 @@ def icons() -> None:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--local"]:  # only your local.toml tools; the theme itself is untouched
+        local_badges()
+        sys.exit(0)
     background()
     nine_slice("menu", PANEL, border=BORDER)
     nine_slice("select", (*ACCENT, 40), left_bar=(*ACCENT, 255), size=4)

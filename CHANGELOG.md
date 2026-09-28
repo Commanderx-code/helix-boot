@@ -6,12 +6,25 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- Ventoy's wimboot plugin (`ventoy/ventoy_wimboot.img`, pinned sha256), so
+  `.wim` boot images such as WinRE and Malwarebytes appear in the menu. Ventoy
+  hides `.wim` files without it.
+- `kind = "file"` tools: a file copied to a fixed `dest` on the stick.
+- Menu entries marked **[BIOS]** or **[UEFI]** when a tool boots only one way,
+  read from each ISO's El Torito catalog and EFI loader.
+- `theme/build-theme.py --local` makes letter badges for `local.toml` tools
+  (into `byo/icons/`), with an optional `badge = "XX"`; sync and pack name any
+  boot tool still without an icon.
 - Boot-menu tips steer SSD and NVMe wiping to Parted Magic's Erase Disk
   (firmware secure erase); DBAN and ShredOS are labelled for hard drives.
 - Progress while filling a stick: `unpack` shows one bar for the whole job
   (bytes, speed, ETA, current file); `sync` shows each file with a counter.
 
 ### Fixed
+- Ventoy's tarball lists its files as `./ventoy-x/…`, which made `fetch`
+  delete the extracted Ventoy folder and record it as `.`: a fresh
+  `install.sh` or `refresh.sh --upgrade-ventoy` then failed with "Ventoy isn't
+  fetched". A cache left that way is now fetched again.
 - `--verify` now reads each image back from the stick. It used to hash the
   copy still cached in memory, which couldn't catch a failing stick.
 

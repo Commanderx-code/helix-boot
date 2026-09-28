@@ -69,7 +69,10 @@ in a folder of its own and run it (see [below](#windows-app)).
 ## What's on the stick
 
 Nine categories, each with its own icon, and every tool inside with an icon
-and a one-line tip.
+and a one-line tip. Tools that only start on older BIOS PCs (DBAN, HDAT2,
+SpinRite) are marked **[BIOS]**, and UEFI-only ones **[UEFI]**, detected from
+each ISO's boot records. Windows `.wim` boot images (WinRE, WinPE tools) work
+too: Ventoy's wimboot plugin comes with the stick.
 
 <img src="docs/boot-menu-folder.png" alt="Inside a boot-menu category" width="820">
 

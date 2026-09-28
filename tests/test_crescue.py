@@ -197,7 +197,8 @@ class Base(unittest.TestCase):
         shutil.rmtree(WEB, ignore_errors=True)
         WEB.mkdir()
         # Upstream world, version 1
-        self.ventoy_tgz = targz({"ventoy-1.1.17/Ventoy2Disk.sh": b"#!/bin/sh\necho ventoy\n"})
+        # Like the real one: member names start with "./"
+        self.ventoy_tgz = targz({"./ventoy-1.1.17/Ventoy2Disk.sh": b"#!/bin/sh\necho ventoy\n"})
         gh_release("ventoy/Ventoy", "v1.1.17", {
             "ventoy-1.1.17-linux.tar.gz": self.ventoy_tgz,
             "sha256.txt": f"{sha(self.ventoy_tgz)}  ventoy-1.1.17-linux.tar.gz\n".encode(),
@@ -746,6 +747,35 @@ class TestPack(Base):
         rc, again = self.run_quiet(cr.cmd_ventoy_path, self.cfg, type("A", (), {"from_pack": str(pack)})())
         self.assertEqual(again, out)
 
+    def test_file_tools_and_bios_labels(self):
+        put("wim/ventoy_wimboot.img", b"wimboot plugin")
+        (self.repo / "byo").mkdir()
+        (self.repo / "byo/old.iso").write_bytes(fake_iso([0]))
+        (self.repo / "local.toml").write_text(
+            '[[tool]]\nname = "wimboot"\ntitle = "wimboot"\nkind = "file"\ndest = "ventoy/ventoy_wimboot.img"\n'
+            f'source = "url"\nurl = "{BASE}/wim/ventoy_wimboot.img"\n'
+            f'checksum = [{{ sha256 = "{sha(b"wimboot plugin")}" }}]\n'
+            '[[tool]]\nname = "old"\ntitle = "Old DOS Tool"\nkind = "iso"\ncategory = "rescue"\n'
+            'source = "local"\nbyo = true\npath = "byo/old.iso"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync()[0], 0)
+        self.assertEqual((self.stick / "ventoy/ventoy_wimboot.img").read_bytes(), b"wimboot plugin")
+        menu = json.loads((self.stick / "ventoy/ventoy.json").read_text())
+        self.assertIn("Old DOS Tool  [BIOS]  ", [a["alias"][:len("Old DOS Tool  [BIOS]  ")] for a in menu["menu_alias"]])
+        self.assertFalse(any("[BIOS]" in a["alias"] for a in menu["menu_alias"] if "systemrescue" in a.get("image", "")))
+        pack, _ = self.pack()                                     # and through a pack
+        other = self.tmp / "stick2"
+        other.mkdir()
+        self.assertEqual(self.unpack(pack, other)[0], 0)
+        self.assertEqual((other / "ventoy/ventoy_wimboot.img").read_bytes(), b"wimboot plugin")
+
+    def test_file_tool_needs_a_safe_dest(self):
+        (self.repo / "local.toml").write_text(
+            '[[tool]]\nname = "bad"\ntitle = "Bad"\nkind = "file"\ndest = "../etc/x"\nsource = "local"\npath = "x"\n')
+        with self.assertRaisesRegex(cr.RescueError, "needs 'dest'"):
+            cr.Config(repo=self.repo)
+
     def test_the_zip_is_all_another_pc_needs(self):
         self.fetch()
         pack, _ = self.pack(self.tmp / "away" / "commander-rescue-2026-01-01.zip")
@@ -781,6 +811,63 @@ class TestPack(Base):
         self.assertIn("can refresh a stick but not set up a new one", log)
         with self.assertRaisesRegex(cr.RescueError, "no Ventoy installer"):
             self.run_quiet(cr.cmd_ventoy_path, self.cfg, type("A", (), {"from_pack": str(pack)})())
+
+
+def fake_iso(platforms: list[int], efi_file: bool = False) -> bytes:
+    """A minimal ISO: an El Torito catalog listing `platforms` (0 = BIOS, 0xEF = UEFI) and,
+    optionally, EFI/BOOT/BOOTX64.EFI in the ISO 9660 tree."""
+    S = 2048
+    img = bytearray(S * 30)
+
+    def rec(name: bytes, lba: int, size: int, is_dir: bool) -> bytes:
+        r = bytearray(33 + len(name) + (len(name) + 1) % 2)
+        r[0] = len(r)
+        r[2:6], r[10:14] = lba.to_bytes(4, "little"), size.to_bytes(4, "little")
+        r[25], r[32] = 2 if is_dir else 0, len(name)
+        r[33:33 + len(name)] = name
+        return bytes(r)
+
+    pvd = bytearray(S)
+    pvd[0], pvd[1:6] = 1, b"CD001"
+    pvd[156:156 + 34] = rec(b"\0", 20, S, True)
+    img[16 * S:17 * S] = pvd
+    img[20 * S:21 * S] = (rec(b"\0", 20, S, True) + rec(b"\1", 20, S, True) + rec(b"EFI", 21, S, True)).ljust(S, b"\0")
+    img[21 * S:22 * S] = rec(b"BOOT", 22, S, True).ljust(S, b"\0")
+    if efi_file:
+        img[22 * S:23 * S] = rec(b"BOOTX64.EFI;1", 23, 10, False).ljust(S, b"\0")
+    brvd = bytearray(S)
+    brvd[1:6], brvd[6], brvd[7:30] = b"CD001", 1, b"EL TORITO SPECIFICATION"
+    brvd[0x47:0x4B] = (25).to_bytes(4, "little")
+    img[17 * S:18 * S] = brvd
+    cat = bytearray(S)
+    cat[0], cat[1] = 1, platforms[0] if platforms else 0
+    cat[32] = 0x88 if platforms else 0
+    for n, plat in enumerate(platforms[1:]):
+        i = 64 + n * 64
+        cat[i], cat[i + 1], cat[i + 2] = 0x91 if n == len(platforms) - 2 else 0x90, plat, 1
+        cat[i + 32] = 0x88
+    img[25 * S:26 * S] = cat
+    return bytes(img)
+
+
+class TestBootModes(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="crescue-test-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def modes(self, data: bytes, name="x.iso"):
+        (self.tmp / name).write_bytes(data)
+        return cr._boot_modes(self.tmp / name)
+
+    def test_modes(self):
+        self.assertEqual(self.modes(fake_iso([0])), {"bios"})
+        self.assertEqual(self.modes(fake_iso([0, 0xEF])), {"bios", "uefi"})
+        self.assertEqual(self.modes(fake_iso([0xEF])), {"uefi"})
+        self.assertEqual(self.modes(fake_iso([0], efi_file=True)), {"bios", "uefi"})  # EFI loader in the tree
+        self.assertIsNone(self.modes(b"\0" * 40000))                                 # no El Torito: no guess
+        self.assertIsNone(self.modes(fake_iso([0]), "x.wim"))                        # not an ISO
 
 
 class TestProgress(unittest.TestCase):
