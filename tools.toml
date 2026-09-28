@@ -222,6 +222,19 @@ version = 'shredos-([\d.]+_\d+)_x86-64_v?([\d.]+)_'
 checksum = ["github-digest", { asset = '{name}\.sha(1|256)$' }]
 description = "Boots straight into nwipe. DESTROYS DATA on the disks you select."
 
+[[tool]]
+name = "dban"
+title = "DBAN"
+kind = "iso"
+category = "wipe"
+source = "sourceforge"
+project = "dban"
+path = "/dban"
+asset = ['^dban-[\d.]+_i586\.iso$']
+version = 'dban-([\d.]+)_i586'
+checksum = ["sf-md5"]
+description = "Darik's Boot and Nuke, the classic wiper. BIOS/legacy boot only. DESTROYS DATA."
+
 # ── Boot repair ───────────────────────────────────────────────────────────
 [[tool]]
 name = "supergrub2"

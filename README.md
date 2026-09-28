@@ -43,6 +43,7 @@ and every tool inside with an icon too.
 | | Boot-Repair-Disk | SourceForge · md5 |
 | Diagnostic Tools | Memtest86+ | memtest.org · sha512 |
 | Disk Wipe | ShredOS (nwipe) | GitHub · sha256 |
+| | DBAN (BIOS boot only) | SourceForge · md5 |
 | Live Operating Systems | **Commander PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Win11 build | built locally ([guide](pe/README.md)) |
 | | Hiren's BootCD PE, ready-made Win11 PE | hirensbootcd.org · unverified |
 | | SystemRescue | SourceForge · sha512 |

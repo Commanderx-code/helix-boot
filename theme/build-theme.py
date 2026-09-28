@@ -48,7 +48,7 @@ CATEGORY_COLOURS = {
 # Drop a real logo in byo/icons/<name>.png to replace any of these on your stick.
 BADGES = {
     "commander-pe": "PE", "hirens": "HB", "systemrescue": "SR", "rescuezilla": "RZ", "clonezilla": "CZ",
-    "gparted": "GP", "memtest86plus": "M+", "shredos": "SH", "supergrub2": "SG", "boot-repair-disk": "BR",
+    "gparted": "GP", "memtest86plus": "M+", "shredos": "SH", "dban": "DB", "supergrub2": "SG", "boot-repair-disk": "BR",
     "kaspersky-rd": "K", "drweb-livedisk": "DW", "macrium-reflect": "MR", "aomei-backupper": "AB",
     "easeus-todo-backup": "ET", "easeus-data-recovery": "ED", "active-data-studio": "A@", "aomei-pa": "AP",
     "paragon-hdm": "PH", "parted-magic": "PM", "bootit-bm": "BI", "hdat2": "H2", "memtest86": "MT",
