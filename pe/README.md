@@ -113,9 +113,14 @@ tooling and `pull` fetches the ISO.
    boots faster, needs less RAM, and works in legacy BIOS mode, where an image
    over about 1.5 GB fails with *not enough memory to create a ramdisk device*.
    A fresh PhoenixPE folder forgets these settings.
-5. **Extra drivers (optional):** for storage or network hardware not covered
-   above, drop the extracted `.inf` driver folders into *Drivers → Driver
-   Integration* and tick it.
+5. **Extra drivers:** Windows PE has no Wi-Fi drivers for most laptop cards.
+   Tick *Drivers → Driver Integration* and point **x64 Drivers** at unpacked
+   `.inf` driver folders. With the build VM, put them in
+   `~/.local/share/commander-rescue/vm/drivers/x64/` and `pe/vm/build-vm.sh
+   push`: they appear as `D:\drivers\x64`. For Intel Wi-Fi (AC 9260/9560 and
+   AX201/203/210/211 and newer), unzip Intel's
+   [IT-admin driver package](https://www.intel.com/content/www/us/en/download/18231/intel-proset-wireless-software-and-wi-fi-drivers-for-it-administrators.html)
+   there; the AX200 and older AC cards need Intel's separate legacy packages.
 6. Press **Build**. The first build takes longer because it caches the source.
    Later builds take a few minutes.
 7. Test the ISO in the VM (boot it as a CD) before putting it on the stick:

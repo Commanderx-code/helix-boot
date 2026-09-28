@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- `build-vm.sh push` carries unpacked drivers (`vm/drivers/x64`) to the
+  transfer disk for PhoenixPE's Driver Integration, e.g. Intel Wi-Fi.
 - An "Enter open · Esc back" hint in the boot menu. Ventoy's left/right arrows
   only scroll a long name sideways, which looked like the menu shifting.
 - `pe/fix-bootmgr.sh`: puts a current Windows boot manager into a Lazarus PE

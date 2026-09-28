@@ -83,6 +83,14 @@ push() {
     mcopy -i "$M" -o -m "$DIR/$pe_zip" ::/
     step1="1. Right-click $pe_zip on this disk, Extract All, and extract to C:\PhoenixPE"
   fi
+  # Unpacked drivers in $DIR/drivers/x64 (e.g. Intel Wi-Fi) ride along for Driver Integration
+  local drivers='' step3b='   (Extra drivers: put unpacked .inf folders in C:\PhoenixPE\Workbench\Drivers\x64)'
+  mdeltree -i "$M" ::/drivers 2>/dev/null || true
+  if [[ -d $DIR/drivers/x64 ]] && [[ -n $(ls -A "$DIR/drivers/x64") ]]; then
+    mcopy -i "$M" -s -m "$DIR/drivers" ::/
+    drivers=$(find "$DIR/drivers/x64" -mindepth 1 -maxdepth 1 -printf '%f ' | sed 's/ $//')
+    step3b='   Drivers > Driver Integration: tick it and set "x64 Drivers" to D:\drivers\x64'
+  fi
   printf '%s\r\n' \
     'Commander Rescue transfer disk' \
     '' \
@@ -95,11 +103,13 @@ push() {
     '2. In PowerShell, from commander\phoenixpe on this disk:' \
     '     powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 C:\PhoenixPE' \
     '3. Run C:\PhoenixPE\PEBakeryLauncher.exe as administrator. Source Config: the Windows DVD' \
-    '   drive root, base image 2, the Pro edition, "Run all programs from RAM" NOT ticked. Build.' \
+    '   drive root, base image 2, the Pro edition, "Run all programs from RAM" NOT ticked.' \
+    "$step3b" \
+    '   Then Build.' \
     '4. Copy the finished .iso into the out folder on this disk, then shut Windows down.' \
     '5. On Linux: pe/vm/build-vm.sh pull' > "$DIR/README.txt"
   mcopy -i "$M" -o "$DIR/README.txt" ::/README.txt
-  ok "transfer disk updated (commander\\, README.txt${pe_zip:+ and $pe_zip})"
+  ok "transfer disk updated (commander\\, README.txt${pe_zip:+, $pe_zip}${drivers:+, drivers: $drivers})"
 }
 
 case ${1:-} in
