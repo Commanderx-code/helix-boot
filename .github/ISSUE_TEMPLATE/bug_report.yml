@@ -1,0 +1,36 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you ran, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The command's output or error message.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `./crescue --version`, or the Windows app's version.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Linux, Windows app, Booting the stick]
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / distribution
+      placeholder: e.g. Garuda Linux, Windows 11 24H2

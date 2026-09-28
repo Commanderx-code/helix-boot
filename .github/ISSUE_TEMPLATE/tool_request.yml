@@ -1,0 +1,36 @@
+name: Tool request
+description: Suggest a tool for the stick.
+labels: [tool request]
+body:
+  - type: input
+    id: tool
+    attributes:
+      label: Tool
+      placeholder: e.g. Kaspersky Rescue Disk
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: Download page
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Menu category
+      options: [Antivirus, Backup and Recovery, Boot Repair, Diagnostic Tools, Disk Wipe, Live Operating Systems, Partition Tools, Password Removal, Windows Recovery, Portable app (PE)]
+    validations:
+      required: true
+  - type: dropdown
+    id: license
+    attributes:
+      label: License
+      options: [Free software / open source, Freeware, Paid or trial (bring-your-own slot)]
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it belongs
+      description: What it does that the current tools don't, and whether the publisher offers checksums.
