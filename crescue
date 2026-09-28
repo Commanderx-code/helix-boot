@@ -894,7 +894,7 @@ def build_ventoy_json(cfg: Config, placed: list[dict], icons: set[str] = frozens
     for p in placed:
         img = f"/{cfg.iso_root}/{cfg.categories[p['category']]['dir']}/{p['file']}"
         only = {frozenset({"bios"}): "  [BIOS]", frozenset({"uefi"}): "  [UEFI]"}.get(frozenset(p.get("modes") or ()), "")
-        alias.append({"image": img, "alias": f"{p['title']}{only}  {p['version']}"})
+        alias.append({"image": img, "alias": f"{p['title']}{only}"})  # versions: `crescue list` / `check`
         if p.get("description"):
             tips.append({"image": img, "tip": p["description"]})
         # Ventoy matches "key" as a substring that must be shorter than the file name, so

@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- An "Enter open · Esc back" hint in the boot menu. Ventoy's left/right arrows
+  only scroll a long name sideways, which looked like the menu shifting.
 - `pe/fix-bootmgr.sh`: puts a current Windows boot manager into a Lazarus PE
   built from 22H2/23H2, whose 2022 UEFI loader hangs on newer firmware. The
   PE guide now recommends building from 22H2/23H2 (via UUP dump), where the
@@ -32,6 +34,10 @@ tagged releases also publish the Windows app.
   (firmware secure erase); DBAN and ShredOS are labelled for hard drives.
 - Progress while filling a stick: `unpack` shows one bar for the whole job
   (bytes, speed, ETA, current file); `sync` shows each file with a counter.
+
+### Changed
+- Menu entries show just the tool's name (and [BIOS]/[UEFI]); versions are
+  in `crescue list` and `crescue check`.
 
 ### Fixed
 - Ventoy's tarball lists its files as `./ventoy-x/…`, which made `fetch`

@@ -365,7 +365,7 @@ class TestFetchAndSync(Base):
         tips = {t.get("dir") or t.get("image"): t["tip"] for t in vj["menu_tip"]["tips"]}
         self.assertEqual(tips["/ISO/2-Rescue"], "Linux rescue systems")
         self.assertIn("→", (self.stick / "ventoy/ventoy.json").read_text(encoding="utf-8"))  # not \u2192
-        self.assertEqual(aliases["/ISO/2-Rescue/systemrescue-12.02-amd64.iso"], "SystemRescue  12.02")
+        self.assertEqual(aliases["/ISO/2-Rescue/systemrescue-12.02-amd64.iso"], "SystemRescue")  # no version: cleaner menu
         self.assertNotIn("/ISO/1-Windows-PE", aliases)             # empty category hidden
         self.assertTrue((self.stick / "commander-rescue.tag").exists())
 
@@ -762,7 +762,7 @@ class TestPack(Base):
         self.assertEqual(self.sync()[0], 0)
         self.assertEqual((self.stick / "ventoy/ventoy_wimboot.img").read_bytes(), b"wimboot plugin")
         menu = json.loads((self.stick / "ventoy/ventoy.json").read_text())
-        self.assertIn("Old DOS Tool  [BIOS]  ", [a["alias"][:len("Old DOS Tool  [BIOS]  ")] for a in menu["menu_alias"]])
+        self.assertIn("Old DOS Tool  [BIOS]", [a["alias"] for a in menu["menu_alias"]])
         self.assertFalse(any("[BIOS]" in a["alias"] for a in menu["menu_alias"] if "systemrescue" in a.get("image", "")))
         pack, _ = self.pack()                                     # and through a pack
         other = self.tmp / "stick2"
