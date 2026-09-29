@@ -16,7 +16,7 @@ Author=Helix Boot
 Level=5
 Selected=True
 Mandatory=False
-Version=1.2.0.0
+Version=1.2.1.0
 Date=2026-09-29
 
 [Variables]
@@ -51,11 +51,17 @@ End
 [ProfilePic]
 // StartAllBack takes the picture from Windows' own per-user list,
 // HKLM\...\AccountPicture\Users\<SID>\Image<size>. Everything in the PE runs as SYSTEM (S-1-5-18).
+// It finds <SID> through LogonUI's SessionData\<session>\LoggedOnUserSID, which a PE never
+// writes (no logon screen), so that's set too, for the first few session numbers.
 // The sizes are made ahead of time (AccountPictures\Image<size>.png), so nothing is converted here.
 Echo,"Setting the Start menu profile picture..."
 DirMake,"%TargetDir%\Users\Public\AccountPictures\S-1-5-18"
 FileCopy,"%SrcDir%AccountPictures\*.png","%TargetDir%\Users\Public\AccountPictures\S-1-5-18"
 RegLoadHives
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\SessionData\0","LoggedOnUserSID","S-1-5-18"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\SessionData\1","LoggedOnUserSID","S-1-5-18"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\SessionData\2","LoggedOnUserSID","S-1-5-18"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\SessionData\3","LoggedOnUserSID","S-1-5-18"
 RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image32","X:\Users\Public\AccountPictures\S-1-5-18\Image32.png"
 RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image40","X:\Users\Public\AccountPictures\S-1-5-18\Image40.png"
 RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image48","X:\Users\Public\AccountPictures\S-1-5-18\Image48.png"

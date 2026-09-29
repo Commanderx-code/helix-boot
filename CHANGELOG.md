@@ -28,7 +28,8 @@ tagged releases also publish the Windows app.
   pick any PEBakery option (radio buttons, dropdowns, files, text), checked
   against your PhoenixPE release like the rest of the preset.
   The Helix Boot add-on registers the profile picture where StartAllBack's
-  Start menu reads it (Windows' per-user picture list, for SYSTEM), from sizes
+  Start menu reads it (Windows' per-user picture list for SYSTEM, found through
+  LogonUI's LoggedOnUserSID, which a PE never sets), from sizes
   made ahead of time so the build converts nothing.
 - **OS Images** (`ISO/OSimages`): your own folder for Windows and Linux
   installers. It has a menu name, tip and disc icon, Helix Boot never changes
