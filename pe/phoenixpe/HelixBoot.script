@@ -4,7 +4,7 @@
 // menu shortcuts. The apps themselves stay on the USB in Apps\ and are updated
 // from Linux by refresh.sh, so this never needs changing when they do.
 // Also starts the PortableApps.com Platform from the USB when the desktop loads,
-// and gives the Start menu the profile picture next to this script (profile.png).
+// and gives the Start menu the profile picture next to this script (AccountPictures\).
 //
 // Installed into Projects\MyApps\Helix Boot\ by Apply-HelixPreset.ps1,
 // next to a copy of HelixApps.cmd.
@@ -44,31 +44,29 @@ If,%cb_DesktopShc%,Equal,True,AddShortcut,Desktop,"",%txt_ShortcutName%,"%PEProg
 If,%cb_StartMenuShc%,Equal,True,AddShortcut,StartMenu,%txt_StartMenuFolder%,%txt_ShortcutName%,"%PEPrograms%\%ProgramFolder%\%ProgramExe%","","%PEPrograms%\%ProgramFolder%"
 
 If,%cb_ProfilePic%,Equal,True,Begin
-  If,ExistFile,"%SrcDir%profile.png",Run,%ScriptFile%,ProfilePic
-  Else,Echo,"No profile.png next to %ScriptFile%: keeping the default profile picture.",Warn
+  If,ExistDir,"%SrcDir%AccountPictures",Run,%ScriptFile%,ProfilePic
+  Else,Echo,"No AccountPictures folder next to %ScriptFile%: keeping the default profile picture.",Warn
 End
 
 [ProfilePic]
 // StartAllBack takes the picture from Windows' own per-user list,
 // HKLM\...\AccountPicture\Users\<SID>\Image<size>. Everything in the PE runs as SYSTEM (S-1-5-18).
+// The sizes are made ahead of time (AccountPictures\Image<size>.png), so nothing is converted here.
 Echo,"Setting the Start menu profile picture..."
 DirMake,"%TargetDir%\Users\Public\AccountPictures\S-1-5-18"
+FileCopy,"%SrcDir%AccountPictures\*.png","%TargetDir%\Users\Public\AccountPictures\S-1-5-18"
 RegLoadHives
-Run,%ScriptFile%,ProfilePicSize,32
-Run,%ScriptFile%,ProfilePicSize,40
-Run,%ScriptFile%,ProfilePicSize,48
-Run,%ScriptFile%,ProfilePicSize,64
-Run,%ScriptFile%,ProfilePicSize,96
-Run,%ScriptFile%,ProfilePicSize,192
-Run,%ScriptFile%,ProfilePicSize,208
-Run,%ScriptFile%,ProfilePicSize,240
-Run,%ScriptFile%,ProfilePicSize,424
-Run,%ScriptFile%,ProfilePicSize,448
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image32","X:\Users\Public\AccountPictures\S-1-5-18\Image32.png"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image40","X:\Users\Public\AccountPictures\S-1-5-18\Image40.png"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image48","X:\Users\Public\AccountPictures\S-1-5-18\Image48.png"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image64","X:\Users\Public\AccountPictures\S-1-5-18\Image64.png"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image96","X:\Users\Public\AccountPictures\S-1-5-18\Image96.png"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image192","X:\Users\Public\AccountPictures\S-1-5-18\Image192.png"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image208","X:\Users\Public\AccountPictures\S-1-5-18\Image208.png"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image240","X:\Users\Public\AccountPictures\S-1-5-18\Image240.png"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image424","X:\Users\Public\AccountPictures\S-1-5-18\Image424.png"
+RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image448","X:\Users\Public\AccountPictures\S-1-5-18\Image448.png"
 RegUnLoadHives
-
-[ProfilePicSize]
-ConvertImage,"%SrcDir%profile.png","%TargetDir%\Users\Public\AccountPictures\S-1-5-18\Image#1.png","#1x#1"
-RegWrite,HKLM,REG_SZ,"Tmp_Software\Microsoft\Windows\CurrentVersion\AccountPicture\Users\S-1-5-18","Image#1","X:\Users\Public\AccountPictures\S-1-5-18\Image#1.png"
 
 [Interface]
 lbl_About="Adds the Helix Boot app launcher. It finds the USB by helix-boot.tag and runs apps from USB:\Apps.",1,1,10,10,600,20,8,Normal
@@ -78,4 +76,4 @@ txt_StartMenuFolder="Start Menu Folder:",1,0,10,100,200,21,"System Tools"
 txt_ShortcutName="Shortcut Name:",1,0,10,142,200,21,"Helix Apps"
 cb_AutoPortableApps="Start PortableApps.com with the desktop",1,3,10,184,300,18,True
 cb_PortableAppsShc="PortableApps desktop shortcut",1,3,10,206,300,18,True
-cb_ProfilePic="Start menu profile picture (profile.png next to this script)",1,3,10,228,400,18,True
+cb_ProfilePic="Start menu profile picture (AccountPictures next to this script)",1,3,10,228,400,18,True
