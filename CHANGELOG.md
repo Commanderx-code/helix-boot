@@ -38,6 +38,10 @@ now covered by a test that failed before the fix):
   needs for its non-ASCII text.
 
 ### Changed
+- CI hardening: every GitHub Action is pinned to an exact commit (Dependabot
+  proposes updates weekly), workflows are read-only by default, checkouts don't
+  keep the token, and releases are published by a separate job, the only one
+  allowed to write, from the `.exe` the build job tested.
 - Documentation brought up to date: real Ventoy screenshots of the Helix Neon
   menu, Lazarus PE's startup and look, the launcher, and packs on Windows.
 

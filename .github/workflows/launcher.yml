@@ -9,12 +9,17 @@ on:
     paths: ["pe/lazarus/**", "pe/launcher/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   launcher:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Stick detection (a tag planted on the PC's own disks must not win)
         shell: powershell
@@ -119,7 +124,7 @@ jobs:
           Shot '7-16x10' @('-Width', '1920', '-Height', '1200', '-Category', 'backup')
           Shot '8-4x3' @('-Width', '1024', '-Height', '768', '-Category', 'utilities')
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         if: always()
         with:
           name: lazarus-launcher-screens

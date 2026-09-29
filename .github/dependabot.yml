@@ -1,0 +1,11 @@
+# Keeps the pinned GitHub Actions (exact commits, see .github/workflows) up to date:
+# a weekly pull request per update, with the new commit and its version.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

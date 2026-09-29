@@ -7,6 +7,9 @@ on:
     - cron: "17 9 * * 1"   # Mondays: make sure every upstream still resolves and verifies
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # GitHub shows at most 10 annotations of each level per step, so results are
 # grouped into one annotation per level (lines joined with %0A).
 
@@ -14,8 +17,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.11"
       - name: Unit + end-to-end tests
@@ -31,8 +36,10 @@ jobs:
     # Catches upstreams that renamed their files or moved (asset regex no longer matches).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.11"
       - name: Resolve latest releases
@@ -68,8 +75,10 @@ jobs:
     needs: upstream
     if: always()
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.11"
       - name: Fetch and verify

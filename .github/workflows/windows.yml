@@ -13,15 +13,17 @@ on:
         default: ""
 
 permissions:
-  contents: write   # attach the .exe to releases on version tags
+  contents: read    # the release job alone may write (below)
 
 jobs:
   app:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.12"
 
@@ -87,16 +89,28 @@ jobs:
             throw "the window didn't pick up the pack beside it"
           }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: HelixBoot-windows
           path: dist/HelixBoot.exe
 
-      # A pushed v* tag, or "Run workflow" on main with a version: the release (and its tag,
-      # at this commit) is created after the tests above have passed on this exact build.
+  # A pushed v* tag, or "Run workflow" on main with a version: the release (and its tag,
+  # at this commit) is created from the .exe the job above built and tested, by a job of its
+  # own, the only one with write access.
+  release:
+    needs: app
+    if: startsWith(github.ref, 'refs/tags/v') || (inputs.release != '' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0  # v5.0.0
+        with:
+          name: HelixBoot-windows
+          path: dist
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/v') || (inputs.release != '' && github.ref == 'refs/heads/main')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           tag_name: ${{ inputs.release || github.ref_name }}
           target_commitish: ${{ github.sha }}
