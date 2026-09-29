@@ -1118,7 +1118,8 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
     out.append((f"{cfg.apps_root}/apps.txt", ("\r\n".join(lines) + "\r\n").encode("utf-8")))
     launcher = cfg.assets / "pe" / "launcher"
     if launcher.is_dir():  # works from any WinPE, including Hiren's
-        out += [(f"{cfg.apps_root}/{f.name}", f) for f in sorted(launcher.glob("*.cmd"))]
+        out += [(f"{cfg.apps_root}/{f.name}", f) for f in sorted(launcher.iterdir())
+                if f.suffix.lower() in (".cmd", ".ps1")]
     theme_src = cfg.assets / cfg.settings["theme"] if cfg.settings.get("theme") else None
     if theme_src and theme_src.is_dir():
         files = {f.relative_to(theme_src).as_posix(): f for f in sorted(theme_src.rglob("*"))

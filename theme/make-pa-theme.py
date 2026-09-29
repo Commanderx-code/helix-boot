@@ -11,8 +11,9 @@ exactly there, then the panel is darkened a little so white text stays legible.
 
 The theme starts from the Platform's own Default theme (buttons, menu icons),
 taken from crescue's cache, and is written to byo/pa-themes/<Theme Name>/,
-which refresh.sh copies into the stick's PortableApps themes. Pick it in the
-PortableApps menu under Options > Theme. Needs Pillow.
+which refresh.sh copies to the stick's PortableApps\PortableApps.com\Data\
+ThemeLibrary. Switch themes with Commander Apps > t) PortableApps theme (the
+Platform has one custom-theme slot). Needs Pillow.
 """
 import argparse
 import colorsys

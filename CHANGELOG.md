@@ -6,6 +6,11 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- **t) PortableApps theme** in Commander Apps: the Platform lists only its
+  built-in themes and has one custom slot, so this switches your themes (kept
+  in `Data\ThemeLibrary`) into it and restarts the menu.
+- A Commander Apps copy built into a PE hands over to the stick's own, so new
+  menu entries show up without rebuilding the PE.
 - `theme/make-pa-theme.py`: PortableApps.com menu themes from your own
   artwork, fitted to the Platform's 406x558 layout, with an accent colour and
   optional recolouring.

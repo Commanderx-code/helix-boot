@@ -117,14 +117,17 @@ theme/make-pa-theme.py ~/art/orange.png "Helix Red" --accent ff2a2a --hue -28   
 ```
 
 Themes land in `byo/pa-themes/`. One `local.toml` entry puts them all on the
-stick (and in packs), then pick one in the PortableApps menu, **Options > Theme**:
+stick (and in packs). The Platform lists only its built-in themes and has a
+single slot for a custom one, so switch with **Commander Apps > t) PortableApps
+theme**: it copies your pick into that slot (`Data\Theme`), sets
+`Theme=Custom` and restarts the menu.
 
 ```toml
 [[tool]]
 name = "pa-themes"
 title = "PortableApps themes"
 kind = "file"
-dest = "PortableApps/PortableApps.com/App/Graphics/Themes"
+dest = "PortableApps/PortableApps.com/Data/ThemeLibrary"
 source = "local"
 byo = true
 path = "byo/pa-themes"
