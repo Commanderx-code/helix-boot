@@ -388,7 +388,6 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 - [x] Packs in the Windows app
 - [x] Renamed to Helix Boot (0.5.0), Helix Neon boot-menu theme
 - [x] Lazarus PE look and the Lazarus launcher
-- [ ] Commander Toolbox entry
 
 ## Contributing
 
