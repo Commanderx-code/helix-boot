@@ -7,6 +7,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+import zipfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
@@ -146,12 +147,79 @@ class TestFlows(unittest.TestCase):
             app.update(2, run=ps(VENTOY), ventoy=self.ventoy)
         self.assertEqual(self.calls, ["fetch", ("sync", "E:\\", False)])      # no Ventoy step by default
 
+    def pack_flow(self):
+        self.pack = Path(tempfile.mkdtemp()) / "helix-boot-2026-09-29.zip"
+        for name, fake in (("pack_ventoy_dir", lambda cfg, pack: self.calls.append(("pack-ventoy", pack)) or self.vdir),
+                           ("unpack", lambda cfg, target, pack, init: self.calls.append(("unpack", target, init)))):
+            patcher = mock.patch.object(app, name, fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_install_from_a_pack_downloads_nothing(self):
+        self.pack_flow()
+        states = iter([ps(STICK), ps(VENTOY)])
+        current = {"run": next(states)}
+
+        def ventoy(args, vdir, progress):
+            self.ventoy(args, vdir, progress)
+            current["run"] = next(states)
+
+        with redirect_stdout(io.StringIO()), mock.patch.dict(os.environ, {"PROCESSOR_ARCHITECTURE": "x86"}):
+            app.install(2, run=lambda s: current["run"](s), ventoy=ventoy, pack=self.pack)
+        self.assertEqual(self.calls, [("pack-ventoy", self.pack), ("ventoy", ["VTOYCLI", "/I", "/PhyDrive:2", "/GPT"]),
+                                      ("unpack", "E:\\", True)])
+
+    def test_update_from_a_pack(self):
+        self.pack_flow()
+        with redirect_stdout(io.StringIO()), mock.patch.dict(os.environ, {"PROCESSOR_ARCHITECTURE": "x86"}):
+            app.update(2, run=ps(VENTOY), ventoy=self.ventoy, pack=self.pack)
+            self.assertEqual(self.calls, [("unpack", "E:\\", False)])
+            self.calls.clear()
+            app.update(2, run=ps(VENTOY), ventoy=self.ventoy, pack=self.pack, upgrade_ventoy=True)
+        self.assertEqual(self.calls, [("pack-ventoy", self.pack), ("ventoy", ["VTOYCLI", "/U", "/PhyDrive:2"]),
+                                      ("unpack", "E:\\", False)])
+
+    def test_linux_only_pack_is_refused_before_the_disk_is_touched(self):
+        pack = Path(tempfile.mkdtemp()) / "old.zip"
+        with zipfile.ZipFile(pack, "w") as zf:
+            zf.writestr(app.cr.PACK_META, json.dumps({
+                "format": app.cr.PACK_FORMAT, "isos": [], "apps": {}, "trees": [],
+                "ventoy": {"file": "installer/ventoy-1.1.17-linux.tar.gz", "version": "1.1.17"}}))
+        with redirect_stdout(io.StringIO()), self.assertRaisesRegex(app.cr.RescueError, "Ventoy for Linux only"):
+            app.install(2, run=ps(STICK), ventoy=self.ventoy, pack=pack)
+        self.assertEqual(self.calls, [])
+
     def test_cli_install_needs_yes(self):
         out = io.StringIO()
         with redirect_stdout(out), redirect_stderr(out), \
                 mock.patch.object(app, "open_log", lambda p: None), mock.patch.object(sys, "__stdout__", out):
             self.assertEqual(app.cli(["--install", "2"]), 1)
         self.assertIn("--yes", out.getvalue())
+
+
+class TestFindPack(unittest.TestCase):
+    def make(self, path: Path, meta: str | None = "helix-boot-pack.json") -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr(meta or "something-else.txt", "{}")
+        return path
+
+    def test_pack_beside_the_app(self):
+        here = Path(tempfile.mkdtemp())
+        self.make(here / "photos.zip", meta=None)             # a zip that isn't a pack
+        self.assertIsNone(app.find_pack(here))
+        pack = self.make(here / "helix-boot-2026-09-29.zip")
+        self.assertEqual(app.find_pack(here), pack)
+        old = self.make(here / "commander-rescue-2026-09-20.zip", meta="commander-rescue-pack.json")
+        os.utime(old, (1, 1))
+        self.assertEqual(app.find_pack(here), pack)            # the newest one
+
+    def test_pack_beside_the_installer_folder(self):
+        top = Path(tempfile.mkdtemp())
+        pack = self.make(top / "helix-boot-2026-09-29.zip")    # unzipped: installer\HelixBoot.exe
+        (top / "installer").mkdir()
+        self.assertEqual(app.find_pack(top / "installer"), pack)
+        self.assertIsNone(app.find_pack(top / "elsewhere"))
 
 
 class TestConsole(unittest.TestCase):

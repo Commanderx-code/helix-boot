@@ -11,6 +11,11 @@ its own command-line mode (Ventoy2Disk.exe VTOYCLI …).
     HelixBoot.exe --install N --yes erase disk N, install Ventoy, fill it
     HelixBoot.exe --update N        refresh a stick in place
     HelixBoot.exe --sync-to DIR     fill a folder (testing)
+    … --pack PACK.zip               with --install / --update: everything from a pack,
+                                    offline (--unpack-to DIR fills a folder from one)
+
+A pack beside the app (or beside the installer folder it was unzipped to) is
+picked up by the window on its own.
 
 The .exe has no console, so command-line output also goes to helix-boot.log
 next to it (or wherever --log points).
@@ -237,6 +242,35 @@ def ventoy_dir(cfg) -> Path:
     return path
 
 
+# ── Packs (made on Linux with `helix pack`) ────────────────────────────────
+def is_pack(path: Path) -> bool:
+    try:
+        with zipfile.ZipFile(path) as zf:
+            names = set(zf.namelist())
+    except (OSError, zipfile.BadZipFile):
+        return False
+    return cr.PACK_META in names or cr.OLD_PACK_META in names
+
+
+def find_pack(here: Path | None = None) -> Path | None:
+    """The newest pack beside the app, or beside the installer\ folder it was unzipped into."""
+    here = here or user_dir()
+    places = [here, here.parent] if here.name.lower() == "installer" else [here]
+    packs = [z for d in places for z in sorted(d.glob("*.zip")) if is_pack(z)]
+    return max(packs, key=lambda z: z.stat().st_mtime) if packs else None
+
+
+def pack_ventoy_dir(cfg, pack) -> Path:
+    return cr._ventoy_from_pack(cfg, str(pack), windows=True)
+
+
+def unpack(cfg, target: str, pack, init: bool) -> None:
+    print(f"\nCopying from {Path(pack).name} to {target} …")
+    if cr.cmd_unpack(cfg, ns(pack=str(pack), target=target, init=init, dry_run=False, verify=True,
+                             no_prune=False)):
+        raise RescueError("copying from the pack failed (see above)")
+
+
 def sync(cfg, target: str, init: bool) -> None:
     print(f"\nCopying tools to {target} …")
     if cr.cmd_sync(cfg, ns(target=target, init=init, dry_run=False, verify=True, no_prune=False)):
@@ -244,35 +278,46 @@ def sync(cfg, target: str, init: bool) -> None:
 
 
 def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None, run=powershell,
-            ventoy=run_ventoy, keep_going=lambda: True) -> str:
-    """Erase disk N, put Ventoy on it, fill it. Returns the stick's drive letter."""
+            ventoy=run_ventoy, keep_going=lambda: True, pack=None) -> str:
+    """Erase disk N, put Ventoy on it, fill it (from the internet, or from a pack).
+    Returns the stick's drive letter."""
     cfg = config()
     d = pick(disk_no, run)
-    if not fetch(cfg) and not keep_going():
-        raise RescueError("stopped — nothing was written to any disk")
-    vdir = ventoy_dir(cfg)
+    if pack:   # everything comes out of the pack: check it has Ventoy for Windows before erasing
+        vdir = pack_ventoy_dir(cfg, pack)
+    else:
+        if not fetch(cfg) and not keep_going():
+            raise RescueError("stopped — nothing was written to any disk")
+        vdir = ventoy_dir(cfg)
     print(f"\nInstalling Ventoy on disk {disk_no} ({d['Name']}, {human(d['Size'])}) …")
     ventoy(ventoy_command(vdir, "/I", disk_no, gpt, secure_boot), vdir, progress)
     letter = wait_for_ventoy_letter(disk_no, run)
     print(f"✓ Ventoy installed, stick is {letter}")
-    sync(cfg, letter, init=True)
+    if pack:
+        unpack(cfg, letter, pack, init=True)
+    else:
+        sync(cfg, letter, init=True)
     return letter
 
 
 def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda pct: None,
-           run=powershell, ventoy=run_ventoy) -> str:
+           run=powershell, ventoy=run_ventoy, pack=None) -> str:
     """Refresh a Helix Boot / Ventoy stick in place. Never erases."""
     cfg = config()
     d = pick(disk_no, run)
     if not d.get("IsVentoy") or not d.get("Ventoy"):
         raise RescueError(f"disk {disk_no} doesn't have Ventoy on it (or no drive letter) — use Install")
-    fetch(cfg)
+    if not pack:
+        fetch(cfg)
     if upgrade_ventoy:
-        vdir = ventoy_dir(cfg)
+        vdir = pack_ventoy_dir(cfg, pack) if pack else ventoy_dir(cfg)
         print(f"\nUpdating Ventoy on disk {disk_no} (your files are kept) …")
         ventoy(ventoy_command(vdir, "/U", disk_no, secure_boot=secure_boot), vdir, progress)
     letter = wait_for_ventoy_letter(disk_no, run)
-    sync(cfg, letter, init=False)
+    if pack:
+        unpack(cfg, letter, pack, init=False)
+    else:
+        sync(cfg, letter, init=False)
     return letter
 
 
@@ -316,7 +361,7 @@ def open_log(path: Path | None):
 # ── GUI ────────────────────────────────────────────────────────────────────
 def gui(selftest: bool = False) -> int:
     import tkinter as tk
-    from tkinter import messagebox, simpledialog, ttk
+    from tkinter import filedialog, messagebox, simpledialog, ttk
 
     q: queue.Queue = queue.Queue()
     log = open_log(None)
@@ -337,6 +382,44 @@ def gui(selftest: bool = False) -> int:
     ttk.Label(frm, text="Helix Boot", style="Title.TLabel").pack(anchor="w")
     ttk.Label(frm, text="Pick a USB stick, then Install (erases it) or Update (keeps your files).",
               foreground="#555").pack(anchor="w", pady=(0, 10))
+
+    # Where the tools come from: the internet, or a pack (picked up beside the app if there is one)
+    src = ttk.Frame(frm)
+    src.pack(fill="x", pady=(0, 8))
+    found = find_pack()
+    pack_path = tk.StringVar(value=str(found or ""))
+    use_pack = tk.BooleanVar(value=found is not None)
+    ttk.Label(src, text="Tools from:").pack(side="left")
+    ttk.Radiobutton(src, text="the internet (latest)", variable=use_pack, value=False).pack(side="left", padx=(8, 0))
+    ttk.Radiobutton(src, text="a pack (offline):", variable=use_pack, value=True).pack(side="left", padx=(12, 4))
+    pack_label = ttk.Label(src, foreground="#555")
+    pack_label.pack(side="left")
+    b_pack = ttk.Button(src, text="Choose pack…")
+    b_pack.pack(side="left", padx=(8, 0))
+
+    def show_pack():
+        pack_label.config(text=Path(pack_path.get()).name if pack_path.get() else "none chosen")
+
+    def choose_pack():
+        f = filedialog.askopenfilename(parent=root, title="Choose a Helix Boot pack",
+                                       filetypes=[("Helix Boot pack", "*.zip"), ("All files", "*.*")])
+        if not f:
+            return
+        if not is_pack(Path(f)):
+            messagebox.showerror(APP, f"{Path(f).name} isn't a Helix Boot pack.")
+            return
+        pack_path.set(f)
+        use_pack.set(True)
+        show_pack()
+
+    def chosen_pack():
+        """The pack to use, None for the internet, or False when a pack is wanted but not chosen."""
+        if not use_pack.get():
+            return None
+        if not pack_path.get():
+            messagebox.showinfo(APP, "Choose a pack first (or pick “the internet”).")
+            return False
+        return pack_path.get()
 
     cols = ("disk", "name", "size", "ventoy", "letter")
     tree = ttk.Treeview(frm, columns=cols, show="headings", height=5, selectmode="browse")
@@ -362,6 +445,7 @@ def gui(selftest: bool = False) -> int:
     b_update = ttk.Button(btns, text="Update stick")
     for b in (b_refresh, b_folder):
         b.pack(side="left", padx=(0, 6))
+    show_pack()
     for b in (b_update, b_install):
         b.pack(side="right", padx=(6, 0))
 
@@ -400,7 +484,7 @@ def gui(selftest: bool = False) -> int:
 
     def set_busy(on):
         busy["on"] = on
-        for b in (b_refresh, b_install, b_update):
+        for b in (b_refresh, b_install, b_update, b_pack):
             b.state(["disabled"] if on else ["!disabled"])
 
     def work(fn, *a, **kw):
@@ -429,6 +513,9 @@ def gui(selftest: bool = False) -> int:
         d = selected()
         if not d:
             return
+        pack = chosen_pack()
+        if pack is False:
+            return
         msg = (f"This ERASES everything on disk {d['Number']}:\n\n    {d['Name']}  ({human(d['Size'])})\n\n"
                "Type the disk number to confirm:")
         if d["Size"] >= BIG_DISK:
@@ -437,12 +524,13 @@ def gui(selftest: bool = False) -> int:
         if typed is None or typed.strip() != str(d["Number"]):
             status.config(text="Cancelled — nothing was changed.")
             return
-        work(install, d["Number"], gpt=gpt.get(), secure_boot=secure.get(), keep_going=keep_going)
+        work(install, d["Number"], gpt=gpt.get(), secure_boot=secure.get(), keep_going=keep_going, pack=pack)
 
     def do_update():
         d = selected()
-        if d:
-            work(update, d["Number"], upgrade_ventoy=upv.get(), secure_boot=secure.get())
+        pack = chosen_pack() if d else None
+        if d and pack is not False:
+            work(update, d["Number"], upgrade_ventoy=upv.get(), secure_boot=secure.get(), pack=pack)
 
     def open_folder():
         path = user_dir() / "byo"
@@ -485,7 +573,9 @@ def gui(selftest: bool = False) -> int:
     b_folder.config(command=open_folder)
     b_install.config(command=do_install)
     b_update.config(command=do_update)
-    print(f"Your files (local.toml, byo/): {user_dir()}\n")
+    b_pack.config(command=choose_pack)
+    print(f"Your files (local.toml, byo/): {user_dir()}")
+    print(f"Pack found beside the app: {found}\n" if found else "")
     root.after(50, refresh)
     root.after(100, pump)
     if selftest:
@@ -503,6 +593,8 @@ def cli(argv: list[str]) -> int:
     ap.add_argument("--install", type=int, metavar="DISK", help="erase DISK and build the stick (needs --yes)")
     ap.add_argument("--update", type=int, metavar="DISK", help="refresh the stick on DISK in place")
     ap.add_argument("--sync-to", metavar="DIR", help="copy the cached tools into a folder (with --init for a new one)")
+    ap.add_argument("--pack", metavar="ZIP", help="with --install / --update / --unpack-to: use this pack, offline")
+    ap.add_argument("--unpack-to", metavar="DIR", help="fill a folder from --pack (with --init for a new one)")
     ap.add_argument("--init", action="store_true")
     ap.add_argument("--yes", action="store_true", help="confirm --install")
     ap.add_argument("--mbr", action="store_true", help="MBR instead of GPT")
@@ -525,12 +617,17 @@ def cli(argv: list[str]) -> int:
             return 0 if fetch(config(), a.fetch) else 1
         elif a.sync_to:
             sync(config(), a.sync_to, init=a.init)
+        elif a.unpack_to:
+            if not a.pack:
+                raise RescueError("--unpack-to needs --pack PACK.zip")
+            unpack(config(), a.unpack_to, a.pack, init=a.init)
         elif a.install is not None:
             if not a.yes:
                 raise RescueError("--install erases the disk; add --yes to confirm")
-            install(a.install, gpt=not a.mbr, secure_boot=not a.no_secure_boot, keep_going=lambda: True)
+            install(a.install, gpt=not a.mbr, secure_boot=not a.no_secure_boot, keep_going=lambda: True,
+                    pack=a.pack)
         elif a.update is not None:
-            update(a.update, upgrade_ventoy=a.upgrade_ventoy, secure_boot=not a.no_secure_boot)
+            update(a.update, upgrade_ventoy=a.upgrade_ventoy, secure_boot=not a.no_secure_boot, pack=a.pack)
         else:
             ap.print_help()
         return 0

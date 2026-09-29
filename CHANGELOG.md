@@ -23,6 +23,11 @@ tagged releases also publish the Windows app.
   existing build VM keeps its name and folder.
 
 ### Added
+- **Packs on Windows**: `HelixBoot.exe` builds or updates a stick from a pack,
+  fully offline (**Tools from: a pack**, or `--pack` on the command line), and
+  picks up a pack sitting beside it. Packs now carry Ventoy for Windows and the
+  latest released `HelixBoot.exe` as well, both checked against their published
+  checksums; a pack with Linux-only Ventoy says so before any disk is touched.
 - **Lazarus PE look**: the preset now sets the phoenix wallpaper and profile picture, dark mode and
   the Seafoam Teal accent in PhoenixPE. `preset.txt` gained `set` lines that
   pick any PEBakery option (radio buttons, dropdowns, files, text), checked

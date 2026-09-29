@@ -1006,6 +1006,71 @@ class TestPack(Base):
         self.assertTrue((self.stick / "ISO/5-Diagnostics/memtest.iso").exists())
         self.assertTrue((self.stick / "Apps/sysinternals/procexp64.exe").exists())
 
+    def windows_ventoy_upstream(self, app: bytes | None = b"MZ helix boot", app_digest: str | None = None):
+        self.wzip = zipped({"ventoy-1.1.17/Ventoy2Disk.exe": b"MZ ventoy"})
+        gh_release("ventoy/Ventoy", "v1.1.17", {
+            "ventoy-1.1.17-linux.tar.gz": self.ventoy_tgz,
+            "ventoy-1.1.17-windows.zip": self.wzip,
+            "sha256.txt": (f"{sha(self.ventoy_tgz)}  ventoy-1.1.17-linux.tar.gz\n"
+                           f"{sha(self.wzip)}  ventoy-1.1.17-windows.zip\n").encode(),
+        }, digests=False)
+        if app is not None:
+            gh_release(cr.APP_REPO, "v0.5.0", {cr.APP_EXE: app})
+            if app_digest:   # a release whose published digest doesn't match the file
+                rel = json.loads((WEB / f"gh/repos/{cr.APP_REPO}/releases/latest").read_text())
+                rel["assets"][0]["digest"] = "sha256:" + app_digest
+                put(f"gh/repos/{cr.APP_REPO}/releases/latest", json.dumps(rel))
+        toml = self.repo / "tools.toml"
+        line = "version = 'ventoy-([\\d.]+)-linux'\n"
+        self.assertIn(line, toml.read_text())
+        toml.write_text(toml.read_text().replace(line, line + "windows = { asset = ['^ventoy-[\\d.]+-windows\\.zip$'], "
+                                                               "version = 'ventoy-([\\d.]+)-windows' }\n"))
+        self.cfg = cr.Config(repo=self.repo)
+
+    def test_pack_sets_up_sticks_from_windows_too(self):
+        self.windows_ventoy_upstream()
+        self.fetch()
+        pack, log = self.pack()
+        with zipfile.ZipFile(pack) as zf:
+            meta = json.loads(zf.read(cr.PACK_META))
+            self.assertEqual(zf.read("installer/ventoy-1.1.17-windows.zip"), self.wzip)
+            self.assertEqual(zf.read(f"installer/{cr.APP_EXE}"), b"MZ helix boot")
+            self.assertIn("HelixBoot.exe", zf.read("installer/README.txt").decode())
+        self.assertEqual(meta["ventoy_windows"], {"file": "installer/ventoy-1.1.17-windows.zip", "version": "1.1.17"})
+        self.assertEqual(meta["app"]["version"], "0.5.0")
+        self.assertIn(f"On Windows: put installer\\{cr.APP_EXE} beside the pack", log)
+
+        shutil.rmtree(WEB)          # offline from here: each system gets its own Ventoy out of the pack
+        WEB.mkdir()
+        win = cr._ventoy_from_pack(self.cfg, str(pack), windows=True)
+        self.assertEqual((win / "Ventoy2Disk.exe").read_bytes(), b"MZ ventoy")
+        lin = cr._ventoy_from_pack(self.cfg, str(pack), windows=False)
+        self.assertTrue(os.access(lin / "Ventoy2Disk.sh", os.X_OK))
+        self.assertEqual(cr._ventoy_from_pack(self.cfg, str(pack), windows=True), win)   # unpacked once
+
+        # A pack made while offline still carries what's in the cache
+        again, log = self.pack(self.tmp / "offline.zip")
+        self.assertIn("couldn't check for a newer one", log)
+        with zipfile.ZipFile(again) as zf:
+            self.assertIn("installer/ventoy-1.1.17-windows.zip", zf.namelist())
+            self.assertIn(f"installer/{cr.APP_EXE}", zf.namelist())
+
+    def test_linux_only_pack_says_so_on_windows(self):
+        self.fetch()
+        pack, log = self.pack()
+        self.assertIn(f"no released {cr.APP_EXE} to include", log)
+        with self.assertRaisesRegex(cr.RescueError, "Ventoy for Linux only"):
+            cr._ventoy_from_pack(self.cfg, str(pack), windows=True)
+
+    def test_app_with_a_bad_checksum_stays_out_of_the_pack(self):
+        self.windows_ventoy_upstream(app_digest="0" * 64)
+        self.fetch()
+        pack, log = self.pack()
+        self.assertIn("checksum MISMATCH", log)
+        with zipfile.ZipFile(pack) as zf:
+            self.assertNotIn(f"installer/{cr.APP_EXE}", zf.namelist())
+            self.assertIsNone(json.loads(zf.read(cr.PACK_META))["app"])
+
     def test_pack_without_ventoy(self):
         self.fetch("systemrescue")
         pack, log = self.pack()

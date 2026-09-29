@@ -63,7 +63,8 @@ Keep it current later:
 in a folder of its own and run it (see [below](#windows-app)).
 
 **From a pack.** Already have a pack zip? No clone needed:
-`unzip pack.zip 'installer/*'`, then `installer/install.sh`
+`unzip pack.zip 'installer/*'`, then `installer/install.sh`, or on Windows run
+`installer\HelixBoot.exe` from beside the zip
 ([details](#packs-the-whole-stick-in-one-file)).
 
 ## What's on the stick
@@ -192,6 +193,12 @@ unzip helix-boot-<date>.zip 'installer/*'   # a few MB
 installer/install.sh                               # finds the zip beside it
 ```
 
+On Windows, take `installer\HelixBoot.exe` out of the zip, keep it next to the
+zip and run it: the window picks the pack up on its own (**Tools from: a pack**),
+and Install or Update copy everything from it, Ventoy included, with no
+downloads. A pack holds both Ventoy packages (Linux and Windows) and the
+latest released `HelixBoot.exe`, each checked against its published checksum.
+
 Inside is the stick exactly as `helix sync` lays it out, with boot images
 stored uncompressed and each one's sha256 recorded. Extracting streams files
 straight onto the stick and checks every image, so a damaged pack is caught,
@@ -216,7 +223,11 @@ to the disk.
 It uses the same engine as the Linux scripts: the same tool list, checksums,
 theme and menu. Your `local.toml` and `byo/` folder live next to the `.exe`, and
 downloads are cached in `%LOCALAPPDATA%\HelixBoot`. The command line
-works too: `HelixBoot.exe --help`. Packs are Linux-only for now.
+works too: `HelixBoot.exe --help`.
+
+To build a stick offline, pick **Tools from: a pack** and choose a pack zip. A
+pack next to the `.exe` is chosen for you. From the command line, add
+`--pack helix-boot-<date>.zip` to `--install` or `--update`.
 
 ## Lazarus PE
 
@@ -342,7 +353,7 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 - [x] PhoenixPE preset, Helix Boot add-on and build VM ([guide](pe/README.md))
 - [x] First Lazarus PE build
 - [x] PortableApps.com Platform with custom menu themes
-- [ ] Packs in the Windows app
+- [x] Packs in the Windows app
 - [ ] Commander Toolbox entry
 
 ## Contributing

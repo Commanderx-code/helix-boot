@@ -1508,10 +1508,16 @@ OLD_PACK_META = "commander-rescue-pack.json"   # packs made before the rename
 PACK_FORMAT = 1
 BUNDLED = ["helix", "tools.toml", "install.sh", "refresh.sh", "scripts/common.sh", "LICENSE"]
 BUNDLED_MARK = "installer/.bundled"   # tells install.sh / refresh.sh to look for the pack beside them
+APP_REPO = "Commanderx-code/helix-boot"   # where HelixBoot.exe is released
+APP_EXE = "HelixBoot.exe"
 BUNDLED_README = """Helix Boot pack
 ===============
 
 Everything for a Helix Boot USB stick, including your own tools. Keep it private.
+
+On Windows: unzip just installer\HelixBoot.exe (if this pack has it; otherwise download
+it from https://github.com/Commanderx-code/helix-boot/releases) next to this zip and run
+it. It finds {zip} beside it, and Install / Update copy everything from it offline.
 
 On any Linux PC with Python 3.11+, unzip just the installer (a few MB) next to this zip:
 
@@ -1561,8 +1567,22 @@ def cmd_pack(cfg: Config, args) -> int:
              "(`helix fetch ventoy` fixes that)")
         vsrc = None
 
+    # A pack also sets up sticks from Windows: Ventoy's Windows package and the Windows app go in too.
+    win_ventoy = app_exe = None
+    if vt and vt.get("windows") and not cfg.windows:
+        wtool = {k: v for k, v in vt.items() if k != "windows"} | vt["windows"]
+        win_ventoy = _pack_download(cfg, wtool | {"name": f"{vt['name']}-windows", "title": "Ventoy for Windows"}, lock)
+        if not win_ventoy:
+            warn("Ventoy for Windows isn't available, so this pack can't set up a new stick from Windows")
+    app_exe = _pack_download(cfg, {"name": "helixboot-exe", "title": APP_EXE, "kind": "file", "source": "github",
+                                   "repo": APP_REPO, "asset": [f"^{re.escape(APP_EXE)}$"],
+                                   "checksum": ["github-digest"]}, lock)
+    if not app_exe:
+        warn(f"no released {APP_EXE} to include; on Windows, download it from "
+             f"https://github.com/{APP_REPO}/releases and put it beside the pack")
+
     size = sum(p["src"].stat().st_size for p in placed) + sum(s.stat().st_size for _, _, s in apps)
-    size += vsrc.stat().st_size if vsrc else 0
+    size += sum(x[0].stat().st_size for x in (win_ventoy, app_exe) if x) + (vsrc.stat().st_size if vsrc else 0)
     out.parent.mkdir(parents=True, exist_ok=True)
     free = shutil.disk_usage(out.parent).free
     if size > free:
@@ -1609,6 +1629,10 @@ def cmd_pack(cfg: Config, args) -> int:
                               "recolor": t.get("recolor")})
             if vsrc:
                 _zip_file(zf, vsrc, f"installer/{vsrc.name}", zipfile.ZIP_STORED)
+            if win_ventoy:
+                _zip_file(zf, win_ventoy[0], f"installer/{win_ventoy[0].name}", zipfile.ZIP_STORED)
+            if app_exe:
+                _zip_file(zf, app_exe[0], f"installer/{APP_EXE}")
             for rel in BUNDLED:  # keeps their executable bits, so `unzip` gives runnable scripts
                 f = (cfg.assets if rel == "tools.toml" else REPO) / rel
                 if f.is_file():
@@ -1621,6 +1645,9 @@ def cmd_pack(cfg: Config, args) -> int:
                 "iso_root": cfg.iso_root, "apps_root": cfg.apps_root, "isos": isos,
                 "apps": {t["name"]: e["version"] for t, e, _ in apps},
                 "ventoy": {"file": f"installer/{vsrc.name}", "version": ventry["version"]} if vsrc else None,
+                "ventoy_windows": ({"file": f"installer/{win_ventoy[0].name}", "version": win_ventoy[1]["version"]}
+                                   if win_ventoy else None),
+                "app": {"file": f"installer/{APP_EXE}", "version": app_exe[1]["version"]} if app_exe else None,
                 "trees": trees,
                 "fresh_theme": any(rel.startswith("ventoy/theme/") for rel, _ in extras),
             }, indent=2), zipfile.ZIP_DEFLATED)
@@ -1633,7 +1660,22 @@ def cmd_pack(cfg: Config, args) -> int:
     info(f"  new stick:      ./install.sh --from {out}")
     info(f"  existing stick: ./refresh.sh --from {out}")
     info(f"On another PC it needs nothing else: unzip {out.name} 'installer/*', then installer/install.sh")
+    if app_exe:
+        info(f"On Windows: put installer\\{APP_EXE} beside the pack and run it.")
     return 0
+
+
+def _pack_download(cfg: Config, tool: dict, lock: dict) -> tuple[Path, dict] | None:
+    """Fetch (or reuse from the cache) a file only packs carry, such as Ventoy for Windows.
+    Returns (file, lock entry), or None when it can't be had (offline and never fetched)."""
+    try:
+        fetch_tool(cfg, tool, lock)
+        save_lock(cfg, lock)
+    except (RescueError, OSError) as e:
+        warn(f"{tool['title']}: couldn't check for a newer one ({e})")
+    entry = lock.get(tool["name"])
+    f = cfg.cache / tool["name"] / entry["source_file"] if entry and entry.get("source_file") else None
+    return (f, entry) if f and f.is_file() else None
 
 
 def _read_pack(zf: zipfile.ZipFile) -> dict:
@@ -1801,15 +1843,23 @@ def cmd_unpack(cfg: Config, args) -> int:
     return 0
 
 
-def _ventoy_from_pack(cfg: Config, pack: str) -> Path:
+def _ventoy_from_pack(cfg: Config, pack: str, windows: bool | None = None) -> Path:
     """Unpack the pack's Ventoy installer into the cache (once) and return its folder."""
+    windows = os.name == "nt" if windows is None else windows
+    tool = "Ventoy2Disk.exe" if windows else "Ventoy2Disk.sh"
     with _open_pack(pack) as zf:
-        v = _read_pack(zf).get("ventoy")
+        meta = _read_pack(zf)
+        # Linux packs carry both packages; the Windows one is a .zip, the Linux one a .tar.gz.
+        v = next((v for v in (meta.get("ventoy"), meta.get("ventoy_windows"))
+                  if v and v["file"].endswith(".zip") == windows), None)
         if not v:
+            if windows and meta.get("ventoy"):
+                raise RescueError("this pack has Ventoy for Linux only. Make it again with this version of "
+                                  "Helix Boot to set up sticks from Windows.")
             raise RescueError("this pack has no Ventoy installer. Make it again after `helix fetch ventoy`.")
-        dest = cfg.cache / "ventoy-from-pack" / v["version"]
+        dest = cfg.cache / "ventoy-from-pack" / f"{v['version']}-{'windows' if windows else 'linux'}"
         tops = [d for d in dest.iterdir() if d.is_dir()] if dest.is_dir() else []
-        if len(tops) == 1 and any((tops[0] / f).exists() for f in ("Ventoy2Disk.sh", "Ventoy2Disk.exe")):
+        if len(tops) == 1 and (tops[0] / tool).exists():
             return tops[0]
         shutil.rmtree(dest, ignore_errors=True)
         dest.mkdir(parents=True)

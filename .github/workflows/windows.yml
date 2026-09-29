@@ -63,7 +63,29 @@ jobs:
             if (-not (Test-Path "$env:RUNNER_TEMP\stick\$f")) { throw "missing on the stick: $f" }
           }
           Get-ChildItem -Recurse "$env:RUNNER_TEMP\stick\ISO" | Select-Object FullName, Length
+
+          # A pack made from that cache, used by the real .exe: fills a stick offline, Ventoy included
+          $env:HELIX_CACHE = "$env:LOCALAPPDATA\HelixBoot\cache"
+          $env:PYTHONIOENCODING = "utf-8"
+          $pack = "$env:RUNNER_TEMP\packs\helix-boot-ci.zip"
+          python helix pack $pack
+          if ($LASTEXITCODE) { throw "helix pack failed" }
+          $vpack = python helix ventoy-path --from $pack
+          if ($LASTEXITCODE -or -not (Test-Path "$vpack\Ventoy2Disk.exe")) { throw "no Windows Ventoy in the pack: $vpack" }
+          New-Item -ItemType Directory "$env:RUNNER_TEMP\stick2" | Out-Null
+          Run "--unpack-to $env:RUNNER_TEMP\stick2 --init --pack $pack"
+          foreach ($f in "ventoy\ventoy.json", "Apps\HelixApps.cmd", "ventoy\theme\theme.txt") {
+            if (-not (Test-Path "$env:RUNNER_TEMP\stick2\$f")) { throw "missing on the stick from the pack: $f" }
+          }
+          $a = (Get-ChildItem -Recurse -File "$env:RUNNER_TEMP\stick\ISO").Name | Sort-Object
+          $b = (Get-ChildItem -Recurse -File "$env:RUNNER_TEMP\stick2\ISO").Name | Sort-Object
+          if (Compare-Object $a $b) { throw "the pack gave different boot images than the online sync" }
+
+          Copy-Item $pack $dir                                # a pack beside the app: the window finds it
           Run "--selftest-gui"                                # opens the window, closes it
+          if (-not (Select-String -Quiet -Path "$dir\helix-boot.log" -Pattern "Pack found beside the app")) {
+            throw "the window didn't pick up the pack beside it"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
