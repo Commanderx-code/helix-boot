@@ -987,28 +987,44 @@ class TestPortableAppsLogo(unittest.TestCase):
             i += 12 + n
         return out
 
-    def test_logo_is_blanked_in_place(self):
-        icon = b"\tTPngImage" + self.png(32, 32)                  # a square picture stays as it is
-        logo = self.png(300, 50)
+    def exe_with(self, *parts):
         exe = self.tmp / "PortableAppsPlatform.exe"
-        exe.write_bytes(b"MZ" + os.urandom(500) + icon + b"Picture.Data\n\x00\x00\x00\x00" + b"\tTPngImage" + logo + b"tail")
+        exe.write_bytes(b"MZ" + os.urandom(300) + b"".join(parts) + b"tail")
+        return exe
+
+    @staticmethod
+    def image(name, png):
+        return b"\x06TImage" + bytes([len(name)]) + name + b"\x04Left\x02\x00Picture.Data\n\x00\x00\x00\x00\tTPngImage" + png
+
+    def test_both_logos_are_blanked_in_place(self):
+        icon = self.image(b"imgEject", self.png(24, 17))              # other pictures stay as they are
+        grey, white = self.png(300, 50), self.png(135, 75)
+        exe = self.exe_with(icon, self.image(b"imgPortableAppsLogo", grey), self.image(b"imgPortableAppsLogo2", white))
         before = exe.read_bytes()
         self.assertEqual(cr._hide_pa_logo(exe, self.tmp / "Data/orig.exe"), "patched")
         after = exe.read_bytes()
         self.assertEqual(len(after), len(before))
-        start = before.index(logo)
-        self.assertEqual(after[:start], before[:start])            # only the logo changed
-        self.assertEqual(after[start + len(logo):], before[start + len(logo):])
-        kinds = dict(self.chunks(after[start:start + len(logo)]))
+        self.assertIn(self.png(24, 17)[:24], after)                  # the icon's header is untouched
         import struct, zlib
-        self.assertEqual(struct.unpack(">II", kinds[b"IHDR"][:8]), (300, 50))
-        self.assertEqual(set(zlib.decompress(kinds[b"IDAT"])), {0})   # every pixel transparent
+        for logo, size in ((grey, (300, 50)), (white, (135, 75))):
+            start = before.index(logo)
+            self.assertEqual(before[start - 20:start], after[start - 20:start])
+            kinds = dict(self.chunks(after[start:start + len(logo)]))
+            self.assertEqual(struct.unpack(">II", kinds[b"IHDR"][:8]), size)
+            self.assertEqual(set(zlib.decompress(kinds[b"IDAT"])), {0})   # every pixel transparent
         self.assertEqual((self.tmp / "Data/orig.exe").read_bytes(), before)
         self.assertEqual(cr._hide_pa_logo(exe, self.tmp / "Data/orig.exe"), "already")
 
+    def test_a_logo_restored_by_an_update_is_blanked_again(self):
+        exe = self.exe_with(self.image(b"imgPortableAppsLogo", self.png(300, 50)),
+                            self.image(b"imgPortableAppsLogo2", self.png(135, 75)))
+        cr._hide_pa_logo(exe, self.tmp / "orig.exe")
+        exe.write_bytes(exe.read_bytes() + self.image(b"imgPortableAppsLogo3", self.png(135, 75)))
+        self.assertEqual(cr._hide_pa_logo(exe, self.tmp / "orig.exe"), "patched")
+        self.assertEqual(cr._hide_pa_logo(exe, self.tmp / "orig.exe"), "already")
+
     def test_unknown_layout_is_left_alone(self):
-        exe = self.tmp / "PortableAppsPlatform.exe"
-        exe.write_bytes(b"MZ" + b"\tTPngImage" + self.png(32, 32))
+        exe = self.exe_with(self.image(b"imgEject", self.png(24, 17)))
         self.assertIn("not found", cr._hide_pa_logo(exe, self.tmp / "orig.exe"))
         self.assertFalse((self.tmp / "orig.exe").exists())
 

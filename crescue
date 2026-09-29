@@ -1131,34 +1131,36 @@ def _blank_png(width: int, height: int, size: int) -> bytes | None:
 
 
 def _hide_pa_logo(exe: Path, backup: Path) -> str:
-    """Make the PortableApps.com logo the Platform draws over the menu's bottom-right corner
-    transparent, so a theme's own artwork shows there. The logo is a PNG in the main window's
-    form data (a TPngImage); it's swapped for a transparent PNG of the same byte length, so
-    nothing else in the program moves. Returns 'patched', 'already' or why it couldn't."""
+    """Make the PortableApps.com logos the Platform draws over the menu's bottom-right corner
+    transparent, so a theme's own artwork shows there. They're PNGs in the main window's form
+    data, in the TImage components imgPortableAppsLogo (grey, light themes) and
+    imgPortableAppsLogo2 (white, dark themes). Each is swapped for a transparent PNG of the same
+    byte length, so nothing else in the program moves. Returns 'patched', 'already' or why not."""
     if not exe.is_file():
         return "no Platform"
-    data = exe.read_bytes()
-    if PA_LOGO_MARK in data:
+    data = bytearray(exe.read_bytes())
+    logos = []
+    for m in re.finditer(rb"\x06TImage[\x03-\x30](imgPortableAppsLogo\d*)", data):
+        j = data.find(b"\tTPngImage\x89PNG\r\n\x1a\n", m.end(), m.end() + 600)
+        if j != -1:
+            start = j + len(b"\tTPngImage")
+            logos.append((m.group(1).decode(), start, data.find(b"IEND", start) + 8))
+    if not logos:
+        return "logo not found; the Platform has changed"
+    todo = [(n, a, b) for n, a, b in logos if PA_LOGO_MARK not in data[a:b]]
+    if not todo:
         return "already"
-    hits = []
-    i = 0
-    while (i := data.find(b"\tTPngImage\x89PNG\r\n\x1a\n", i)) != -1:
-        start = i + len(b"\tTPngImage")
+    for name, start, stop in todo:
         width, height = struct.unpack(">II", data[start + 16:start + 24])
-        end = data.find(b"IEND", start)
-        if end != -1 and width >= 4 * height and width >= 200:  # wide and short: the logo
-            hits.append((start, end + 8, width, height))
-        i = start
-    if len(hits) != 1:
-        return f"logo not found ({len(hits)} candidates); the Platform has changed"
-    start, stop, width, height = hits[0]
-    blank = _blank_png(width, height, stop - start)
-    if blank is None:
-        return "logo too small to replace"
-    backup.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(exe, backup)
+        blank = _blank_png(width, height, stop - start)
+        if blank is None:
+            return f"{name} too small to replace"
+        data[start:stop] = blank
+    if PA_LOGO_MARK not in exe.read_bytes():              # keep the untouched original, not a half-patched one
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(exe, backup)
     tmp = exe.with_name(exe.name + ".part")
-    tmp.write_bytes(data[:start] + blank + data[stop:])
+    tmp.write_bytes(bytes(data))
     shutil.copystat(exe, tmp)
     os.replace(tmp, exe)                                     # a running copy keeps the old file
     return "patched"
