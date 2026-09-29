@@ -249,7 +249,7 @@ class TestPackaging(unittest.TestCase):
 
         def imported(path):
             mods = set()
-            for node in ast.walk(ast.parse(path.read_text())):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                 if isinstance(node, ast.Import):
                     mods |= {a.name for a in node.names}
                 elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
