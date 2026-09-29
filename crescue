@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import struct
 import sys
 import tarfile
 import time
@@ -24,6 +25,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
@@ -1108,6 +1110,72 @@ def _trees(cfg: Config, lock: dict) -> list[tuple[dict, dict, Path]]:
     return out
 
 
+PA_LOGO_MARK = b"Commander Rescue: PortableApps.com logo hidden"
+
+
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+
+def _blank_png(width: int, height: int, size: int) -> bytes | None:
+    """A fully transparent PNG of exactly `size` bytes (padded with a text chunk), or None."""
+    rows = b"".join(b"\0" + bytes(width * 4) for _ in range(height))
+    body = (b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + _png_chunk(b"IDAT", zlib.compress(rows, 9)))
+    end = _png_chunk(b"IEND", b"")
+    text = b"Comment\0" + PA_LOGO_MARK
+    room = size - len(body) - len(end) - 12                  # 12: a chunk's length, type and CRC
+    if room < len(text):
+        return None
+    return body + _png_chunk(b"tEXt", text + b" " * (room - len(text))) + end
+
+
+def _hide_pa_logo(exe: Path, backup: Path) -> str:
+    """Make the PortableApps.com logo the Platform draws over the menu's bottom-right corner
+    transparent, so a theme's own artwork shows there. The logo is a PNG in the main window's
+    form data (a TPngImage); it's swapped for a transparent PNG of the same byte length, so
+    nothing else in the program moves. Returns 'patched', 'already' or why it couldn't."""
+    if not exe.is_file():
+        return "no Platform"
+    data = exe.read_bytes()
+    if PA_LOGO_MARK in data:
+        return "already"
+    hits = []
+    i = 0
+    while (i := data.find(b"\tTPngImage\x89PNG\r\n\x1a\n", i)) != -1:
+        start = i + len(b"\tTPngImage")
+        width, height = struct.unpack(">II", data[start + 16:start + 24])
+        end = data.find(b"IEND", start)
+        if end != -1 and width >= 4 * height and width >= 200:  # wide and short: the logo
+            hits.append((start, end + 8, width, height))
+        i = start
+    if len(hits) != 1:
+        return f"logo not found ({len(hits)} candidates); the Platform has changed"
+    start, stop, width, height = hits[0]
+    blank = _blank_png(width, height, stop - start)
+    if blank is None:
+        return "logo too small to replace"
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(exe, backup)
+    tmp = exe.with_name(exe.name + ".part")
+    tmp.write_bytes(data[:start] + blank + data[stop:])
+    shutil.copystat(exe, tmp)
+    os.replace(tmp, exe)                                     # a running copy keeps the old file
+    return "patched"
+
+
+def _tree_patches(t: dict, base: Path, dry_run: bool) -> None:
+    rel = t.get("hide_logo")
+    if not rel or dry_run:
+        return
+    exe = base / rel
+    result = _hide_pa_logo(exe, exe.parent / "Data" / (exe.name + ".original"))
+    if result == "patched":
+        ok(f"{t['title']}: PortableApps.com logo hidden (original kept in Data)")
+    elif result not in ("already", "no Platform"):
+        warn(f"{t['title']}: couldn't hide the logo: {result}")
+
+
 def _tree_files(src: Path) -> list[tuple[str, Path]]:
     return [(f.relative_to(src).as_posix(), f) for f in sorted(src.rglob("*")) if f.is_file()]
 
@@ -1306,6 +1374,7 @@ def cmd_sync(cfg: Config, args) -> int:
         base = mnt / t["dest"]
         if (base / t["once"]).exists():
             ok(f"{t['title']} — already on stick (it updates itself)")
+            _tree_patches(t, base, args.dry_run)                # again after a self-update
             continue
         files = _tree_files(src)
         info(f"{t['title']} {entry['version']} → /{t['dest']}")
@@ -1317,6 +1386,7 @@ def cmd_sync(cfg: Config, args) -> int:
             _copy(f, base / rel, prog)
         prog.clear()
         ok(f"{t['title']} installed")
+        _tree_patches(t, base, args.dry_run)
 
     if args.dry_run:
         print("\nDry run — nothing was written.")
@@ -1437,7 +1507,7 @@ def cmd_pack(cfg: Config, args) -> int:
                 for rel, f in _tree_files(src):
                     _zip_file(zf, f, f"once/{t['name']}/{rel}")
                 trees.append({"name": t["name"], "title": t["title"], "dest": t["dest"], "once": t["once"],
-                              "version": entry["version"]})
+                              "version": entry["version"], "hide_logo": t.get("hide_logo")})
             if vsrc:
                 _zip_file(zf, vsrc, f"installer/{vsrc.name}", zipfile.ZIP_STORED)
             for rel in BUNDLED:  # keeps their executable bits, so `unzip` gives runnable scripts
@@ -1604,6 +1674,7 @@ def cmd_unpack(cfg: Config, args) -> int:
             base = mnt / t["dest"]
             if (base / t["once"]).exists():
                 ok(f"{t['title']} — already on stick (it updates itself)")
+                _tree_patches(t, base, args.dry_run)
                 continue
             info(f"{t['title']} {t['version']} → /{t['dest']}")
             if args.dry_run:
@@ -1613,6 +1684,7 @@ def cmd_unpack(cfg: Config, args) -> int:
                 if m.startswith(prefix) and not m.endswith("/"):
                     _unzip_to(zf, m, base / m[len(prefix):])
             ok(f"{t['title']} installed")
+            _tree_patches(t, base, args.dry_run)
 
         if args.dry_run:
             print("\nDry run — nothing was written.")

@@ -6,6 +6,14 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- **Lazarus PE** PortableApps menu theme (Retro Dark), now the default for new
+  sticks; Helix Teal moves to Modern Light, so the six themes sit together.
+- The PortableApps.com logo the Platform draws over a theme's bottom-right
+  corner is made transparent (`hide_logo`): the one image in its program is
+  swapped for a transparent one of the same size, the original kept in `Data`,
+  and re-applied after the Platform updates itself.
+- `make-theme.py --clear-bottom` for artwork with a drive bar or buttons drawn
+  in, which the Platform draws itself.
 - `ventoy_mode = "wimboot" | "grub2" | "memdisk"` boots an image in that
   Ventoy mode every time (it's written into the file name on the stick). Dr.Web
   LiveDisk now always boots in WIMBOOT mode, the one that works for it.

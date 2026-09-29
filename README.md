@@ -144,10 +144,12 @@ Store; it keeps them and itself up to date. Commander Rescue puts the Platform
 on once and never overwrites or prunes it, so your apps survive every refresh.
 The Commander Apps menu also has **p) PortableApps.com menu**.
 
-It comes with five **Helix** menu themes (Purple, Electric, Teal, Orange, Red)
-and opens in Helix Teal on a new stick. The Platform's picker lists only its
-own themes, so they take over the last five entries in **Options > Themes**:
-Modern Dark, Retro Light, Retro Dark, Smooth Light and Smooth Dark. Make your
+It comes with six menu themes, **Lazarus PE** (the default on a new stick)
+and five **Helix** colours. The Platform's picker lists only its own themes,
+so they take over the last six entries in **Options > Themes**: Modern Light
+(Helix Teal), Modern Dark (Purple), Retro Light (Electric), Retro Dark (Lazarus
+PE), Smooth Light (Orange) and Smooth Dark (Red). The PortableApps.com logo
+the Platform would draw over a theme's corner is made transparent. Make your
 own from any artwork with the menu's panels drawn in:
 
 ```fish

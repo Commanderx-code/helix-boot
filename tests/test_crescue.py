@@ -875,7 +875,7 @@ class TestPack(Base):
         cfg = cr.Config(repo=ROOT, manifest=ROOT / "tools.toml")
         themes = next(t for t in cfg.tools if t["name"] == "portableapps-themes")
         for slot in (ROOT / themes["path"]).iterdir():
-            self.assertIn(slot.name, ("ModernDark", "Retro", "RetroDark", "Smooth", "SmoothDark"))
+            self.assertIn(slot.name, ("Modern", "ModernDark", "Retro", "RetroDark", "Smooth", "SmoothDark"))
             for f in ("chrome.png", "preview.png", "drive_space_slider.png", "PATheme.ini"):
                 self.assertTrue((slot / f).is_file(), f"{slot.name}/{f}")
         ini = (ROOT / "portableapps/settings/PortableAppsMenu.ini").read_bytes()
@@ -960,6 +960,57 @@ def fake_iso(platforms: list[int], efi_file: bool = False) -> bytes:
         cat[i + 32] = 0x88
     img[25 * S:26 * S] = cat
     return bytes(img)
+
+
+class TestPortableAppsLogo(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="crescue-test-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def png(width, height, noise=True):
+        import struct, zlib
+        rows = b"".join(b"\0" + (os.urandom(width * 4) if noise else bytes(width * 4)) for _ in range(height))
+        return (b"\x89PNG\r\n\x1a\n" + cr._png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+                + cr._png_chunk(b"IDAT", zlib.compress(rows)) + cr._png_chunk(b"IEND", b""))
+
+    def chunks(self, png):
+        import struct, zlib
+        i, out = 8, []
+        while i < len(png):
+            n, kind = struct.unpack(">I4s", png[i:i + 8])
+            data = png[i + 8:i + 8 + n]
+            self.assertEqual(struct.unpack(">I", png[i + 8 + n:i + 12 + n])[0], zlib.crc32(kind + data) & 0xFFFFFFFF)
+            out.append((kind, data))
+            i += 12 + n
+        return out
+
+    def test_logo_is_blanked_in_place(self):
+        icon = b"\tTPngImage" + self.png(32, 32)                  # a square picture stays as it is
+        logo = self.png(300, 50)
+        exe = self.tmp / "PortableAppsPlatform.exe"
+        exe.write_bytes(b"MZ" + os.urandom(500) + icon + b"Picture.Data\n\x00\x00\x00\x00" + b"\tTPngImage" + logo + b"tail")
+        before = exe.read_bytes()
+        self.assertEqual(cr._hide_pa_logo(exe, self.tmp / "Data/orig.exe"), "patched")
+        after = exe.read_bytes()
+        self.assertEqual(len(after), len(before))
+        start = before.index(logo)
+        self.assertEqual(after[:start], before[:start])            # only the logo changed
+        self.assertEqual(after[start + len(logo):], before[start + len(logo):])
+        kinds = dict(self.chunks(after[start:start + len(logo)]))
+        import struct, zlib
+        self.assertEqual(struct.unpack(">II", kinds[b"IHDR"][:8]), (300, 50))
+        self.assertEqual(set(zlib.decompress(kinds[b"IDAT"])), {0})   # every pixel transparent
+        self.assertEqual((self.tmp / "Data/orig.exe").read_bytes(), before)
+        self.assertEqual(cr._hide_pa_logo(exe, self.tmp / "Data/orig.exe"), "already")
+
+    def test_unknown_layout_is_left_alone(self):
+        exe = self.tmp / "PortableAppsPlatform.exe"
+        exe.write_bytes(b"MZ" + b"\tTPngImage" + self.png(32, 32))
+        self.assertIn("not found", cr._hide_pa_logo(exe, self.tmp / "orig.exe"))
+        self.assertFalse((self.tmp / "orig.exe").exists())
 
 
 class TestBootModes(unittest.TestCase):

@@ -38,6 +38,7 @@ import email.utils  # noqa: F401
 import hashlib  # noqa: F401
 import html  # noqa: F401
 import re  # noqa: F401
+import struct  # noqa: F401
 import tarfile  # noqa: F401
 import tomllib  # noqa: F401
 import urllib.error  # noqa: F401
@@ -45,6 +46,7 @@ import urllib.parse  # noqa: F401
 import urllib.request  # noqa: F401
 import xml.etree.ElementTree  # noqa: F401
 import zipfile  # noqa: F401
+import zlib  # noqa: F401
 
 APP = "Commander Rescue"
 FROZEN = getattr(sys, "frozen", False)

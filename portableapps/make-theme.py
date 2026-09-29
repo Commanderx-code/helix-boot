@@ -68,7 +68,7 @@ def shift_hue(img: Image.Image, degrees: float) -> Image.Image:
     return Image.merge("HSV", (h, s, v)).convert("RGB")
 
 
-def chrome(art: Image.Image) -> Image.Image:
+def chrome(art: Image.Image, clear_bottom: bool = False) -> Image.Image:
     x0, y0, x1, y1 = find_panel(art)
     sx = (PANEL[2] - PANEL[0]) / (x1 - x0)
     sy = (PANEL[3] - PANEL[1]) / (y1 - y0)
@@ -82,7 +82,14 @@ def chrome(art: Image.Image) -> Image.Image:
         out = big.crop((max(ox, 0), max(oy, 0), min(ox + W, big.width), min(oy + H, big.height))).resize((W, H))
     shade = Image.new("L", (W, H), 0)
     ImageDraw.Draw(shade).rectangle(PANEL, fill=70)          # ~27% darker behind the app list
-    return Image.composite(Image.new("RGB", (W, H)), out, shade)
+    out = Image.composite(Image.new("RGB", (W, H)), out, shade)
+    if clear_bottom:  # art with a drive bar or buttons drawn in: the Platform draws the real ones here
+        strip = out.crop((0, PANEL[3] + 3, W, H))
+        pixels = strip.get_flattened_data() if hasattr(strip, "get_flattened_data") else strip.getdata()
+        dark = min(pixels, key=sum)                           # the frame's darkest colour
+        edge = 3                                              # keep the frame's outline at the sides
+        ImageDraw.Draw(out).rectangle((edge, PANEL[3] + 3, W - 1 - edge, H - 1), fill=dark)
+    return out
 
 
 def tint(src: Path, dst: Path, rgb: tuple[int, int, int]) -> None:
@@ -103,6 +110,8 @@ def main() -> None:
     ap.add_argument("name", help='theme name, e.g. "Helix Teal"')
     ap.add_argument("--accent", default="f5a524", help="hex colour for the drive bar and dividers")
     ap.add_argument("--hue", type=float, default=0, help="rotate the artwork's colours by this many degrees")
+    ap.add_argument("--clear-bottom", action="store_true",
+                    help="blank the strip under the app list, for art with a drive bar or buttons drawn in")
     ap.add_argument("--slot", required=True, choices=SLOTS,
                     help="built-in theme folder to take over; it's listed under that name in Options > Themes")
     ap.add_argument("--out", type=Path, default=REPO / "portableapps" / "themes")
@@ -119,7 +128,7 @@ def main() -> None:
     art = Image.open(args.art).convert("RGB")
     if args.hue:
         art = shift_hue(art, args.hue)
-    menu = chrome(art)
+    menu = chrome(art, args.clear_bottom)
     menu.save(dest / "chrome.png", optimize=True)
     # The Options > Themes preview (the Platform's own placeholder is 406x190)
     thumb = menu.resize((round(W * 190 / H), 190), Image.LANCZOS)

@@ -466,6 +466,10 @@ title = "PortableApps.com Platform"
 kind = "tree"
 dest = ""
 once = "PortableApps/PortableApps.com/PortableAppsPlatform.exe"
+# The Platform draws its PortableApps.com logo over the menu's bottom-right corner, on
+# top of any theme. This makes that one image transparent (same size, nothing else
+# changes; the original is kept in Data), re-applied after the Platform updates itself.
+hide_logo = "PortableApps/PortableApps.com/PortableAppsPlatform.exe"
 drop = ['^\$PLUGINSDIR(/|$)']
 source = "page"
 page = "https://portableapps.com/download"
