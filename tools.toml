@@ -92,7 +92,7 @@ description = "Securely erase disks. DESTROYS DATA. SSD or NVMe? Use Parted Magi
 id = "live"
 dir = "6-Live-Operating-Systems"
 title = "Live Operating Systems"
-description = "Full Windows PE and Linux desktops that run from the stick."
+description = "Full Windows PE desktops that run from the stick."
 
 [[category]]
 id = "partitioning"
@@ -156,19 +156,6 @@ source = "url"
 url = "https://www.hirensbootcd.org/files/HBCD_PE_x64.iso"
 checksum = ["tofu"]
 description = "Ready-made Win11 PE with its own tool set. The Apps launcher works here too."
-
-[[tool]]
-name = "systemrescue"
-title = "SystemRescue"
-kind = "iso"
-category = "live"
-source = "sourceforge"
-project = "systemrescuecd"
-path = "/sysresccd-x86"
-asset = ['^systemrescue-[\d.]+-amd64\.iso$']
-version = 'systemrescue-([\d.]+)-amd64'
-checksum = [{ sibling = "{name}.sha512" }, { sibling = "{name}.sha256" }, "sf-md5"]
-description = "Arch-based rescue shell: chntpw, testdisk, ddrescue, fsck, network tools."
 
 # ── Imaging ───────────────────────────────────────────────────────────────
 [[tool]]

@@ -15,6 +15,9 @@ tagged releases also publish the Windows app.
 - `build-vm.sh push` carries `vm/extra/` (e.g. a wallpaper image) to the
   transfer disk.
 
+### Removed
+- SystemRescue: redundant next to Lazarus PE and Hiren's BootCD PE.
+
 ## [0.4.0] - 2026-09-28
 
 ### Added

@@ -89,7 +89,6 @@ too: Ventoy's wimboot plugin comes with the stick.
 | | DBAN (BIOS boot only) | SourceForge · md5 |
 | Live Operating Systems | **Lazarus PE**, your own [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) Windows 11 build | built locally · [guide](pe/README.md) |
 | | Hiren's BootCD PE | hirensbootcd.org · unverified |
-| | SystemRescue | SourceForge · sha512 |
 | Partition Tools | GParted Live | SourceForge · sha512 |
 | Password Removal | *bring your own* (e.g. Jayro's Lockpick) | [`byo/`](byo/README.md) |
 | Windows Recovery | *bring your own* (Windows 10/11 setup, DaRT) | [`byo/`](byo/README.md) |
