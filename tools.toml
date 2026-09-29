@@ -287,7 +287,7 @@ enabled = false            # Kaspersky blocks downloads from the US; enable in l
 source = "url"
 url = "https://rescuedisk.s.kaspersky-labs.com/updatable/2018/krd.iso"
 checksum = ["tofu"]
-description = "Offline malware scan and cleanup of Windows installs. Free for personal use."
+description = "Offline malware scan and cleanup. Black screen? Pick Limited graphic mode."
 
 [[tool]]
 name = "drweb-livedisk"
@@ -296,9 +296,9 @@ kind = "iso"
 category = "antivirus"
 source = "url"
 url = "https://download.geo.drweb.com/pub/drweb/livedisk/drweb-livedisk-900-cd.iso"
-ventoy_mode = "wimboot"     # only boots from Ventoy in WIMBOOT mode
 checksum = ["tofu"]
-description = "Second-opinion offline malware scanner. Free."
+# A 2018 Linux (4.13 kernel): boots through Ventoy, but may not start on newer PCs.
+description = "Second-opinion malware scanner. Older system: may not start on newer PCs."
 
 # ── Bring your own ────────────────────────────────────────────────────────
 # Paid or licence-restricted tools the project can't download or share.
