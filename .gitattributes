@@ -3,3 +3,4 @@
 crescue text eol=lf
 *.script text eol=crlf
 *.ps1  text eol=crlf
+portableapps/settings/*.ini binary   # UTF-16, exactly as the Platform writes it

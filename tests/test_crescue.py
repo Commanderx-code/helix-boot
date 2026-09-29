@@ -839,6 +839,34 @@ class TestPack(Base):
         self.assertEqual((other / "PortableApps/PortableApps.com/App/Graphics/Themes/Helix Teal/PATheme.ini")
                          .read_text(), "[ThemeDetails]\nName=Helix Teal\n")
 
+    def test_local_tree_seeds_settings_once(self):
+        seed = self.repo / "seed"
+        seed.mkdir()
+        (seed / "Menu.ini").write_text("Theme=RetroDark\n")
+        (self.repo / "local.toml").write_text(
+            '[[tool]]\nname = "seed"\ntitle = "Starting settings"\nkind = "tree"\ndest = "PA/Data"\n'
+            'once = "Menu.ini"\nsource = "local"\npath = "seed"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync()[0], 0)
+        ini = self.stick / "PA/Data/Menu.ini"
+        self.assertEqual(ini.read_text(), "Theme=RetroDark\n")
+        ini.write_text("Theme=Smooth\n")                     # the user picks another theme later
+        rc, out = self.sync()
+        self.assertIn("already on stick (it updates itself)", out)
+        self.assertEqual(ini.read_text(), "Theme=Smooth\n")
+
+    def test_shipped_portableapps_themes(self):
+        cfg = cr.Config(repo=ROOT, manifest=ROOT / "tools.toml")
+        themes = next(t for t in cfg.tools if t["name"] == "portableapps-themes")
+        for slot in (ROOT / themes["path"]).iterdir():
+            self.assertIn(slot.name, ("ModernDark", "Retro", "RetroDark", "Smooth", "SmoothDark"))
+            for f in ("chrome.png", "preview.png", "drive_space_slider.png", "PATheme.ini"):
+                self.assertTrue((slot / f).is_file(), f"{slot.name}/{f}")
+        ini = (ROOT / "portableapps/settings/PortableAppsMenu.ini").read_bytes()
+        self.assertTrue(ini.startswith(b"\xff\xfe"), "the Platform's settings file is UTF-16 LE")
+        self.assertIn("Theme=RetroDark", ini.decode("utf-16"))
+
     def test_file_tool_needs_a_safe_dest(self):
         (self.repo / "local.toml").write_text(
             '[[tool]]\nname = "bad"\ntitle = "Bad"\nkind = "file"\ndest = "../etc/x"\nsource = "local"\npath = "x"\n')

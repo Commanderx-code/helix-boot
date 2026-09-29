@@ -1080,11 +1080,12 @@ def _plan(cfg: Config, lock: dict) -> tuple[list[dict], list[tuple], list[str]]:
 
 
 def _trees(cfg: Config, lock: dict) -> list[tuple[dict, dict, Path]]:
-    """Fetched `kind = "tree"` tools: (tool, lock entry, unpacked folder)."""
+    """Fetched `kind = "tree"` tools: (tool, lock entry, folder). A local tree is a folder as is."""
     out = []
     for t in cfg.enabled(kinds={"tree"}):
         entry = lock.get(t["name"])
-        src = cfg.cache / t["name"] / entry["final"] if entry and entry.get("final") else None
+        src = (Path(entry["path"]) if entry and entry.get("path")
+               else cfg.cache / t["name"] / entry["final"] if entry and entry.get("final") else None)
         if src and src.is_dir():
             out.append((t, entry, src))
         else:

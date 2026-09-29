@@ -141,6 +141,19 @@ Store; it keeps them and itself up to date. Commander Rescue puts the Platform
 on once and never overwrites or prunes it, so your apps survive every refresh.
 The Commander Apps menu also has **p) PortableApps.com menu**.
 
+It comes with five **Helix** menu themes (Purple, Electric, Teal, Orange, Red)
+and opens in Helix Teal on a new stick. The Platform's picker lists only its
+own themes, so they take over the last five entries in **Options > Themes**:
+Modern Dark, Retro Light, Retro Dark, Smooth Light and Smooth Dark. Make your
+own from any artwork with the menu's panels drawn in:
+
+```fish
+portableapps/make-theme.py ~/art/teal.png "Helix Teal" --slot RetroDark --accent 1ec8e6
+```
+
+It finds the panels, fits the art to the Platform's fixed 406x558 menu, and
+writes the theme to `portableapps/themes/<slot>/` (`--hue` recolours the art).
+
 ### Bring your own tools
 
 Paid and licence-restricted tools get menu slots you fill with your own copy:

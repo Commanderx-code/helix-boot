@@ -8,12 +8,14 @@ tagged releases also publish the Windows app.
 ### Added
 - A Commander Apps copy built into a PE hands over to the stick's own, so new
   menu entries show up without rebuilding the PE.
-- `theme/make-pa-theme.py`: PortableApps.com menu themes from your own
+- Five **Helix** PortableApps.com menu themes, with Helix Teal as a new
+  stick's default. `portableapps/make-theme.py` makes more from your own
   artwork, fitted to the Platform's 406x558 layout, with an accent colour and
   optional recolouring. Each takes over a built-in theme's folder (`--slot`),
   since the Platform's picker lists only built-ins.
-- `kind = "file"` tools can be a local folder, copied under `dest` (used to
-  put your PortableApps themes on the stick and in packs).
+- `kind = "file"` tools can be a local folder, copied under `dest`, and
+  `kind = "tree"` tools can be one installed once (the PortableApps themes and
+  starting settings).
 - `build-vm.sh push` carries unpacked drivers (`vm/drivers/x64`) to the
   transfer disk for PhoenixPE's Driver Integration, e.g. Intel Wi-Fi.
 - An "Enter open · Esc back" hint in the boot menu. Ventoy's left/right arrows

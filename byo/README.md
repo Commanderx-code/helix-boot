@@ -102,36 +102,3 @@ real logo instead, save it as `byo/icons/<name>.png`, using the tool's `name` fr
 Use a square, non-interlaced PNG, ideally 40×40 pixels (larger ones are
 scaled down). A tool with no icon at all gets a plain disc. Like everything
 else in `byo/`, your icons stay out of git.
-
-## PortableApps.com menu themes
-
-`theme/make-pa-theme.py` turns artwork into a theme for the PortableApps.com
-menu. The art needs the menu's layout drawn in: a panel on the left for the
-app list (the Platform's is 251x471 at the top left, under the search box) and
-a bar under it for the drive space. Any size works; the panel is found and
-fitted to the Platform's 406x558 menu.
-
-The Platform's Options > Themes lists only its built-in themes (a custom theme
-in its `Data\Theme` slot works, but then Options fails with "List index out of
-bounds"), so each theme takes over a built-in theme's folder with `--slot`:
-
-```fish
-theme/make-pa-theme.py ~/art/purple.png "Helix Purple" --slot Retro --accent a45cff
-theme/make-pa-theme.py ~/art/orange.png "Helix Red" --slot Glassy --accent ff2a2a --hue -28   # recoloured
-```
-
-Themes land in `byo/pa-themes/<slot>/`. One `local.toml` entry copies them over
-the stick's built-in themes (and into packs), and again after a Platform update
-restores the originals. Then pick the slot in **Options > Themes**: `Retro` is
-listed as "PortableApps.com Retro Light", `RetroDark` as "Retro Dark", and so on.
-
-```toml
-[[tool]]
-name = "pa-themes"
-title = "PortableApps themes"
-kind = "file"
-dest = "PortableApps/PortableApps.com/App/Graphics/Themes"
-source = "local"
-byo = true
-path = "byo/pa-themes"
-```

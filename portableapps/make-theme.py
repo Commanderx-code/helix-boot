@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 r"""Make a PortableApps.com Platform theme from a piece of artwork.
 
-    theme/make-pa-theme.py ART.png "Theme Name" --slot Retro --accent 1ec8e6 [--hue -25]
+    portableapps/make-theme.py ART.png "Theme Name" --slot Retro --accent 1ec8e6 [--hue -25]
 
 The Platform draws its menu at a fixed 406x558 and lays its controls over the
 theme's chrome.png: the app list in the panel at x 10-261, y 51-522, the folder
@@ -9,18 +9,18 @@ buttons to its right, the drive-space bar underneath. Artwork drawn with a
 matching panel (at any size) is found, scaled and cropped so that panel lands
 exactly there, then the panel is darkened a little so white text stays legible.
 
-The theme starts from the Platform's own Default theme (buttons, menu icons),
-taken from crescue's cache, and is written to byo/pa-themes/<slot>/.
+A theme is just chrome.png, preview.png, a tinted drive-space bar and
+PATheme.ini (colours, from the Platform's Default theme in crescue's cache);
+buttons and icons come from the Platform's shared graphics, as for its own
+themes. It's written to portableapps/themes/<slot>/, which tools.toml
+copies onto every stick.
 
 The Platform's Options > Themes lists only its built-in themes (a custom theme
 in its Data\Theme slot works but makes Options fail with "List index out of
 bounds"), so each theme takes over a built-in theme's folder, --slot, e.g.
-Retro or SmoothDark. refresh.sh copies byo/pa-themes over the stick's
-App\Graphics\Themes; pick the slot's entry ("Retro Light") in Options.
-Needs Pillow.
+Retro or SmoothDark, and is picked under that name ("Retro Light"). Needs Pillow.
 """
 import argparse
-import colorsys
 import re
 import shutil
 import sys
@@ -105,7 +105,7 @@ def main() -> None:
     ap.add_argument("--hue", type=float, default=0, help="rotate the artwork's colours by this many degrees")
     ap.add_argument("--slot", required=True, choices=SLOTS,
                     help="built-in theme folder to take over; it's listed under that name in Options > Themes")
-    ap.add_argument("--out", type=Path, default=REPO / "byo" / "pa-themes")
+    ap.add_argument("--out", type=Path, default=REPO / "portableapps" / "themes")
     args = ap.parse_args()
     if not re.fullmatch(r"[0-9a-fA-F]{6}", args.accent):
         sys.exit("--accent is a hex colour like 1ec8e6")
@@ -114,7 +114,7 @@ def main() -> None:
     base = base_theme()
     dest = args.out / args.slot
     shutil.rmtree(dest, ignore_errors=True)
-    shutil.copytree(base, dest)
+    dest.mkdir(parents=True)
 
     art = Image.open(args.art).convert("RGB")
     if args.hue:
@@ -138,7 +138,7 @@ def main() -> None:
                                 ("SearchBox", "BorderColor", args.accent.upper())):
         block = re.search(rf"^\[{section}\][^\[]*", ini, re.M)
         body = block.group(0)
-        new = re.sub(rf"^{key}=.*$", f"{key}={value}", body, flags=re.M) if re.search(rf"^{key}=", body, re.M) \
+        new = re.sub(rf"^{key}=[^\r\n]*", f"{key}={value}", body, flags=re.M) if re.search(rf"^{key}=", body, re.M) \
             else body.rstrip("\r\n") + f"\r\n{key}={value}\r\n\r\n"
         ini = ini[:block.start()] + new + ini[block.end():]
     (dest / "PATheme.ini").write_text(ini, encoding="utf-8")

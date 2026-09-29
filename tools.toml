@@ -486,6 +486,31 @@ version = 'Platform_Setup_([\d.]+)\.paf'
 checksum = [{ url = "https://portableapps.com/download", regex = 'SHA256 Hash ?: ?([0-9a-fA-F]{64})' }]
 windows = { enabled = false }
 
+# The Helix menu themes (portableapps/make-theme.py). The Platform's picker only
+# lists its built-in themes, so they take over the last five: Modern Dark =
+# Helix Purple, Retro Light = Electric, Retro Dark = Teal, Smooth Light = Orange,
+# Smooth Dark = Red. Copied on every refresh, so a Platform update can't undo them.
+[[tool]]
+name = "portableapps-themes"
+title = "PortableApps.com Helix themes"
+kind = "file"
+dest = "PortableApps/PortableApps.com/App/Graphics/Themes"
+source = "local"
+path = "portableapps/themes"
+windows = { enabled = false }
+
+# Starting settings for a new stick: opens in Helix Teal. Only written while the
+# Platform has no settings of its own, so your choices are never overwritten.
+[[tool]]
+name = "portableapps-settings"
+title = "PortableApps.com starting settings"
+kind = "tree"
+dest = "PortableApps/PortableApps.com/Data"
+once = "PortableAppsMenu.ini"
+source = "local"
+path = "portableapps/settings"
+windows = { enabled = false }
+
 # ── Portable apps (loaded by Lazarus PE from USB:\Apps) ───────────────────
 [[tool]]
 name = "sysinternals"
