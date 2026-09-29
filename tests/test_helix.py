@@ -475,6 +475,11 @@ class TestFetchAndSync(Base):
         vj = json.loads((self.stick / "ventoy/ventoy.json").read_text())
         self.assertEqual(vj["theme"]["file"], "/ventoy/theme/theme.txt")
         self.assertEqual(vj["theme"]["fonts"], ["/ventoy/theme/fonts/a.pf2", "/ventoy/theme/fonts/b.pf2"])
+        # The tip must sit below the new left-side menu; the version must not cover navigation.
+        self.assertEqual(vj["menu_tip"]["left"], "5%")
+        self.assertEqual(vj["menu_tip"]["top"], "82%")
+        self.assertEqual(vj["menu_tip"]["color"], "#baabd3")
+        self.assertEqual(vj["theme"]["ventoy_top"], "94%")
 
     def test_menu_icons(self):
         theme = self.repo / "theme"

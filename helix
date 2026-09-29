@@ -943,16 +943,18 @@ def build_ventoy_json(cfg: Config, placed: list[dict], icons: set[str] = frozens
     theme = cfg.settings.get("theme")
     theme_dir = cfg.assets / theme if theme else None
     if tips:
-        doc["menu_tip"] = {"left": "10%", "top": "80%", "tips": tips,
-                           "color": "#8b98a9" if theme_dir and theme_dir.is_dir() else "#7fb4ff"}
+        themed = theme_dir and theme_dir.is_dir()
+        doc["menu_tip"] = {"left": "5%" if themed else "10%",
+                           "top": "82%" if themed else "80%", "tips": tips,
+                           "color": "#baabd3" if themed else "#7fb4ff"}
     if theme_dir and theme_dir.is_dir():
         doc["theme"] = {
             "file": "/ventoy/theme/theme.txt",
             "gfxmode": "1920x1080",
             "resolution_fit": 1,         # fall back to the screen's own mode if 1080p isn't offered
             "ventoy_left": "78%",
-            "ventoy_top": "95%",
-            "ventoy_color": "#4d5b6e",
+            "ventoy_top": "94%",
+            "ventoy_color": "#baabd3",
             "fonts": [f"/ventoy/theme/{f.relative_to(theme_dir).as_posix()}"
                       for f in sorted(theme_dir.rglob("*.pf2"))],
         }

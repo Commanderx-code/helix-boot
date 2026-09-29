@@ -287,9 +287,31 @@ checksum = [{ url = "https://cdimage.kali.org/current/SHA256SUMS" }]
 
 ISOs you copy onto the stick by hand (e.g. into `ISO/Custom/`) are never touched.
 
-**Theme.** The boot-menu theme lives in [`theme/`](theme/). Edit `theme.txt`
-for layout, or the colours and text in `theme/build-theme.py` and re-run it to
-regenerate the images, icons and fonts. To show a tool's real logo instead of
+**Theme.** The default Ventoy theme is **Helix Neon**: purple/cyan DNA artwork,
+the HELIXBOOT wordmark, cyan category icons and a purple selection with a cyan
+edge. The menu, scrolling, timeout, hotkeys and boot-mode indicators are real
+Ventoy components; no menu entries are painted into the wallpaper. Lazarus PE
+keeps its separate green PortableApps theme.
+
+Tool entries use curated product/project icons in their original colours,
+with publisher marks where a product-specific icon was not available.
+[Icon preview and sources](docs/tool-icons.md) identify each asset and the
+two remaining letter-badge fallbacks. The builder preserves these icons.
+
+![Helix Neon layout preview](docs/artwork/helix-neon-preview.jpg)
+
+The image above is a layout preview, not a booted Ventoy screenshot. The theme
+targets 1920×1080; other screen modes use the existing resolution fallback,
+and shorter menus scroll. Long ISO names may need left/right to scroll.
+
+After pulling the changes, `./refresh.sh` installs the new theme on an existing
+stick. No PE rebuild is needed. See [theme notes](docs/theming.md) for rebuilding
+assets and checking the result on your hardware.
+
+The boot-menu theme lives in [`theme/`](theme/). Edit `theme.txt` for layout,
+or the colours and text in `theme/build-theme.py` and re-run it to regenerate
+the images, icons and fonts (`--skip-fonts` reuses the committed fonts).
+To show a tool's real logo instead of
 its letter badge, save a square PNG (ideally 40×40) as
 `byo/icons/<tool name>.png`; `byo/icons/cat-<category id>.png` replaces a
 category icon. For Ventoy's stock look, set `theme = ""` under `[settings]`.

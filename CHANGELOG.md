@@ -7,6 +7,11 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Changed
+- Ventoy now uses **Helix Neon**, the purple/cyan DNA HELIXBOOT theme with
+  a left-side live menu, cyan category icons, matching selection, scrollbar,
+  terminal and status colours. Lazarus PE's green PortableApps theme stays
+  the default in PE. Artwork and an offline layout preview are included;
+  `theme/build-theme.py --skip-fonts` rebuilds graphics using committed fonts.
 - **Renamed to Helix Boot**, and the engine from `crescue` to `helix`. The
   repository is now `Commanderx-code/helix-boot` (GitHub redirects the old
   address), the Windows app is `HelixBoot.exe`, and the launcher is Helix Apps.
@@ -18,6 +23,11 @@ tagged releases also publish the Windows app.
   existing build VM keeps its name and folder.
 
 ### Added
+- Curated tool icons preserve product colours and proportions across theme
+  rebuilds: 17 project/product marks, six publisher marks, two Windows logos
+  from Wikimedia Commons and the custom Lazarus phoenix. MemTest86 Free and
+  Jayro's Lockpick retain explicit letter-badge fallbacks. Source URLs,
+  asset hashes and a labelled preview are included in `docs/tool-icons.md`.
 - PortableApps themes carry the folder-button icons (Material Design, CC-BY
   4.0), tinted to each theme's accent, instead of the Platform's beige ones;
   `make-theme.py --search dark` gives a dark search box (Lazarus PE uses it).

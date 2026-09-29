@@ -11,6 +11,8 @@ Tools you add in local.toml get their letter badges (into byo/icons/) with:
 
     theme/build-theme.py --local
 """
+import argparse
+import json
 import math
 import shutil
 import subprocess
@@ -18,35 +20,29 @@ import sys
 import tomllib
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 HERE = Path(__file__).resolve().parent
 W, H = 1920, 1080
 
-# Palette (keep theme.txt and helix's menu_tip colour in step with these)
-BG_TOP = (11, 16, 26)
-BG_BOTTOM = (18, 28, 44)
-PANEL = (13, 20, 32, 215)
-BORDER = (44, 62, 88, 255)
-ACCENT = (245, 165, 36)
-TEXT = (230, 237, 243)
-MUTED = (139, 152, 169)
+# Helix Neon palette (keep theme.txt and helix's menu_tip colour in step).
+ARTWORK = HERE.parent / "docs/artwork/helix-purple-source.png"
+TOOL_ICON_DIR = HERE.parent / "docs/artwork/tool-icons"
+PANEL = (9, 5, 20, 228)
+BORDER = (152, 76, 230, 255)
+ACCENT = (181, 94, 255)
+CYAN = (0, 220, 235)
+TEXT = (244, 240, 255)
+MUTED = (186, 171, 211)
 
 ICON = 40                     # keep in step with icon_width/icon_height in theme.txt
 SS = 8                        # draw icons this many times larger, then scale down (anti-aliasing)
 
 # Category tile colours, by [[category]] id in tools.toml
-CATEGORY_COLOURS = {
-    "antivirus": (46, 160, 67),
-    "imaging": (31, 155, 181),
-    "boot-repair": (110, 127, 150),
-    "diagnostics": (229, 83, 75),
-    "wipe": (232, 116, 59),
-    "live": (59, 130, 246),
-    "partitioning": (137, 87, 229),
-    "password": (245, 165, 36),
-    "windows": (14, 165, 233),
-}
+CATEGORY_COLOURS = dict.fromkeys((
+    "antivirus", "imaging", "boot-repair", "diagnostics", "wipe", "live",
+    "partitioning", "password", "windows",
+), CYAN)
 
 # Badge text for tools whose initials don't read well; the rest use their title's initials.
 # Drop a real logo in byo/icons/<name>.png to replace any of these on your stick.
@@ -70,31 +66,32 @@ def ttf(name: str) -> Path:
 
 
 def background() -> None:
-    sw, sh = W // 10, H // 10          # gradient at 1/10 size, then smoothed up
-    img = Image.new("RGB", (sw, sh))
-    px = img.load()
-    for y in range(sh):
-        for x in range(sw):
-            t = min(1.0, (y / sh) * 0.8 + (x / sw) * 0.2)
-            px[x, y] = tuple(round(a + (b - a) * t) for a, b in zip(BG_TOP, BG_BOTTOM))
-    img = img.resize((W, H), Image.BICUBIC)
-    # soft accent glow, top right
-    glow = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(glow).ellipse((W - 700, -500, W + 400, 450), fill=38)
-    glow = glow.filter(ImageFilter.GaussianBlur(160))
-    img = Image.composite(Image.new("RGB", (W, H), ACCENT), img, glow)
-
+    # The art contains no UI. Menu rows, selection, timers and status are live GRUB components.
+    img = ImageOps.fit(Image.open(ARTWORK).convert("RGB"), (W, H), method=Image.LANCZOS)
     d = ImageDraw.Draw(img)
-    bold = ImageFont.truetype(str(ttf("DejaVuSans-Bold.ttf")), 64)
-    thin = ImageFont.truetype(str(ttf("DejaVuSans-ExtraLight.ttf")), 64)
-    small = ImageFont.truetype(str(ttf("DejaVuSans.ttf")), 24)
-    x, y = 192, 118                                     # aligned with the menu's left edge (10%)
-    d.rectangle((x, y + 8, x + 8, y + 70), fill=ACCENT)  # accent bar
-    x += 32
+    bold = ImageFont.truetype(str(ttf("DejaVuSans-Bold.ttf")), 66)
+    small = ImageFont.truetype(str(ttf("DejaVuSans.ttf")), 23)
+    tiny = ImageFont.truetype(str(ttf("DejaVuSans.ttf")), 17)
+    # A small, reproducible DNA brand mark; the large helix remains part of the artwork.
+    mark = Image.new("RGBA", (W, H))
+    md = ImageDraw.Draw(mark)
+    for y in range(59, 168, 12):
+        offset = 32 * math.cos((y - 59) / 108 * math.tau)
+        md.line((139 - offset, y, 139 + offset, y), fill=(*MUTED, 255), width=3)
+    for sign, color in ((1, CYAN), (-1, ACCENT)):
+        points = [(139 + sign * 32 * math.cos(t / 108 * math.tau), 59 + t) for t in range(109)]
+        md.line(points, fill=(*color, 255), width=8, joint="curve")
+    img = Image.alpha_composite(img.convert("RGBA"), mark.filter(ImageFilter.GaussianBlur(9)))
+    img = Image.alpha_composite(img, mark).convert("RGB")
+    d = ImageDraw.Draw(img)
+    x, y = 203, 57
     d.text((x, y), "HELIX", font=bold, fill=TEXT)
-    x += d.textlength("HELIX ", font=bold)
-    d.text((x, y), "BOOT", font=thin, fill=ACCENT)
-    d.text((224, y + 88), "Multiboot rescue USB  ·  verified upstream tools", font=small, fill=MUTED)
+    x += d.textlength("HELIX", font=bold)
+    d.text((x, y), "BOOT", font=bold, fill=CYAN)
+    d.text((205, 142), "RECOVERY • DIAGNOSTICS • REPAIR", font=small, fill=MUTED)
+    d.line((96, 1041, 1824, 1041), fill=(70, 34, 102), width=1)
+    d.text((96, 1051), "HELIXSTACK  /  HELIXBOOT", font=tiny, fill=MUTED)
+    d.text((1824, 1051), "MULTIBOOT RECOVERY ENVIRONMENT", font=tiny, fill=MUTED, anchor="ra")
     img.save(HERE / "background.png", optimize=True)
 
 
@@ -119,7 +116,7 @@ def nine_slice(prefix: str, fill, border=None, left_bar=None, size: int = 8) -> 
 
 def slider() -> None:
     for part, h in (("n", 4), ("c", 1), ("s", 4)):
-        im = Image.new("RGBA", (6, h), (*MUTED, 150))
+        im = Image.new("RGBA", (6, h), (*CYAN, 230))
         im.save(HERE / f"slider_{part}.png", optimize=True)
 
 
@@ -260,24 +257,52 @@ def local_badges() -> None:
     print(f"badges written to {out}: {', '.join(made)}" if made else "every local tool already has an icon")
 
 
+def tool_icon(t: dict, sources: dict, out: Path | None = None) -> bool:
+    """Fit a curated upstream icon without tinting or distorting its proportions.
+
+    Return False only for a declared fallback or a tool without curated artwork.
+    Missing/corrupt registered assets are errors, not silently replaced badges.
+    """
+    entry = sources.get(t["name"], {})
+    if not entry.get("file"):
+        return False
+    with Image.open(TOOL_ICON_DIR / entry["file"]) as source:
+        icon = source.convert("RGBA")
+        bounds = icon.getchannel("A").getbbox()
+        if bounds is None:
+            raise ValueError(f"empty tool icon: {t['name']}")
+        icon = ImageOps.contain(icon.crop(bounds), (ICON - 4, ICON - 4), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (ICON, ICON))
+    if entry.get("backplate"):
+        ImageDraw.Draw(canvas).rounded_rectangle((1, 1, ICON - 2, ICON - 2), radius=6,
+                                                fill=entry["backplate"])
+    canvas.alpha_composite(icon, ((ICON - icon.width) // 2, (ICON - icon.height) // 2))
+    dest = out or HERE / "icons"
+    dest.mkdir(parents=True, exist_ok=True)
+    canvas.save(dest / f"{t['name']}.png", optimize=True)
+    return True
+
+
 def icons() -> None:
     manifest = tomllib.loads((HERE.parent / "tools.toml").read_text(encoding="utf-8"))
+    sources = json.loads((TOOL_ICON_DIR / "sources.json").read_text(encoding="utf-8"))
     shutil.rmtree(HERE / "icons", ignore_errors=True)
     white = (255, 255, 255, 255)
     for cid, col in CATEGORY_COLOURS.items():
-        pen = Pen(bg=(*col, 255))
-        glyph(cid, pen, white, (*col, 255))
+        pen = Pen()
+        glyph(cid, pen, (*col, 255), PANEL)
         pen.save(f"cat-{cid}")
 
     for t in manifest.get("tool", []):
         if t.get("kind") == "iso":
-            badge(t)
+            if not tool_icon(t, sources):
+                badge(t)
 
     # Ventoy's own classes: folders, the "go back" entry and files without an icon of their own
     pen = Pen()
-    amber = (*ACCENT, 255)
-    pen.d.polygon(pen.xy(.12, .24, .4, .24, .46, .32, .88, .32, .88, .4, .12, .4), fill=amber)
-    pen.d.rounded_rectangle(pen.xy(.12, .34, .88, .78), radius=pen.w(.05), fill=amber)
+    accent = (*CYAN, 255)
+    pen.d.polygon(pen.xy(.12, .24, .4, .24, .46, .32, .88, .32, .88, .4, .12, .4), fill=accent)
+    pen.d.rounded_rectangle(pen.xy(.12, .34, .88, .78), radius=pen.w(.05), fill=accent)
     pen.save("vtoydir")
     pen = Pen(bg=(*BORDER[:3], 255))
     pen.d.line(pen.xy(.72, .5, .32, .5), fill=white, width=pen.w(.08))
@@ -293,14 +318,25 @@ def icons() -> None:
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["--local"]:  # only your local.toml tools; the theme itself is untouched
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--local", action="store_true", help="only generate missing local-tool badges")
+    ap.add_argument("--skip-fonts", action="store_true", help="reuse the committed, unchanged GRUB fonts")
+    args = ap.parse_args()
+    if args.local:  # only your local.toml tools; the theme itself is untouched
         local_badges()
         sys.exit(0)
+    if not args.skip_fonts and not shutil.which("grub-mkfont"):
+        sys.exit("grub-mkfont not found — install grub or use --skip-fonts to reuse committed fonts")
+    if args.skip_fonts and not all((HERE / "fonts" / name).is_file() for name in
+                                  ("dejavu-16.pf2", "dejavu-22.pf2", "dejavu-bold-22.pf2")):
+        sys.exit("committed fonts are missing — run without --skip-fonts after installing grub")
     background()
     nine_slice("menu", PANEL, border=BORDER)
-    nine_slice("select", (*ACCENT, 40), left_bar=(*ACCENT, 255), size=4)
-    nine_slice("terminal_box", (8, 12, 20, 240), border=BORDER)
+    nine_slice("select", (71, 22, 119, 220), border=(*ACCENT, 255), left_bar=(*CYAN, 255), size=4)
+    nine_slice("terminal_box", (9, 5, 20, 245), border=BORDER)
+    nine_slice("scrollbar", (35, 18, 55, 255), size=2)
     slider()
     icons()
-    fonts()
+    if not args.skip_fonts:
+        fonts()
     print(f"theme written to {HERE}")
