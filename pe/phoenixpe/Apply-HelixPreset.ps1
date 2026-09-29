@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Set up a PhoenixPE folder for the Lazarus PE build.
 

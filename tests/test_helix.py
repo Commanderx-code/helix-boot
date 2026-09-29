@@ -1328,6 +1328,14 @@ class TestDownloadRetry(unittest.TestCase):
 
 
 class TestPortability(unittest.TestCase):
+    def test_powershell_with_non_ascii_text_has_a_bom(self):
+        # Windows PowerShell 5.1 (Lazarus PE, the build VM) reads a .ps1 without a BOM as ANSI:
+        # UTF-8 text turns into mojibake, and some of those bytes are quote characters to it.
+        for f in ROOT.rglob("*.ps1"):
+            data = f.read_bytes()
+            if any(c > 0x7F for c in data):
+                self.assertTrue(data.startswith(b"\xef\xbb\xbf"), f.relative_to(ROOT))
+
     def test_no_invalid_escape_sequences(self):
         # An escape like "\\H" in a normal string makes Python warn on every start (newer ones refuse it).
         import warnings
