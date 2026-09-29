@@ -1315,6 +1315,14 @@ class TestDownloadRetry(unittest.TestCase):
 
 
 class TestPortability(unittest.TestCase):
+    def test_no_invalid_escape_sequences(self):
+        # An escape like "\\H" in a normal string makes Python warn on every start (newer ones refuse it).
+        import warnings
+        for f in ("helix", "windows/helix_boot.py", "theme/build-theme.py", "portableapps/make-theme.py"):
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                compile((ROOT / f).read_text(encoding="utf-8"), f, "exec")
+
     def test_flush_without_os_sync(self):
         # Windows has no os.sync(); sync used to crash there after copying everything.
         with unittest.mock.patch.object(cr.os, "sync", create=True) as s:

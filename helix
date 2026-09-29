@@ -1515,7 +1515,7 @@ BUNDLED_README = """Helix Boot pack
 
 Everything for a Helix Boot USB stick, including your own tools. Keep it private.
 
-On Windows: unzip just installer\HelixBoot.exe (if this pack has it; otherwise download
+On Windows: unzip just installer\\HelixBoot.exe (if this pack has it; otherwise download
 it from https://github.com/Commanderx-code/helix-boot/releases) next to this zip and run
 it. It finds {zip} beside it, and Install / Update copy everything from it offline.
 

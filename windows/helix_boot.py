@@ -253,7 +253,7 @@ def is_pack(path: Path) -> bool:
 
 
 def find_pack(here: Path | None = None) -> Path | None:
-    """The newest pack beside the app, or beside the installer\ folder it was unzipped into."""
+    """The newest pack beside the app, or beside the installer folder it was unzipped into."""
     here = here or user_dir()
     places = [here, here.parent] if here.name.lower() == "installer" else [here]
     packs = [z for d in places for z in sorted(d.glob("*.zip")) if is_pack(z)]
