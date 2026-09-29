@@ -141,7 +141,8 @@ class Config:
         cache = _env("CACHE") or self.settings.get("cache_dir", "~/.cache/helix-boot")
         self.cache = Path(cache).expanduser()
         old = Path(OLD_CACHE).expanduser()
-        if not self.cache.exists() and old.is_dir() and self.cache.name == "helix-boot":
+        # Only for a real run: code that loads a manifest itself (tests) must not move your cache
+        if manifest is None and not self.cache.exists() and old.is_dir() and self.cache.name == "helix-boot":
             self.cache.parent.mkdir(parents=True, exist_ok=True)
             os.rename(old, self.cache)          # renamed with the project: move it over, don't re-download
         self.iso_root = self.settings.get("iso_root", "ISO")
