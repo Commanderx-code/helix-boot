@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-29
+
 ### Changed
 - Ventoy now uses **Helix Neon**, the purple/cyan DNA HELIXBOOT theme with
   a left-side live menu, cyan category icons, matching selection, scrollbar,
@@ -21,6 +23,10 @@ tagged releases also publish the Windows app.
   moved over on first use, old packs still unpack, `CRESCUE_*` settings still
   work, Lazarus PE builds with the old launcher open the new one, and an
   existing build VM keeps its name and folder.
+- Boot-menu tips: Kaspersky Rescue Disk's points to Limited graphic mode for a
+  black screen; Dr.Web LiveDisk's says it may not start on newer PCs (its
+  system dates from 2018). Dr.Web no longer carries a WIMBOOT marker, which
+  Ventoy only applies to Windows images.
 
 ### Added
 - **Packs on Windows**: `HelixBoot.exe` builds or updates a stick from a pack,
@@ -28,14 +34,13 @@ tagged releases also publish the Windows app.
   picks up a pack sitting beside it. Packs now carry Ventoy for Windows and the
   latest released `HelixBoot.exe` as well, both checked against their published
   checksums; a pack with Linux-only Ventoy says so before any disk is touched.
-- **Lazarus PE look**: the preset now sets the phoenix wallpaper and profile picture, dark mode and
-  the Seafoam Teal accent in PhoenixPE. `preset.txt` gained `set` lines that
-  pick any PEBakery option (radio buttons, dropdowns, files, text), checked
-  against your PhoenixPE release like the rest of the preset.
-  The Helix Boot add-on registers the profile picture where StartAllBack's
-  Start menu reads it (Windows' per-user picture list for SYSTEM, found through
-  LogonUI's LoggedOnUserSID, which a PE never sets), from sizes
-  made ahead of time so the build converts nothing.
+- **Lazarus PE look**: the preset sets the phoenix wallpaper, dark mode and the
+  Seafoam Teal accent in PhoenixPE, and the phoenix as the Start menu profile
+  picture. `preset.txt` gained `set` lines that pick any PEBakery option (radio
+  buttons, dropdowns, files, text), checked against your PhoenixPE release like
+  the rest of the preset. The profile picture goes where StartAllBack reads it:
+  Windows' per-user picture list for SYSTEM, found through LogonUI's
+  `LoggedOnUserSID`, which a PE never sets.
 - **OS Images** (`ISO/OSimages`): your own folder for Windows and Linux
   installers. It has a menu name, tip and disc icon, Helix Boot never changes
   what you put there, and Ventoy only shows it once it holds a bootable image.
@@ -59,11 +64,10 @@ tagged releases also publish the Windows app.
 - `make-theme.py --clear-bottom` for artwork with a drive bar or buttons drawn
   in, which the Platform draws itself.
 - `ventoy_mode = "wimboot" | "grub2" | "memdisk"` boots an image in that
-  Ventoy mode every time (it's written into the file name on the stick). Dr.Web
-  LiveDisk now always boots in WIMBOOT mode, the one that works for it.
+  Ventoy mode every time (it's written into the file name on the stick).
 - Lazarus PE's startup helper hands over to `Apps\LazarusStartup.cmd` on the
-  stick (from the next PE build), so what happens at startup changes with a
-  refresh instead of a PE rebuild.
+  stick, so what happens at startup changes with a refresh instead of a PE
+  rebuild.
 - `build-vm.sh push` carries `vm/extra/` (e.g. a wallpaper image) to the
   transfer disk.
 
@@ -74,6 +78,7 @@ tagged releases also publish the Windows app.
 - A rebuilt Lazarus PE of exactly the same size as the last one is now copied
   to the stick. Sync records each image's sha256 on the stick instead of
   trusting size alone (ISOs round to whole sectors).
+- Two invalid escape sequences that made Python print a warning on every start.
 
 ## [0.4.0] - 2026-09-28
 
@@ -184,7 +189,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Commanderx-code/commander-rescue/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Commanderx-code/commander-rescue/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Commanderx-code/commander-rescue/compare/v0.1.0...v0.2.0
