@@ -89,10 +89,14 @@ tooling and `pull` fetches the ISO.
    | **PowerShell, Task Manager** | the full versions, not WinPE's cut-down ones |
    | **VC++ 2015–2026 runtime** | so the portable apps on the USB start |
    | Notepad++ **off** | it comes from `USB:\Apps` instead, always current |
+   | **Lazarus PE look** | the phoenix wallpaper ([`phoenixpe/wallpaper.jpg`](phoenixpe/wallpaper.jpg)), dark mode for Windows and apps, the Seafoam Teal accent |
 
    Everything else stays at PhoenixPE's defaults: Explorer with StartAllBack,
-   networking, audio, ramdisk, 7-Zip, Firefox. Edit `preset.txt` to taste; a
-   script PhoenixPE has renamed is reported, not guessed at.
+   networking, audio, ramdisk, 7-Zip, Firefox. Choices you made in PEBakery
+   yourself (Driver Integration, RAM mode, ...) are kept. Edit `preset.txt` to
+   taste: `on`/`off` lines tick scripts, `set` lines pick an option the way
+   PEBakery would. A script, option or choice PhoenixPE has renamed is
+   reported, not guessed at.
 3. **Exclude the build from Defender first.** Some of PhoenixPE's tools are
    flagged as hack tools or PUAs, and quarantined files break the build. Turn
    *Tamper Protection* off in Windows Security, then in an admin terminal:

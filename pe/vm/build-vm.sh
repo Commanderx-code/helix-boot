@@ -125,9 +125,8 @@ push() {
     '3. Run C:\PhoenixPE\PEBakeryLauncher.exe as administrator. Source Config: the Windows DVD' \
     '   drive root, base image 2, the Pro edition, "Run all programs from RAM" NOT ticked.' \
     "$step3b" \
-    '   Then Build.' \
-    '   (Files for the build, e.g. a wallpaper image for Tweaks > Wallpaper > Use Custom' \
-    '    Wallpaper, are in D:\extra.)' \
+    '   Then Build. (The preset already sets the Lazarus PE wallpaper and theme;' \
+    '    any other files for the build are in D:\extra.)' \
     '4. Copy the finished .iso into the out folder on this disk, then shut Windows down.' \
     '5. On Linux: pe/vm/build-vm.sh pull' > "$DIR/README.txt"
   mcopy -i "$M" -o "$DIR/README.txt" ::/README.txt

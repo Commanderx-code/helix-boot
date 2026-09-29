@@ -4,8 +4,10 @@
 # Firefox, ISO output).
 #
 # Format: on|off  <script path under Projects\>   # why
-# Paths are checked against your PhoenixPE release; a renamed script is
-# reported, never guessed at.
+#         set  <script path> | <option> | <value>   # as if picked in PEBakery
+# Paths, options and dropdown choices are checked against your PhoenixPE
+# release; anything renamed is reported, never guessed at. {addon} is the
+# Helix Boot add-on folder (Projects\MyApps\Helix Boot).
 
 # Storage & network drivers: the #1 reason a rescue PE "can't see the disk"
 on   PhoenixPE\Drivers\IntelRSTDriver.script                  # NVMe behind Intel VMD/RST (11th gen+ laptops)
@@ -24,3 +26,12 @@ off  PhoenixPE\Applications\Productivity\Notepad++.script
 
 # Our launcher
 on   MyApps\Helix Boot\HelixBoot.script
+
+# Lazarus PE look: the phoenix wallpaper, dark mode, Seafoam Teal accent
+set  PhoenixPE\Tweaks\Wallpaper.script | rbtn_Custom         | True
+set  PhoenixPE\Tweaks\Wallpaper.script | fb_CustomImage      | {addon}\wallpaper.jpg
+set  PhoenixPE\Tweaks\Wallpaper.script | cmb_Position        | Fill
+set  PhoenixPE\Tweaks\Wallpaper.script | cmb_BGcolor         | Black
+set  PhoenixPE\Tweaks\Theme.script     | cmb_SystemThemeMode | Dark
+set  PhoenixPE\Tweaks\Theme.script     | cmb_AppThemeMode    | Dark
+set  PhoenixPE\Tweaks\Theme.script     | cmb_ColorProfile    | Seafoam Teal
