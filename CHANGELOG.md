@@ -27,6 +27,8 @@ tagged releases also publish the Windows app.
   the Seafoam Teal accent in PhoenixPE. `preset.txt` gained `set` lines that
   pick any PEBakery option (radio buttons, dropdowns, files, text), checked
   against your PhoenixPE release like the rest of the preset.
+  The Helix Boot add-on registers the profile picture where StartAllBack's
+  Start menu reads it (Windows' per-user picture list, for SYSTEM).
 - **OS Images** (`ISO/OSimages`): your own folder for Windows and Linux
   installers. It has a menu name, tip and disc icon, Helix Boot never changes
   what you put there, and Ventoy only shows it once it holds a bootable image.
