@@ -89,7 +89,7 @@ tooling and `pull` fetches the ISO.
    | **PowerShell, Task Manager** | the full versions, not WinPE's cut-down ones |
    | **VC++ 2015–2026 runtime** | so the portable apps on the USB start |
    | Notepad++ **off** | it comes from `USB:\Apps` instead, always current |
-   | **Lazarus PE look** | the phoenix wallpaper ([`phoenixpe/wallpaper.jpg`](phoenixpe/wallpaper.jpg)), dark mode for Windows and apps, the Seafoam Teal accent |
+   | **Lazarus PE look** | the phoenix wallpaper ([`phoenixpe/wallpaper.jpg`](phoenixpe/wallpaper.jpg)) and profile picture ([`profile.png`](phoenixpe/profile.png)), dark mode for Windows and apps, the Seafoam Teal accent |
 
    Everything else stays at PhoenixPE's defaults: Explorer with StartAllBack,
    networking, audio, ramdisk, 7-Zip, Firefox. Choices you made in PEBakery

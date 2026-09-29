@@ -47,6 +47,7 @@ if ($PSCmdlet.ShouldProcess($addonDir, 'Install Helix Boot add-on')) {
   Copy-Item $launcher $addonDir -Force
   Copy-Item (Join-Path (Split-Path $launcher) 'StartPortableApps.cmd') $addonDir -Force
   Copy-Item (Join-Path $here 'wallpaper.jpg') $addonDir -Force
+  Copy-Item (Join-Path $here 'profile.png') $addonDir -Force
   Write-Host "+ add-on installed in $addonDir"
 }
 

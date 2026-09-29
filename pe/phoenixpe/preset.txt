@@ -27,11 +27,13 @@ off  PhoenixPE\Applications\Productivity\Notepad++.script
 # Our launcher
 on   MyApps\Helix Boot\HelixBoot.script
 
-# Lazarus PE look: the phoenix wallpaper, dark mode, Seafoam Teal accent
+# Lazarus PE look: the phoenix wallpaper and profile picture, dark mode, Seafoam Teal accent
 set  PhoenixPE\Tweaks\Wallpaper.script | rbtn_Custom         | True
 set  PhoenixPE\Tweaks\Wallpaper.script | fb_CustomImage      | {addon}\wallpaper.jpg
 set  PhoenixPE\Tweaks\Wallpaper.script | cmb_Position        | Fill
 set  PhoenixPE\Tweaks\Wallpaper.script | cmb_BGcolor         | Black
+set  PhoenixPE\Tweaks\Wallpaper.script | cb_ChangeUserProfilePic | True
+set  PhoenixPE\Tweaks\Wallpaper.script | fb_UserProfilePic   | {addon}\profile.png
 set  PhoenixPE\Tweaks\Theme.script     | cmb_SystemThemeMode | Dark
 set  PhoenixPE\Tweaks\Theme.script     | cmb_AppThemeMode    | Dark
 set  PhoenixPE\Tweaks\Theme.script     | cmb_ColorProfile    | Seafoam Teal

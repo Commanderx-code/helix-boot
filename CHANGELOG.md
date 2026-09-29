@@ -23,7 +23,7 @@ tagged releases also publish the Windows app.
   existing build VM keeps its name and folder.
 
 ### Added
-- **Lazarus PE look**: the preset now sets the phoenix wallpaper, dark mode and
+- **Lazarus PE look**: the preset now sets the phoenix wallpaper and profile picture, dark mode and
   the Seafoam Teal accent in PhoenixPE. `preset.txt` gained `set` lines that
   pick any PEBakery option (radio buttons, dropdowns, files, text), checked
   against your PhoenixPE release like the rest of the preset.
