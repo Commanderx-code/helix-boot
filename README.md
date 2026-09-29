@@ -111,6 +111,10 @@ first download and refused if it later changes without a new version (see
 definitions, so `./refresh.sh` before a job keeps them current. Microsoft
 Safety Scanner stops working 10 days after download.
 
+On newer PCs, Kaspersky Rescue Disk's *Graphic mode* can end on a black
+screen (its 2018 kernel predates their graphics): choose *Limited graphic
+mode* in its menu instead.
+
 Kaspersky refuses downloads from the US, so its two tools are off. Outside the
 US, turn them on in `local.toml`:
 
