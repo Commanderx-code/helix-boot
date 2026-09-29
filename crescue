@@ -377,6 +377,14 @@ def file_hash(path: Path, algo: str = "sha256", progress: "Progress | None" = No
     return h.hexdigest()
 
 
+def folder_hash(path: Path) -> str:
+    """One sha256 for a folder: every file's path and content, so any change shows."""
+    h = hashlib.sha256()
+    for f in sorted(p for p in path.rglob("*") if p.is_file()):
+        h.update(f"{f.relative_to(path).as_posix()}\0{file_hash(f)}\n".encode("utf-8"))
+    return h.hexdigest()
+
+
 def _uncached(path: Path) -> None:
     """Have the OS drop its cached copy of path, so hashing it next really reads the disk.
     Without this, verifying a file just written to a stick would read it back from RAM."""
@@ -675,7 +683,7 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
                 warn(f"{tool['title']}: {tool['path']} isn't built yet — skipping (see pe/README.md)")
             return "skipped"
         kind = "your own file" if tool.get("byo") else "local build"
-        sha = file_hash(p)
+        sha = folder_hash(p) if p.is_dir() else file_hash(p)
         if prev and prev.get("sha256") == sha:
             ok(f"{tool['title']} {res['version']} — {kind}, unchanged")
             return "current"
@@ -1099,6 +1107,9 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
                else cfg.cache / t["name"] / entry["final"] if entry else None)
         if src and src.is_file():
             out.append((t["dest"], src))
+        elif src and src.is_dir():  # a local folder: its files go under dest, replacing older copies
+            out += [(f"{t['dest']}/{f.relative_to(src).as_posix()}", f)
+                    for f in sorted(src.rglob("*")) if f.is_file()]
         else:
             warn(f"{t['title']}: not fetched yet — run `crescue fetch` (skipping)")
     # PE launcher index: "Title|relative\path\to.exe" per line (easy to parse from cmd.exe)

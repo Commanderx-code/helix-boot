@@ -813,6 +813,32 @@ class TestPack(Base):
         with self.assertRaisesRegex(cr.RescueError, "couldn't find an upstream checksum"):
             cr.expected_hash(tool, {"file": "Platform_Setup_2.0.paf.exe"})
 
+    def test_file_tool_can_be_a_local_folder(self):
+        themes = self.repo / "byo/pa-themes"
+        (themes / "Helix Teal").mkdir(parents=True)
+        (themes / "Helix Teal/PATheme.ini").write_text("[ThemeDetails]\nName=Helix Teal\n")
+        (themes / "Helix Teal/chrome.png").write_bytes(b"png")
+        (self.repo / "local.toml").write_text(
+            '[[tool]]\nname = "pa-themes"\ntitle = "Themes"\nkind = "file"\n'
+            'dest = "PortableApps/PortableApps.com/App/Graphics/Themes"\nsource = "local"\nbyo = true\n'
+            'path = "byo/pa-themes"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync()[0], 0)
+        dest = self.stick / "PortableApps/PortableApps.com/App/Graphics/Themes/Helix Teal"
+        self.assertEqual((dest / "chrome.png").read_bytes(), b"png")
+        (themes / "Helix Teal/chrome.png").write_bytes(b"png v2")       # edited: fetch sees it, sync copies it
+        rc, out = self.fetch("pa-themes")
+        self.assertIn("registered", out)
+        self.assertEqual(self.sync()[0], 0)
+        self.assertEqual((dest / "chrome.png").read_bytes(), b"png v2")
+        pack, _ = self.pack()
+        other = self.tmp / "stick2"
+        other.mkdir()
+        self.assertEqual(self.unpack(pack, other)[0], 0)
+        self.assertEqual((other / "PortableApps/PortableApps.com/App/Graphics/Themes/Helix Teal/PATheme.ini")
+                         .read_text(), "[ThemeDetails]\nName=Helix Teal\n")
+
     def test_file_tool_needs_a_safe_dest(self):
         (self.repo / "local.toml").write_text(
             '[[tool]]\nname = "bad"\ntitle = "Bad"\nkind = "file"\ndest = "../etc/x"\nsource = "local"\npath = "x"\n')
