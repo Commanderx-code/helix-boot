@@ -146,6 +146,9 @@ class Config:
             raise RescueError(f"{where} is defined twice")
         if t.get("kind") not in KINDS:
             raise RescueError(f"{where}: kind must be one of {sorted(KINDS)}")
+        for img, colour in (t.get("recolor") or {}).items():
+            if not re.fullmatch(r"[0-9A-Fa-f]{6}", str(colour)):
+                raise RescueError(f"{where}: recolor.{img} must be a hex colour like 2AA9BE")
         if t.get("ventoy_mode") and t.get("ventoy_mode") not in VENTOY_MODES:
             raise RescueError(f"{where}: ventoy_mode must be one of {sorted(VENTOY_MODES)}")
         if t["kind"] == "file":
@@ -1110,60 +1113,116 @@ def _trees(cfg: Config, lock: dict) -> list[tuple[dict, dict, Path]]:
     return out
 
 
-PA_LOGO_MARK = b"Commander Rescue: PortableApps.com logo hidden"
+PA_MARK = b"Commander Rescue: restyled"     # in every image we write, so a patched file is recognised
 
 
 def _png_chunk(kind: bytes, data: bytes) -> bytes:
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
 
-def _blank_png(width: int, height: int, size: int) -> bytes | None:
-    """A fully transparent PNG of exactly `size` bytes (padded with a text chunk), or None."""
-    rows = b"".join(b"\0" + bytes(width * 4) for _ in range(height))
-    body = (b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
-            + _png_chunk(b"IDAT", zlib.compress(rows, 9)))
-    end = _png_chunk(b"IEND", b"")
-    text = b"Comment\0" + PA_LOGO_MARK
-    room = size - len(body) - len(end) - 12                  # 12: a chunk's length, type and CRC
+def _png_encode(width: int, height: int, rgba: bytes) -> bytes:
+    rows = b"".join(b"\0" + rgba[y * width * 4:(y + 1) * width * 4] for y in range(height))
+    return (b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + _png_chunk(b"IDAT", zlib.compress(rows, 9)) + _png_chunk(b"IEND", b""))
+
+
+def _png_decode(png: bytes) -> tuple[int, int, bytearray] | None:
+    """8-bit RGBA, non-interlaced PNG to (width, height, pixels); None for anything else."""
+    i, idat, head = 8, b"", None
+    while i + 8 <= len(png):
+        n, kind = struct.unpack(">I4s", png[i:i + 8])
+        if kind == b"IHDR":
+            head = struct.unpack(">IIBBBBB", png[i + 8:i + 21])
+        elif kind == b"IDAT":
+            idat += png[i + 8:i + 8 + n]
+        i += 12 + n
+    if not head or head[2:5] != (8, 6, 0) or head[6] != 0:
+        return None
+    w, h = head[0], head[1]
+    raw, stride, out = zlib.decompress(idat), w * 4, bytearray()
+    prev = bytearray(stride)
+    for y in range(h):
+        ftype, line = raw[y * (stride + 1)], bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for x in range(stride):
+            a = line[x - 4] if x >= 4 else 0
+            b, c = prev[x], prev[x - 4] if x >= 4 else 0
+            if ftype == 1:
+                line[x] = (line[x] + a) & 255
+            elif ftype == 2:
+                line[x] = (line[x] + b) & 255
+            elif ftype == 3:
+                line[x] = (line[x] + (a + b) // 2) & 255
+            elif ftype == 4:
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                line[x] = (line[x] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        out += line
+        prev = line
+    return w, h, out
+
+
+def _pad_png(png: bytes, size: int) -> bytes | None:
+    """png grown to exactly `size` bytes with a text chunk carrying PA_MARK, or None if too big."""
+    text = b"Comment\0" + PA_MARK
+    room = size - len(png) - 12                              # 12: a chunk's length, type and CRC
     if room < len(text):
         return None
-    return body + _png_chunk(b"tEXt", text + b" " * (room - len(text))) + end
+    iend = len(png) - 12
+    return png[:iend] + _png_chunk(b"tEXt", text + b" " * (room - len(text))) + png[iend:]
 
 
-def _hide_pa_logo(exe: Path, backup: Path) -> str:
-    """Make the PortableApps.com logos the Platform draws over the menu's bottom-right corner
-    transparent, so a theme's own artwork shows there. They're PNGs in the main window's form
-    data, in the TImage components imgPortableAppsLogo (grey, light themes) and
-    imgPortableAppsLogo2 (white, dark themes). Each is swapped for a transparent PNG of the same
-    byte length, so nothing else in the program moves. Returns 'patched', 'already' or why not."""
+def _restyle_platform(exe: Path, backup: Path, recolor: dict | None = None) -> str:
+    """Restyle the Platform's built-in images so themes look their own: the PortableApps.com
+    logos it draws over the menu's bottom-right corner (imgPortableAppsLogo, and the white
+    imgPortableAppsLogo2 for dark themes) become transparent, and each image named in
+    `recolor` (e.g. imgLiveSearchIcon, the search box's magnifier) takes that colour, keeping
+    its shape. They're PNGs in the main window's form data; each is rewritten at exactly its
+    old byte length, so nothing else in the program moves. Returns 'patched', 'already' or
+    why it couldn't."""
     if not exe.is_file():
         return "no Platform"
-    data = bytearray(exe.read_bytes())
-    logos = []
-    for m in re.finditer(rb"\x06TImage[\x03-\x30](imgPortableAppsLogo\d*)", data):
-        j = data.find(b"\tTPngImage\x89PNG\r\n\x1a\n", m.end(), m.end() + 600)
+    orig = exe.read_bytes()
+    slots: dict[str, tuple[int, int]] = {}
+    for m in re.finditer(rb"\x06TImage[\x03-\x30]([A-Za-z0-9_]+)", orig):
+        j = orig.find(b"\tTPngImage\x89PNG\r\n\x1a\n", m.end(), m.end() + 600)
         if j != -1:
             start = j + len(b"\tTPngImage")
-            logos.append((m.group(1).decode(), start, data.find(b"IEND", start) + 8))
+            slots.setdefault(m.group(1).decode(), (start, orig.find(b"IEND", start) + 8))
+    logos = [n for n in slots if re.fullmatch(r"imgPortableAppsLogo\d*", n)]
     if not logos:
         return "logo not found; the Platform has changed"
-    todo = [(n, a, b) for n, a, b in logos if PA_LOGO_MARK not in data[a:b]]
-    if not todo:
+    wanted = {n: None for n in logos} | {n: c for n, c in (recolor or {}).items() if n in slots}
+    data, changed = bytearray(orig), False
+    for name, colour in wanted.items():
+        start, stop = slots[name]
+        now = bytes(data[start:stop])
+        if colour is None:
+            w, h = struct.unpack(">II", now[16:24])
+            new = _pad_png(_png_encode(w, h, bytes(w * h * 4)), stop - start)
+        else:
+            img = _png_decode(now)
+            if img is None:
+                return f"{name} isn't a plain RGBA PNG"
+            w, h, px = img
+            r, g, b = (int(colour[i:i + 2], 16) for i in (0, 2, 4))
+            for i in range(0, len(px), 4):
+                px[i:i + 3] = bytes((r, g, b))
+            new = _pad_png(_png_encode(w, h, bytes(px)), stop - start)
+        if new is None:
+            return f"{name} has no room for the change"
+        if new != now:
+            data[start:stop] = new
+            changed = True
+    missing = sorted(set(recolor or {}) - set(slots))
+    if not changed:
         return "already"
-    for name, start, stop in todo:
-        width, height = struct.unpack(">II", data[start + 16:start + 24])
-        blank = _blank_png(width, height, stop - start)
-        if blank is None:
-            return f"{name} too small to replace"
-        data[start:stop] = blank
-    if PA_LOGO_MARK not in exe.read_bytes():              # keep the untouched original, not a half-patched one
+    if b"Commander Rescue:" not in orig:                     # keep the untouched original, not a patched one
         backup.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(exe, backup)
     tmp = exe.with_name(exe.name + ".part")
     tmp.write_bytes(bytes(data))
     shutil.copystat(exe, tmp)
     os.replace(tmp, exe)                                     # a running copy keeps the old file
-    return "patched"
+    return "patched" + (f" (not found: {', '.join(missing)})" if missing else "")
 
 
 def _tree_patches(t: dict, base: Path, dry_run: bool) -> None:
@@ -1171,11 +1230,12 @@ def _tree_patches(t: dict, base: Path, dry_run: bool) -> None:
     if not rel or dry_run:
         return
     exe = base / rel
-    result = _hide_pa_logo(exe, exe.parent / "Data" / (exe.name + ".original"))
-    if result == "patched":
-        ok(f"{t['title']}: PortableApps.com logo hidden (original kept in Data)")
+    result = _restyle_platform(exe, exe.parent / "Data" / (exe.name + ".original"), t.get("recolor"))
+    if result.startswith("patched"):
+        ok(f"{t['title']}: restyled (logo hidden{', icons recoloured' if t.get('recolor') else ''}; original kept in Data)"
+           + result[len("patched"):])
     elif result not in ("already", "no Platform"):
-        warn(f"{t['title']}: couldn't hide the logo: {result}")
+        warn(f"{t['title']}: couldn't restyle it: {result}")
 
 
 def _tree_files(src: Path) -> list[tuple[str, Path]]:
@@ -1509,7 +1569,8 @@ def cmd_pack(cfg: Config, args) -> int:
                 for rel, f in _tree_files(src):
                     _zip_file(zf, f, f"once/{t['name']}/{rel}")
                 trees.append({"name": t["name"], "title": t["title"], "dest": t["dest"], "once": t["once"],
-                              "version": entry["version"], "hide_logo": t.get("hide_logo")})
+                              "version": entry["version"], "hide_logo": t.get("hide_logo"),
+                              "recolor": t.get("recolor")})
             if vsrc:
                 _zip_file(zf, vsrc, f"installer/{vsrc.name}", zipfile.ZIP_STORED)
             for rel in BUNDLED:  # keeps their executable bits, so `unzip` gives runnable scripts

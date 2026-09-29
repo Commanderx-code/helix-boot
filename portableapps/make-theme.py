@@ -104,12 +104,20 @@ def tint(src: Path, dst: Path, rgb: tuple[int, int, int]) -> None:
     im.save(dst)
 
 
+def recolour(src: Path, dst: Path, rgb: tuple[int, int, int]) -> None:
+    """Give a single-colour icon a new colour, keeping its shape (alpha)."""
+    im = Image.open(src).convert("RGBA")
+    Image.merge("RGBA", (*Image.new("RGB", im.size, rgb).split(), im.getchannel("A"))).save(dst, optimize=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("art", type=Path, help="artwork with the menu's panel drawn in (any size)")
     ap.add_argument("name", help='theme name, e.g. "Helix Teal"')
     ap.add_argument("--accent", default="f5a524", help="hex colour for the drive bar and dividers")
     ap.add_argument("--hue", type=float, default=0, help="rotate the artwork's colours by this many degrees")
+    ap.add_argument("--search", choices=("light", "dark"), default="light",
+                    help="search box: white with dark text, or dark with light text")
     ap.add_argument("--clear-bottom", action="store_true",
                     help="blank the strip under the app list, for art with a drive bar or buttons drawn in")
     ap.add_argument("--slot", required=True, choices=SLOTS,
@@ -136,6 +144,14 @@ def main() -> None:
     prev.paste(thumb, ((406 - thumb.width) // 2, 0))
     prev.save(dest / "preview.png", optimize=True)
     tint(base / "drive_space_slider.png", dest / "drive_space_slider.png", accent)
+    # The folder-button icons (Material Design, CC-BY 4.0: licence alongside), lightened toward
+    # the accent. Without them the Platform falls back to its beige ones.
+    light = tuple(round(c * .45 + 255 * .55) for c in accent)
+    (dest / "menu_icons").mkdir()
+    for icon in sorted((base / "menu_icons").glob("*.png")):
+        if not icon.stem.endswith("_16"):                         # the _16 ones are PortableApps' own
+            recolour(icon, dest / "menu_icons" / icon.name, light)
+    shutil.copy2(base / "MaterialIconLicense.txt", dest / "MaterialIconLicense.txt")
 
     # Light text over the dark art; the search box stays white with dark text, as in the mockups
     dim = "".join(f"{int(c * .55):02X}" for c in accent)
@@ -144,7 +160,9 @@ def main() -> None:
                                 ("ButtonApplications", "FontColor", "FFFFFF"), ("ButtonApplications", "DividerColor", dim),
                                 ("ButtonFolders", "FontColor", "FFFFFF"), ("ButtonFolders", "FontColorWhite", "FFFFFF"),
                                 ("DriveSpace", "FontColor", "E6EDF3"), ("DriveSpace", "FontShadowColor", "000000"),
-                                ("SearchBox", "BorderColor", args.accent.upper())):
+                                ("SearchBox", "BorderColor", args.accent.upper())) + (
+                               (("SearchBox", "BackgroundColor", "".join(f"{int(c * .12):02X}" for c in accent)),
+                                ("SearchBox", "FontColor", "E6F7FA")) if args.search == "dark" else ()):
         block = re.search(rf"^\[{section}\][^\[]*", ini, re.M)
         body = block.group(0)
         new = re.sub(rf"^{key}=[^\r\n]*", f"{key}={value}", body, flags=re.M) if re.search(rf"^{key}=", body, re.M) \

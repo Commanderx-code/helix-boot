@@ -1001,7 +1001,7 @@ class TestPortableAppsLogo(unittest.TestCase):
         grey, white = self.png(300, 50), self.png(135, 75)
         exe = self.exe_with(icon, self.image(b"imgPortableAppsLogo", grey), self.image(b"imgPortableAppsLogo2", white))
         before = exe.read_bytes()
-        self.assertEqual(cr._hide_pa_logo(exe, self.tmp / "Data/orig.exe"), "patched")
+        self.assertEqual(cr._restyle_platform(exe, self.tmp / "Data/orig.exe"), "patched")
         after = exe.read_bytes()
         self.assertEqual(len(after), len(before))
         self.assertIn(self.png(24, 17)[:24], after)                  # the icon's header is untouched
@@ -1013,19 +1013,63 @@ class TestPortableAppsLogo(unittest.TestCase):
             self.assertEqual(struct.unpack(">II", kinds[b"IHDR"][:8]), size)
             self.assertEqual(set(zlib.decompress(kinds[b"IDAT"])), {0})   # every pixel transparent
         self.assertEqual((self.tmp / "Data/orig.exe").read_bytes(), before)
-        self.assertEqual(cr._hide_pa_logo(exe, self.tmp / "Data/orig.exe"), "already")
+        self.assertEqual(cr._restyle_platform(exe, self.tmp / "Data/orig.exe"), "already")
 
     def test_a_logo_restored_by_an_update_is_blanked_again(self):
         exe = self.exe_with(self.image(b"imgPortableAppsLogo", self.png(300, 50)),
                             self.image(b"imgPortableAppsLogo2", self.png(135, 75)))
-        cr._hide_pa_logo(exe, self.tmp / "orig.exe")
+        cr._restyle_platform(exe, self.tmp / "orig.exe")
         exe.write_bytes(exe.read_bytes() + self.image(b"imgPortableAppsLogo3", self.png(135, 75)))
-        self.assertEqual(cr._hide_pa_logo(exe, self.tmp / "orig.exe"), "patched")
-        self.assertEqual(cr._hide_pa_logo(exe, self.tmp / "orig.exe"), "already")
+        self.assertEqual(cr._restyle_platform(exe, self.tmp / "orig.exe"), "patched")
+        self.assertEqual(cr._restyle_platform(exe, self.tmp / "orig.exe"), "already")
+
+    @staticmethod
+    def filtered_png(width, height, rgba):
+        """A PNG whose rows use each of the five filter types in turn, as real encoders do."""
+        import struct, zlib
+        stride, rows, prev = width * 4, b"", bytes(width * 4)
+        for y in range(height):
+            line, ftype = rgba[y * stride:(y + 1) * stride], y % 5
+            out = bytearray()
+            for x in range(stride):
+                a = line[x - 4] if x >= 4 else 0
+                b, c = prev[x], prev[x - 4] if x >= 4 else 0
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                pred = (0, a, b, (a + b) // 2, a if pa <= pb and pa <= pc else b if pb <= pc else c)[ftype]
+                out.append((line[x] - pred) & 255)
+            rows += bytes([ftype]) + bytes(out)
+            prev = line
+        return (b"\x89PNG\r\n\x1a\n" + cr._png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+                + cr._png_chunk(b"IDAT", zlib.compress(rows)) + cr._png_chunk(b"IEND", b"")
+                + b"\0" * 400)[:-400] + b""
+
+    def test_png_decoder_undoes_every_filter(self):
+        pixels = os.urandom(16 * 16 * 4)
+        self.assertEqual(cr._png_decode(self.filtered_png(16, 16, pixels)), (16, 16, bytearray(pixels)))
+
+    def test_icons_are_recoloured_keeping_their_shape(self):
+        pixels = bytearray(os.urandom(16 * 16 * 4))
+        icon = self.filtered_png(16, 16, bytes(pixels))
+        icon += b""                                               # real icons carry metadata; give it room
+        icon = icon[:-12] + cr._png_chunk(b"tEXt", b"Software\0" + b"x" * 300) + icon[-12:]
+        exe = self.exe_with(self.image(b"imgPortableAppsLogo", self.png(300, 50)),
+                            self.image(b"imgLiveSearchIcon", icon))
+        before = exe.read_bytes()
+        result = cr._restyle_platform(exe, self.tmp / "orig.exe", {"imgLiveSearchIcon": "2AA9BE", "imgNope": "000000"})
+        self.assertEqual(result, "patched (not found: imgNope)")
+        after = exe.read_bytes()
+        self.assertEqual(len(after), len(before))
+        start = before.index(icon)
+        w, h, px = cr._png_decode(after[start:start + len(icon)])
+        self.assertEqual((w, h), (16, 16))
+        self.assertEqual({bytes(px[i:i + 3]) for i in range(0, len(px), 4)}, {bytes.fromhex("2AA9BE")})
+        self.assertEqual(px[3::4], pixels[3::4])                  # transparency unchanged: same shape
+        self.assertEqual(cr._restyle_platform(exe, self.tmp / "orig.exe", {"imgLiveSearchIcon": "2AA9BE"}), "already")
+        self.assertEqual((self.tmp / "orig.exe").read_bytes(), before)
 
     def test_unknown_layout_is_left_alone(self):
         exe = self.exe_with(self.image(b"imgEject", self.png(24, 17)))
-        self.assertIn("not found", cr._hide_pa_logo(exe, self.tmp / "orig.exe"))
+        self.assertIn("not found", cr._restyle_platform(exe, self.tmp / "orig.exe"))
         self.assertFalse((self.tmp / "orig.exe").exists())
 
 

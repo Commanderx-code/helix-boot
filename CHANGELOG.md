@@ -6,6 +6,11 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- PortableApps themes carry the folder-button icons (Material Design, CC-BY
+  4.0), tinted to each theme's accent, instead of the Platform's beige ones;
+  `make-theme.py --search dark` gives a dark search box (Lazarus PE uses it).
+- The Platform restyle also recolours its search box icons (`recolor`), which
+  are near-black and vanished on dark boxes, to a teal that reads on both.
 - **Lazarus PE** PortableApps menu theme (Retro Dark), now the default for new
   sticks; Helix Teal moves to Modern Light, so the six themes sit together.
 - The PortableApps.com logo the Platform draws over a theme's bottom-right

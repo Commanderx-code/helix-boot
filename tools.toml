@@ -470,6 +470,9 @@ once = "PortableApps/PortableApps.com/PortableAppsPlatform.exe"
 # top of any theme. This makes that one image transparent (same size, nothing else
 # changes; the original is kept in Data), re-applied after the Platform updates itself.
 hide_logo = "PortableApps/PortableApps.com/PortableAppsPlatform.exe"
+# Its search box icons are near-black, lost on the dark boxes of our themes: a mid teal
+# reads on dark and light boxes alike (same shape, recoloured in place).
+recolor = { imgLiveSearchIcon = "2AA9BE", imgLiveSearchClose = "2AA9BE" }
 drop = ['^\$PLUGINSDIR(/|$)']
 source = "page"
 page = "https://portableapps.com/download"
