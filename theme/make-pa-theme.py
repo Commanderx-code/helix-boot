@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Make a PortableApps.com Platform theme from a piece of artwork.
+r"""Make a PortableApps.com Platform theme from a piece of artwork.
 
-    theme/make-pa-theme.py ART.png "Theme Name" --accent 1ec8e6 [--hue -25]
+    theme/make-pa-theme.py ART.png "Theme Name" --slot Retro --accent 1ec8e6 [--hue -25]
 
 The Platform draws its menu at a fixed 406x558 and lays its controls over the
 theme's chrome.png: the app list in the panel at x 10-261, y 51-522, the folder
@@ -10,10 +10,14 @@ matching panel (at any size) is found, scaled and cropped so that panel lands
 exactly there, then the panel is darkened a little so white text stays legible.
 
 The theme starts from the Platform's own Default theme (buttons, menu icons),
-taken from crescue's cache, and is written to byo/pa-themes/<Theme Name>/,
-which refresh.sh copies to the stick's PortableApps\PortableApps.com\Data\
-ThemeLibrary. Switch themes with Commander Apps > t) PortableApps theme (the
-Platform has one custom-theme slot). Needs Pillow.
+taken from crescue's cache, and is written to byo/pa-themes/<slot>/.
+
+The Platform's Options > Themes lists only its built-in themes (a custom theme
+in its Data\Theme slot works but makes Options fail with "List index out of
+bounds"), so each theme takes over a built-in theme's folder, --slot, e.g.
+Retro or SmoothDark. refresh.sh copies byo/pa-themes over the stick's
+App\Graphics\Themes; pick the slot's entry ("Retro Light") in Options.
+Needs Pillow.
 """
 import argparse
 import colorsys
@@ -29,6 +33,8 @@ REPO = HERE.parent
 W, H = 406, 558                       # the Platform's menu, "modern" layout
 PANEL = (10, 51, 261, 522)            # app list: left, top, right, bottom (inclusive)
 DRIVE_BAR = (10, 527, 261, 549)       # drive space bar under the list
+SLOTS = ["Default", "DefaultDark", "Classic", "ClassicDark", "Flat", "FlatDark", "Glassy", "GlassyDark",
+         "Modern", "ModernDark", "Retro", "RetroDark", "Smooth", "SmoothDark"]
 
 
 def base_theme() -> Path:
@@ -97,6 +103,8 @@ def main() -> None:
     ap.add_argument("name", help='theme name, e.g. "Helix Teal"')
     ap.add_argument("--accent", default="f5a524", help="hex colour for the drive bar and dividers")
     ap.add_argument("--hue", type=float, default=0, help="rotate the artwork's colours by this many degrees")
+    ap.add_argument("--slot", required=True, choices=SLOTS,
+                    help="built-in theme folder to take over; it's listed under that name in Options > Themes")
     ap.add_argument("--out", type=Path, default=REPO / "byo" / "pa-themes")
     args = ap.parse_args()
     if not re.fullmatch(r"[0-9a-fA-F]{6}", args.accent):
@@ -104,14 +112,20 @@ def main() -> None:
     accent = tuple(int(args.accent[i:i + 2], 16) for i in (0, 2, 4))
 
     base = base_theme()
-    dest = args.out / args.name
+    dest = args.out / args.slot
     shutil.rmtree(dest, ignore_errors=True)
     shutil.copytree(base, dest)
 
     art = Image.open(args.art).convert("RGB")
     if args.hue:
         art = shift_hue(art, args.hue)
-    chrome(art).save(dest / "chrome.png", optimize=True)
+    menu = chrome(art)
+    menu.save(dest / "chrome.png", optimize=True)
+    # The Options > Themes preview (the Platform's own placeholder is 406x190)
+    thumb = menu.resize((round(W * 190 / H), 190), Image.LANCZOS)
+    prev = Image.new("RGB", (406, 190), (24, 24, 24))
+    prev.paste(thumb, ((406 - thumb.width) // 2, 0))
+    prev.save(dest / "preview.png", optimize=True)
     tint(base / "drive_space_slider.png", dest / "drive_space_slider.png", accent)
 
     # Light text over the dark art; the search box stays white with dark text, as in the mockups

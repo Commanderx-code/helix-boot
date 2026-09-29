@@ -41,7 +41,6 @@ for /f "usebackq tokens=1,2 delims=|" %%A in ("%APPS%\apps.txt") do (
 )
 echo.
 if exist "%CR%\Start.exe" echo     p^)  PortableApps.com menu
-if exist "%APPS%\PortableAppsTheme.ps1" echo     t^)  PortableApps theme
 echo     o^)  Open the Apps folder
 echo     q^)  Quit
 echo.
@@ -51,10 +50,6 @@ if not defined pick goto menu
 if /i "%pick%"=="q" exit /b 0
 if /i "%pick%"=="p" if exist "%CR%\Start.exe" (
   start "" /d "%CR%\" "%CR%\Start.exe"
-  goto menu
-)
-if /i "%pick%"=="t" if exist "%APPS%\PortableAppsTheme.ps1" (
-  start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%APPS%\PortableAppsTheme.ps1"
   goto menu
 )
 if /i "%pick%"=="o" (
