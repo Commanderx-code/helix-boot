@@ -1385,6 +1385,14 @@ def cmd_sync(cfg: Config, args) -> int:
 
     # A file that only changed folder (e.g. a category was renamed) is moved, not copied again.
     moved_from = {Path(f).name: f for f in stale}
+    # What each image on the stick was, by sha256. Size alone can't tell two builds apart:
+    # ISOs round to whole sectors, so a rebuilt Lazarus PE is often exactly as big as the last.
+    recorded = state.get("images", {})
+    images: dict[str, str] = {}
+    try:
+        synced_at = dt.datetime.fromisoformat(state["synced"]).timestamp()
+    except (KeyError, TypeError, ValueError):
+        synced_at = None
     for n, p in enumerate(placed, 1):
         dst = mnt / p["rel"]
         old = moved_from.get(p["file"])
@@ -1400,9 +1408,15 @@ def cmd_sync(cfg: Config, args) -> int:
                     continue
 
         same = dst.exists() and dst.stat().st_size == p["src"].stat().st_size
-        if same and args.verify and p["sha256"]:
-            same = file_hash(dst) == p["sha256"]
+        if same and p["sha256"]:
+            if args.verify:
+                same = file_hash(dst) == p["sha256"]
+            elif p["rel"] in recorded:
+                same = recorded[p["rel"]] == p["sha256"]
+            elif p["local"] and (synced_at is None or p["src"].stat().st_mtime > synced_at):
+                same = file_hash(dst) == p["sha256"]    # rebuilt since a sync that kept no record
         if same:
+            images[p["rel"]] = p["sha256"]
             ok(f"{p['title']} {p['version']} — already on stick")
             continue
         info(f"{p['title']} {p['version']} → {p['rel']}")
@@ -1418,6 +1432,7 @@ def cmd_sync(cfg: Config, args) -> int:
                 if not good:
                     raise RescueError(f"{p['rel']} doesn't match after copying — the stick may be failing.")
             prog.clear()
+            images[p["rel"]] = p["sha256"]
             ok(f"{p['title']} copied")
 
     app_state = dict(state.get("apps", {}))
@@ -1482,7 +1497,7 @@ def cmd_sync(cfg: Config, args) -> int:
     theme_src = cfg.assets / cfg.settings["theme"] if cfg.settings.get("theme") else None
     vjson = _write_extras(mnt, state, _stick_extras(cfg, placed, apps),
                           fresh_theme=bool(theme_src and theme_src.is_dir()))
-    _finish(mnt, state_dir, want_files, app_state, vjson, {})
+    _finish(mnt, state_dir, want_files, app_state, vjson, {"images": images})
     ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
     return 0
 

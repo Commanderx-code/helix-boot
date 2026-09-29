@@ -437,6 +437,32 @@ class TestFetchAndSync(Base):
         self.assertEqual(rc, 0, out)
         self.assertEqual((self.stick / "ISO/1-Windows-PE/LazarusPE.iso").read_bytes(), b"winpe")
 
+    def test_same_size_rebuild_is_copied_without_verify(self):
+        pe = self.repo / "pe/out/LazarusPE.iso"
+        pe.parent.mkdir(parents=True)
+        on_stick = self.stick / "ISO/1-Windows-PE/LazarusPE.iso"
+        for n, build in enumerate((b"winpe-1", b"winpe-2")):   # same size, different build
+            pe.write_bytes(build)
+            self.fetch("lazarus-pe")
+            rc, out = self.sync(verify=False, init=n == 0)
+            self.assertEqual(rc, 0, out)
+            self.assertEqual(on_stick.read_bytes(), build)
+        rc, out = self.sync(verify=False, init=False)
+        self.assertIn("Lazarus PE 20", out)
+        self.assertIn("already on stick", out)
+
+        # A stick synced before image checksums were recorded: a newer local build is still noticed
+        state_file = self.stick / ".helix-boot/state.json"
+        state = json.loads(state_file.read_text())
+        del state["images"]
+        state["synced"] = "2000-01-01T00:00:00"
+        state_file.write_text(json.dumps(state))
+        pe.write_bytes(b"winpe-3")
+        self.fetch("lazarus-pe")
+        rc, out = self.sync(verify=False, init=False)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(on_stick.read_bytes(), b"winpe-3")
+
     def test_sync_refuses_non_ventoy_without_init(self):
         self.fetch("systemrescue")
         with self.assertRaisesRegex(cr.RescueError, "doesn't look like a Ventoy stick"):

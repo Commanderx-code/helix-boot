@@ -65,6 +65,11 @@ tagged releases also publish the Windows app.
 ### Removed
 - SystemRescue: redundant next to Lazarus PE and Hiren's BootCD PE.
 
+### Fixed
+- A rebuilt Lazarus PE of exactly the same size as the last one is now copied
+  to the stick. Sync records each image's sha256 on the stick instead of
+  trusting size alone (ISOs round to whole sectors).
+
 ## [0.4.0] - 2026-09-28
 
 ### Added
