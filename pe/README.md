@@ -26,8 +26,11 @@ USB (Ventoy data partition)
 
 ## At startup
 
-When the desktop loads, the PE's small Helix Boot helper finds the stick by
-`helix-boot.tag` and runs `Apps\LazarusStartup.cmd` from it. That opens the
+When the desktop loads, the PE's small Helix Boot helper finds the stick and
+runs `Apps\LazarusStartup.cmd` from it. The stick is a USB/SD disk carrying
+`helix-boot.tag` as a file and no Windows install
+([`launcher/FindStick.ps1`](launcher/FindStick.ps1)): whatever it picks runs as
+SYSTEM, so a tag planted on the PC being repaired must not count. That opens the
 **Lazarus launcher** full screen (or, without it, the PortableApps.com menu).
 Both are on the stick, so changing what happens at startup
 ([`launcher/LazarusStartup.cmd`](launcher/LazarusStartup.cmd)) or the

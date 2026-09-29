@@ -307,6 +307,12 @@ If no strategy works, the tool is refused rather than silently used.
 - You type the device name to confirm, and it warns if the "stick" is
   suspiciously large.
 - `refresh.sh` never erases anything except old versions of files it put there.
+- Nothing read from a pack or from a stick (paths, app names) can reach outside
+  the stick: a crafted pack or a stick tampered with on an infected PC can't
+  write or delete anything else.
+- Lazarus PE and the Helix Apps menu only accept a USB/SD disk as the stick
+  (tag file, no Windows on it), so a tag planted on the PC being repaired can't
+  get its script run.
 
 ## Customising
 

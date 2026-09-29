@@ -16,13 +16,14 @@ Author=Helix Boot
 Level=5
 Selected=True
 Mandatory=False
-Version=1.2.1.0
+Version=1.3.0.0
 Date=2026-09-29
 
 [Variables]
 %ProgramFolder%="Helix Boot"
 %ProgramExe%="HelixApps.cmd"
 %PAHelper%="StartPortableApps.cmd"
+%FindStick%="FindStick.ps1"
 
 [Process]
 Echo,"Processing %ScriptTitle%..."
@@ -31,10 +32,12 @@ StrFormat,DirPath,%ScriptFile%,%SrcDir%
 If,Not,ExistFile,"%SrcDir%%ProgramExe%",Halt,"%ProgramExe% is missing next to %ScriptFile%. Re-run Apply-HelixPreset.ps1."
 
 If,Not,ExistFile,"%SrcDir%%PAHelper%",Halt,"%PAHelper% is missing next to %ScriptFile%. Re-run Apply-HelixPreset.ps1."
+If,Not,ExistFile,"%SrcDir%%FindStick%",Halt,"%FindStick% is missing next to %ScriptFile%. Re-run Apply-HelixPreset.ps1."
 
 DirMake,"%TargetPrograms%\%ProgramFolder%"
 FileCopy,"%SrcDir%%ProgramExe%","%TargetPrograms%\%ProgramFolder%"
 FileCopy,"%SrcDir%%PAHelper%","%TargetPrograms%\%ProgramFolder%"
+FileCopy,"%SrcDir%%FindStick%","%TargetPrograms%\%ProgramFolder%"
 
 // PortableApps.com Platform on the USB (X:\Start.exe): open it with the desktop
 If,%cb_AutoPortableApps%,Equal,True,AddAutoRun,PostShell,HideNoWait,"","%PEPrograms%\%ProgramFolder%\%PAHelper%"

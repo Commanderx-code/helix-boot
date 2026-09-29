@@ -27,7 +27,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 import zlib
 from email.utils import parsedate_to_datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 if sys.version_info < (3, 11):
     sys.exit("✗ helix needs Python 3.11 or newer (for tomllib).")
@@ -209,11 +209,24 @@ class Config:
 
 
 # ── HTTP ──────────────────────────────────────────────────────────────────
+def _is_github_api(url: str) -> bool:
+    """Is url on the GitHub API itself? Compared by parsed scheme, host and port, never by
+    string prefix: https://api.github.com.example.net/ must not get the token."""
+    u, api = urllib.parse.urlsplit(url), urllib.parse.urlsplit(GITHUB_API)
+    try:
+        same_port = u.port == api.port
+    except ValueError:
+        return False
+    return (u.scheme == api.scheme and u.hostname is not None and u.hostname == api.hostname and same_port
+            and (u.path == api.path or u.path.startswith(api.path.rstrip("/") + "/")))
+
+
 def _request(url: str, headers: dict | None = None) -> urllib.request.Request:
-    h = {"User-Agent": USER_AGENT, **(headers or {})}
-    if url.startswith(GITHUB_API) and os.environ.get("GITHUB_TOKEN"):
-        h["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
-    return urllib.request.Request(url, headers=h)
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
+    if os.environ.get("GITHUB_TOKEN") and _is_github_api(url):
+        # unredirected: urllib doesn't pass it on if GitHub redirects elsewhere
+        req.add_unredirected_header("Authorization", f"Bearer {os.environ['GITHUB_TOKEN']}")
+    return req
 
 
 def _ua(tool: dict) -> dict | None:
@@ -246,7 +259,7 @@ def _http_get_once(url: str, headers: dict | None, timeout: int) -> bytes:
     except urllib.error.HTTPError as e:
         if e.code >= 500:
             raise _Transient(f"HTTP {e.code} from {url}") from None
-        if e.code in (403, 429) and url.startswith(GITHUB_API):
+        if e.code in (403, 429) and _is_github_api(url):
             body = e.read().decode("utf-8", "replace")
             if "rate limit" in body.lower():
                 raise RescueError(
@@ -679,11 +692,30 @@ def _top_dir(name: str) -> str | None:
     return parts[0] if parts else None
 
 
+SAFE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")   # tool names, so also the apps on a stick
+
+
+def _safe_rel(rel: str, what: str = "path") -> str:
+    """A path read from a pack, a zip or a stick, accepted only as a plain relative path:
+    no root, no drive (C:, also on Linux), no '..', no ':' (NTFS streams)."""
+    parts = re.split(r"[\\/]", rel) if isinstance(rel, str) else None
+    if (not parts or not rel or rel[0] in "/\\" or ":" in rel or ".." in parts
+            or PureWindowsPath(rel).anchor or Path(rel).is_absolute()):
+        raise RescueError(f"refusing unsafe {what}: {rel!r}")
+    return rel
+
+
+def _inside(root: Path, rel: str, what: str = "path") -> Path:
+    """root / rel for a rel read from a pack or a stick, refused unless it stays inside root."""
+    dst = root / _safe_rel(rel, what)
+    if not dst.resolve().is_relative_to(root.resolve()):
+        raise RescueError(f"refusing {what} outside {root}: {rel!r}")
+    return dst
+
+
 def _safe_zip_members(zf: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     for m in zf.infolist():
-        p = Path(m.filename)
-        if p.is_absolute() or ".." in p.parts:
-            raise RescueError(f"refusing unsafe path in zip: {m.filename}")
+        _safe_rel(m.filename, "path in zip")
     return zf.infolist()
 
 
@@ -742,6 +774,18 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
                 f"    expected {want}\n    got      {got}\n  The file was deleted. Try again; if it "
                 "keeps happening, don't use it."
             )
+    # SourceForge serves files, and checksum files next to them, from third-party mirrors; the
+    # md5 in sourceforge.net's own feed is the independent check, so it must agree as well.
+    if res.get("md5") and algo != "md5":
+        got = file_hash(dest, "md5")
+        if got != res["md5"].lower():
+            dest.unlink()
+            raise RescueError(
+                f"{tool['title']}: {res['file']} doesn't match the md5 SourceForge publishes for it\n"
+                f"    expected {res['md5'].lower()}\n    got      {got}\n  The file was deleted: a download "
+                "mirror may have served a changed file. Try again later."
+            )
+        how += " + SourceForge md5"
 
     version = res["version"]
     if version is None:  # unversioned url source: version by content
@@ -1356,7 +1400,7 @@ def _write_extras(mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]]
     if fresh_theme:
         shutil.rmtree(vdir / "theme", ignore_errors=True)
     for rel, data in extras:
-        dst = mnt / rel
+        dst = _inside(mnt, rel)
         dst.parent.mkdir(parents=True, exist_ok=True)
         if isinstance(data, bytes):
             dst.write_bytes(data)
@@ -1463,9 +1507,13 @@ def cmd_sync(cfg: Config, args) -> int:
 
     enabled_apps = {t["name"] for t, _, _ in apps}
     for name in [n for n in app_state if n not in enabled_apps]:
+        if not SAFE_NAME.fullmatch(name):   # state.json is on the stick: anything could have written it
+            warn(f"ignoring an app name in the stick's state that isn't one: {name!r}")
+            app_state.pop(name)
+            continue
         info(f"removing app no longer in the manifest: {name}")
         if not args.dry_run:
-            shutil.rmtree(app_root / name, ignore_errors=True)
+            shutil.rmtree(_inside(app_root, name, "app folder"), ignore_errors=True)
             app_state.pop(name)
 
     if stale and not args.no_prune:
@@ -1694,10 +1742,12 @@ def _read_pack(zf: zipfile.ZipFile) -> dict:
         raise RescueError(f"this pack is format {meta.get('format')}; this helix reads format {PACK_FORMAT}. "
                           "Update Helix Boot.")
     _safe_zip_members(zf)
-    for rel in ([i["rel"] for i in meta["isos"]] + list(meta["apps"])
-                + [t[k] for t in meta.get("trees", []) for k in ("dest", "once", "name") if t[k]]):
-        if Path(rel).is_absolute() or ".." in Path(rel).parts:
-            raise RescueError(f"refusing unsafe path in pack: {rel}")
+    for rel in ([meta[k] for k in ("iso_root", "apps_root") if k in meta] + [i["rel"] for i in meta["isos"]]
+                + [t[k] for t in meta.get("trees", []) for k in ("dest", "once") if t[k]]):
+        _safe_rel(rel, "path in pack")
+    for name in list(meta["apps"]) + [t["name"] for t in meta.get("trees", [])]:
+        if not isinstance(name, str) or not SAFE_NAME.fullmatch(name):
+            raise RescueError(f"refusing unsafe name in pack: {name!r}")
     return meta
 
 
@@ -1749,9 +1799,10 @@ def cmd_unpack(cfg: Config, args) -> int:
         head(f"Unpacking {Path(args.pack).name} (made {meta['created'][:10]}) to {mnt}"
              f"{'  (dry run)' if args.dry_run else ''}")
 
+        dests = {i["rel"]: _inside(mnt, i["rel"], "boot image path") for i in meta["isos"]}
         todo = [i for i in meta["isos"]
-                if not ((mnt / i["rel"]).is_file() and (mnt / i["rel"]).stat().st_size == i["size"])
-                or args.verify and file_hash(mnt / i["rel"]) != i["sha256"]]
+                if not (dests[i["rel"]].is_file() and dests[i["rel"]].stat().st_size == i["size"])
+                or (args.verify and file_hash(dests[i["rel"]]) != i["sha256"])]
         need = sum(i["size"] for i in todo)
         free = shutil.disk_usage(mnt).free
         if need > free and not args.dry_run:
@@ -1768,7 +1819,7 @@ def cmd_unpack(cfg: Config, args) -> int:
                 continue
             if f"stick/{i['rel']}" not in names:
                 raise RescueError(f"the pack is missing {i['rel']}")
-            dst = mnt / i["rel"]
+            dst = dests[i["rel"]]
             name = Path(i["rel"]).name
             prog.file(f"({n}/{len(meta['isos'])}) {name}", i["size"])
             got = _unzip_to(zf, f"stick/{i['rel']}", dst, prog)
@@ -1788,9 +1839,9 @@ def cmd_unpack(cfg: Config, args) -> int:
             ok(f"{i['title']} copied")
 
         app_state = dict(state.get("apps", {}))
-        app_root = mnt / apps_root
+        app_root = _inside(mnt, apps_root, "apps folder")
         for name, version in meta["apps"].items():
-            dst = app_root / name
+            dst = _inside(app_root, name, "app folder")
             if app_state.get(name) == version and dst.exists():
                 ok(f"{name} {version} — already on stick")
                 continue
@@ -1802,16 +1853,20 @@ def cmd_unpack(cfg: Config, args) -> int:
             prefix = f"stick/{apps_root}/{name}/"
             for m in names:
                 if m.startswith(prefix) and not m.endswith("/"):
-                    _unzip_to(zf, m, new / m[len(prefix):])
+                    _unzip_to(zf, m, _inside(new, m[len(prefix):], "path in pack"))
             if dst.exists():
                 shutil.rmtree(dst)
             os.replace(new, dst)
             app_state[name] = version
             ok(f"{name} unpacked")
         for name in [n for n in app_state if n not in meta["apps"]]:
+            if not SAFE_NAME.fullmatch(name):   # state.json is on the stick: anything could have written it
+                warn(f"ignoring an app name in the stick's state that isn't one: {name!r}")
+                app_state.pop(name)
+                continue
             info(f"removing app that isn't in this pack: {name}")
             if not args.dry_run:
-                shutil.rmtree(app_root / name, ignore_errors=True)
+                shutil.rmtree(_inside(app_root, name, "app folder"), ignore_errors=True)
                 app_state.pop(name)
 
         stale = [f for f in state.get("files", []) if f not in want_files]
@@ -1819,8 +1874,8 @@ def cmd_unpack(cfg: Config, args) -> int:
             _prune(mnt, iso_root, stale, args.dry_run)
 
         for t in meta.get("trees", []):
-            base = mnt / t["dest"]
-            if (base / t["once"]).exists():
+            base = _inside(mnt, t["dest"], "tree folder") if t["dest"] else mnt   # "" is the stick's root
+            if _inside(base, t["once"], "tree marker").exists():
                 ok(f"{t['title']} — already on stick (it updates itself)")
                 _tree_patches(t, base, args.dry_run)
                 continue
@@ -1830,7 +1885,7 @@ def cmd_unpack(cfg: Config, args) -> int:
             prefix = f"once/{t['name']}/"
             for m in sorted(names):
                 if m.startswith(prefix) and not m.endswith("/"):
-                    _unzip_to(zf, m, base / m[len(prefix):])
+                    _unzip_to(zf, m, _inside(base, m[len(prefix):], "path in pack"))
             ok(f"{t['title']} installed")
             _tree_patches(t, base, args.dry_run)
 

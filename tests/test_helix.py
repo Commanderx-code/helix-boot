@@ -407,6 +407,22 @@ class TestFetchAndSync(Base):
         self.assertEqual(rc, 0, out)
         self.assertIn("md5", cr.load_lock(self.cfg)["systemrescue"]["verified_by"])
 
+    def test_sourceforge_md5_must_agree_with_a_mirror_checksum(self):
+        # F10: a mirror serving a changed file with a matching .sha512 beside it
+        bad = b"systemrescue 12.02 iso, changed by a mirror"
+        put("dl/systemrescuecd/sysresccd-x86/12.02/systemrescue-12.02-amd64.iso", bad)
+        put("dl/systemrescuecd/sysresccd-x86/12.02/systemrescue-12.02-amd64.iso.sha512",
+            f"{sha(bad, 'sha512')}  systemrescue-12.02-amd64.iso\n")
+        rc, out = self.fetch("systemrescue")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("doesn't match the md5 SourceForge publishes", out)
+        self.assertFalse((self.tmp / "cache/systemrescue/systemrescue-12.02-amd64.iso").exists())
+
+    def test_sourceforge_download_records_both_checks(self):
+        rc, out = self.fetch("systemrescue")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("+ SourceForge md5", cr.load_lock(self.cfg)["systemrescue"]["verified_by"])
+
     def test_no_checksum_refused_without_tofu(self):
         gh_release("ventoy/Ventoy", "v1.1.18",
                    {"ventoy-1.1.18-linux.tar.gz": self.ventoy_tgz}, digests=False)
@@ -1084,6 +1100,65 @@ class TestPack(Base):
             self.assertNotIn(f"installer/{cr.APP_EXE}", zf.namelist())
             self.assertIsNone(json.loads(zf.read(cr.PACK_META))["app"])
 
+    def tamper(self, pack: Path, meta: dict | None = None, add: dict | None = None) -> Path:
+        """A copy of pack with its metadata changed and members added, as an attacker would."""
+        out = pack.with_name(f"tampered-{len(list(pack.parent.glob('tampered-*.zip')))}.zip")
+        with zipfile.ZipFile(pack) as src, zipfile.ZipFile(out, "w") as dst:
+            for m in src.infolist():
+                data = src.read(m)
+                if m.filename == cr.PACK_META and meta:
+                    data = json.dumps({**json.loads(data), **meta}).encode()
+                dst.writestr(m, data)
+            for name, data in (add or {}).items():
+                dst.writestr(name, data)
+        return out
+
+    def test_pack_paths_cannot_leave_the_stick(self):
+        self.fetch()
+        pack, _ = self.pack()
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        (outside / "sysinternals").mkdir()
+        (outside / "sysinternals" / "keep.txt").write_text("mine")
+        for how, bad in [
+            ("absolute apps_root (F1)", self.tamper(pack, meta={"apps_root": str(outside)})),
+            ("apps_root climbing out (F1)", self.tamper(pack, meta={"apps_root": "../outside"})),
+            ("Windows drive apps_root (F1)", self.tamper(pack, meta={"apps_root": "C:/Windows"})),
+            ("absolute iso_root", self.tamper(pack, meta={"iso_root": str(outside)})),
+            ("app member with an absolute rest (F2)",
+             self.tamper(pack, add={f"stick/Apps/sysinternals/{outside}/evil.txt": b"x"})),
+            ("extra with an absolute rest (F3)", self.tamper(pack, add={f"stick/{outside}/evil.txt": b"x"})),
+            ("drive-qualified member", self.tamper(pack, add={"stick/C:/evil.txt": b"x"})),
+            ("app name that's a path", self.tamper(pack, meta={"apps": {"../outside": "1"}})),
+        ]:
+            with self.subTest(how):
+                shutil.rmtree(self.stick)
+                self.stick.mkdir()
+                with self.assertRaisesRegex(cr.RescueError, "refusing unsafe|refusing .* outside"):
+                    self.unpack(bad)
+                self.assertEqual(sorted(p.name for p in outside.iterdir()), ["sysinternals"], how)
+                self.assertEqual((outside / "sysinternals" / "keep.txt").read_text(), "mine", how)
+
+    def test_stick_state_cannot_delete_outside_the_stick(self):
+        # F7/F8: .helix-boot/state.json is on the stick, which gets plugged into infected PCs
+        self.fetch()
+        victim = self.tmp / "victim"
+        victim.mkdir()
+        (victim / "precious.txt").write_text("mine")
+        pack, _ = self.pack()
+        for how, run in [("sync (F7)", lambda: self.sync(init=False)), ("unpack (F8)", lambda: self.unpack(pack, init=False))]:
+            with self.subTest(how):
+                self.assertEqual(self.sync()[0], 0)
+                state_file = self.stick / cr.STATE_DIR / "state.json"
+                state = json.loads(state_file.read_text())
+                state["apps"].update({str(victim): "1", "../../victim": "1", "..": "1"})
+                state_file.write_text(json.dumps(state))
+                rc, out = run()
+                self.assertEqual(rc, 0, out)
+                self.assertIn("ignoring an app name", out)
+                self.assertEqual((victim / "precious.txt").read_text(), "mine")
+                self.assertNotIn(str(victim), json.loads(state_file.read_text())["apps"])
+
     def test_pack_without_ventoy(self):
         self.fetch("systemrescue")
         pack, log = self.pack()
@@ -1328,6 +1403,19 @@ class TestDownloadRetry(unittest.TestCase):
 
 
 class TestPortability(unittest.TestCase):
+    def test_github_token_only_goes_to_github(self):
+        # F6/F9: a scraped link to a look-alike host must not get the token
+        with unittest.mock.patch.dict(os.environ, {"GITHUB_TOKEN": "secret"}), \
+                unittest.mock.patch.object(cr, "GITHUB_API", "https://api.github.com"):
+            def auth(url):
+                req = cr._request(url)
+                return req.unredirected_hdrs.get("Authorization"), req.headers.get("Authorization")
+            self.assertEqual(auth("https://api.github.com/repos/a/b/releases/latest"), ("Bearer secret", None))
+            for url in ("https://api.github.com.evil.example/x.zip", "https://api.github.comevil.example/x",
+                        "http://api.github.com/repos/a/b", "https://evil.example/https://api.github.com/x",
+                        "https://api.github.com:444/repos/a/b", "https://user@evil.example/api.github.com"):
+                self.assertEqual(auth(url), (None, None), url)
+
     def test_powershell_with_non_ascii_text_has_a_bom(self):
         # Windows PowerShell 5.1 (Lazarus PE, the build VM) reads a .ps1 without a BOM as ANSI:
         # UTF-8 text turns into mojibake, and some of those bytes are quote characters to it.

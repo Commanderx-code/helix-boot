@@ -4,9 +4,9 @@ name: lazarus-launcher
 # Lazarus PE: checks how tools are found and sorted, and renders screenshots to look at.
 on:
   push:
-    paths: ["pe/lazarus/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
+    paths: ["pe/lazarus/**", "pe/launcher/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
   pull_request:
-    paths: ["pe/lazarus/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
+    paths: ["pe/lazarus/**", "pe/launcher/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
   workflow_dispatch:
 
 jobs:
@@ -15,6 +15,36 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+
+      - name: Stick detection (a tag planted on the PC's own disks must not win)
+        shell: powershell
+        run: |
+          $base = "$env:RUNNER_TEMP\find"
+          # P: the tag is a folder; Q: a tag file, but on a drive holding Windows; R: a real stick
+          New-Item -ItemType Directory -Force "$base\p\helix-boot.tag", "$base\q\Windows\System32\config", "$base\r\Apps" | Out-Null
+          Set-Content "$base\q\helix-boot.tag" 'tag'
+          Set-Content "$base\q\Windows\System32\config\SYSTEM" 'hive'
+          Set-Content "$base\r\helix-boot.tag" 'tag'
+          Set-Content "$base\r\Apps\LazarusStartup.cmd" "@echo %~1> `"$base\started-from.txt`""
+          subst P: "$base\p"; subst Q: "$base\q"; subst R: "$base\r"
+          $find = (Resolve-Path pe\launcher\FindStick.ps1).Path
+          function Check($want, $got, $what) { if ("$got" -ne $want) { throw "${what}: wanted '$want', got '$got'" } }
+          Check 'R:' (& $find -Letters P, Q, R -BusOf @{ P = 'USB'; Q = 'USB'; R = 'USB' }) 'USB drives with decoys'
+          Check ''   (& $find -Letters P, Q, R -BusOf @{ P = 'USB'; Q = 'USB'; R = 'NVMe' }) 'tagged internal disk'
+          Check 'R:' (& $find -Letters P, Q, R -BusOf @{}) 'no bus information'
+          Check ''   (& $find -Letters P, Q, R) "the runner's own bus information (subst drives aren't USB)"
+
+          # The PE's startup helper, for real: with FindStick, a tagged drive that isn't USB is not run
+          $spa = Resolve-Path pe\launcher\StartPortableApps.cmd
+          cmd /c "$spa"
+          if (Test-Path "$base\started-from.txt") { throw "StartPortableApps.cmd ran a script from a non-USB drive" }
+          # ...and without PowerShell's help (no FindStick.ps1 beside it), the fallback skips both decoys
+          New-Item -ItemType Directory -Force "$base\bare" | Out-Null
+          Copy-Item $spa "$base\bare\"
+          cmd /c "$base\bare\StartPortableApps.cmd"
+          Check 'R:' ((Get-Content "$base\started-from.txt" -ErrorAction SilentlyContinue) -join '').Trim() 'fallback scan'
+          subst P: /d; subst Q: /d; subst R: /d
+          'stick detection ok'
 
       - name: Stand-in stick
         shell: powershell

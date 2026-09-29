@@ -16,6 +16,27 @@ tagged releases also publish the Windows app.
   renders screenshots at six screen sizes.
 - Descriptions for every app in `tools.toml`, carried in `Apps\apps.txt`.
 
+### Security
+Fixes from a Claude Security audit of the whole repository (10 findings, each
+now covered by a test that failed before the fix):
+- **Stick detection** (Lazarus PE's startup and the Helix Apps menu): a tag file
+  on any drive was enough to be treated as the stick, so the PC being repaired
+  could plant `C:\helix-boot.tag` and a script Lazarus PE would run as SYSTEM.
+  The stick is now a USB/SD disk whose tag is a file and that holds no Windows
+  (`pe/launcher/FindStick.ps1`); Helix Apps run from the stick uses its own
+  drive. The Lazarus PE side takes effect with the next PE build.
+- **Packs and stick state**: paths read from a pack (`apps_root`, `iso_root`,
+  member names) or from a stick's `.helix-boot/state.json` (app names) could
+  point outside the stick, so a crafted pack or a tampered stick could write or
+  delete files elsewhere. Every such path is now checked to stay on the stick.
+- **GitHub token**: sent only to the GitHub API host itself (it went to any URL
+  starting with `https://api.github.com`, e.g. a look-alike host in a scraped
+  link), and never carried over a redirect.
+- **SourceForge downloads**: the MD5 SourceForge publishes must now agree too,
+  since checksum files next to a download come from the same mirrors.
+- `Apply-HelixPreset.ps1` is saved with a BOM, which Windows PowerShell 5.1
+  needs for its non-ASCII text.
+
 ### Changed
 - Documentation brought up to date: real Ventoy screenshots of the Helix Neon
   menu, Lazarus PE's startup and look, the launcher, and packs on Windows.

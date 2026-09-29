@@ -1,15 +1,33 @@
 @echo off
 rem Helix Boot - portable app launcher for WinPE.
-rem Finds the USB (by helix-boot.tag, or commander-rescue.tag on older sticks), reads
-rem Apps\apps.txt and offers a menu.
+rem Finds the USB (a USB/SD disk with helix-boot.tag, or commander-rescue.tag on older
+rem sticks, and no Windows on it), reads Apps\apps.txt and offers a menu.
 rem Works in Lazarus PE, Hiren's, or plain Windows.
 setlocal EnableDelayedExpansion
 title Helix Boot - Apps
 
+rem Which drive is the stick. Run from the stick itself (USB:\Apps\), it's this drive.
+rem Otherwise (the copy built into Lazarus PE) it's found as StartPortableApps.cmd does,
+rem never by a tag alone: the PC being repaired could plant one on its own disks.
 set "CR="
-for %%D in (C D E F G H I J K L M N O P Q R S T U V W Y Z) do (
-  if not defined CR if exist "%%D:\helix-boot.tag" set "CR=%%D:"
-  if not defined CR if exist "%%D:\commander-rescue.tag" set "CR=%%D:"
+if /i "%~p0"=="\Apps\" (
+  for %%G in (helix-boot.tag commander-rescue.tag) do (
+    if exist "%~d0\%%G" if not exist "%~d0\%%G\" set "CR=%~d0"
+  )
+)
+set "FIND=%~dp0FindStick.ps1"
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+set "USEPS="
+if exist "%FIND%" if exist "%PS%" set "USEPS=1"
+if not defined CR if defined USEPS (
+  for /f "delims=" %%S in ('%PS% -NoProfile -ExecutionPolicy Bypass -File "%FIND%"') do set "CR=%%S"
+)
+if not defined CR if not defined USEPS (
+  for %%D in (C D E F G H I J K L M N O P Q R S T U V W Y Z) do if not defined CR (
+    for %%G in (helix-boot.tag commander-rescue.tag) do if not defined CR (
+      if exist "%%D:\%%G" if not exist "%%D:\%%G\" if not exist "%%D:\Windows\System32\config\SYSTEM" set "CR=%%D:"
+    )
+  )
 )
 if not defined CR (
   echo.
