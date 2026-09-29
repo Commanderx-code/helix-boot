@@ -455,7 +455,6 @@ class TestFetchAndSync(Base):
         state_file = self.stick / ".helix-boot/state.json"
         state = json.loads(state_file.read_text())
         del state["images"]
-        state["synced"] = "2000-01-01T00:00:00"
         state_file.write_text(json.dumps(state))
         pe.write_bytes(b"winpe-3")
         self.fetch("lazarus-pe")

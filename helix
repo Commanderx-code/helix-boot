@@ -1389,10 +1389,6 @@ def cmd_sync(cfg: Config, args) -> int:
     # ISOs round to whole sectors, so a rebuilt Lazarus PE is often exactly as big as the last.
     recorded = state.get("images", {})
     images: dict[str, str] = {}
-    try:
-        synced_at = dt.datetime.fromisoformat(state["synced"]).timestamp()
-    except (KeyError, TypeError, ValueError):
-        synced_at = None
     for n, p in enumerate(placed, 1):
         dst = mnt / p["rel"]
         old = moved_from.get(p["file"])
@@ -1413,8 +1409,8 @@ def cmd_sync(cfg: Config, args) -> int:
                 same = file_hash(dst) == p["sha256"]
             elif p["rel"] in recorded:
                 same = recorded[p["rel"]] == p["sha256"]
-            elif p["local"] and (synced_at is None or p["src"].stat().st_mtime > synced_at):
-                same = file_hash(dst) == p["sha256"]    # rebuilt since a sync that kept no record
+            elif p["local"]:    # no record yet (an older stick): a local build may have been rebuilt
+                same = file_hash(dst) == p["sha256"]
         if same:
             images[p["rel"]] = p["sha256"]
             ok(f"{p['title']} {p['version']} — already on stick")
