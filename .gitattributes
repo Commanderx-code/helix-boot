@@ -3,4 +3,5 @@
 crescue text eol=lf
 *.script text eol=crlf
 *.ps1  text eol=crlf
-portableapps/settings/*.ini binary   # UTF-16, exactly as the Platform writes it
+# UTF-16, exactly as the PortableApps.com Platform writes it
+portableapps/settings/*.ini binary
