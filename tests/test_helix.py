@@ -443,6 +443,27 @@ class TestFetchAndSync(Base):
             cr.cmd_sync(self.cfg, type("A", (), dict(target=str(self.stick), init=False, dry_run=False,
                                                      verify=False, no_prune=False))())
 
+    def test_user_category_is_labelled_even_without_tools(self):
+        with open(self.repo / "tools.toml", "a") as f:
+            f.write('\n[[category]]\nid = "images"\ndir = "OSimages"\ntitle = "OS Images"\n'
+                    'description = "Installers you add yourself."\nuser = true\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("systemrescue")
+        mine = self.stick / "ISO/OSimages/Win11.iso"
+        mine.parent.mkdir(parents=True)
+        mine.write_bytes(b"mine")
+        for _ in range(2):                                          # second sync: nothing of yours pruned
+            rc, out = self.sync(init=_ == 0)
+            self.assertEqual(rc, 0, out)
+        vj = json.loads((self.stick / "ventoy/ventoy.json").read_text())
+        aliases = {a.get("dir") or a.get("image"): a["alias"] for a in vj["menu_alias"]}
+        self.assertEqual(aliases["/ISO/OSimages"], "OS Images  →")
+        tips = {t.get("dir") or t.get("image"): t["tip"] for t in vj["menu_tip"]["tips"]}
+        self.assertEqual(tips["/ISO/OSimages"], "Installers you add yourself.")
+        self.assertIn(b"stays hidden", (self.stick / "ISO/OSimages/README.txt").read_bytes())
+        self.assertEqual(mine.read_bytes(), b"mine")
+        self.assertNotIn("/ISO/1-Windows-PE", aliases)             # ordinary empty categories still hidden
+
     def test_existing_ventoy_json_is_backed_up(self):
         self.fetch("systemrescue")
         (self.stick / "ventoy").mkdir()

@@ -908,7 +908,7 @@ def _icons(cfg: Config) -> set[str]:
 
 def build_ventoy_json(cfg: Config, placed: list[dict], icons: set[str] = frozenset()) -> dict:
     alias, tips, classes, keys = [], [], [], []
-    used = {p["category"] for p in placed}
+    used = {p["category"] for p in placed} | {cid for cid, c in cfg.categories.items() if c.get("user")}
     for cid, c in cfg.categories.items():
         if cid in used:
             path = f"/{cfg.iso_root}/{c['dir']}"
@@ -1260,6 +1260,13 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
     """The small files that go with the boot images: app launcher, theme, boot menu and
     `kind = "file"` tools such as Ventoy's wimboot plugin."""
     out: list[tuple[str, Path | bytes]] = []
+    for c in cfg.categories.values():   # your own folders: a note in each, and a new stick has them too
+        if c.get("user"):
+            out.append((f"{cfg.iso_root}/{c['dir']}/README.txt", (
+                f"{c['title']}: {c.get('description', '')}\r\n\r\n"
+                "Put bootable images (.iso, .wim, .img, .vhd) here. The folder shows up in the\r\n"
+                "boot menu as soon as it holds one; until then it stays hidden. Helix Boot never\r\n"
+                "changes or removes anything in it except this note.\r\n").encode("utf-8")))
     lock = load_lock(cfg)
     for t in cfg.enabled(kinds={"file"}):
         entry = lock.get(t["name"])

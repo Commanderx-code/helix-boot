@@ -112,6 +112,16 @@ dir = "9-Windows-Recovery"
 title = "Windows Recovery"
 description = "Windows setup, repair and recovery environments."
 
+# Your own folder for OS installers (Windows, Linux...): drop ISOs into ISO/OSimages on
+# the stick, e.g. with a downloader kept there. `user = true`: it's always in the menu
+# config, and Ventoy shows it only once it holds a bootable image.
+[[category]]
+id = "images"
+dir = "OSimages"
+title = "OS Images"
+description = "Windows and Linux installers you add yourself."
+user = true
+
 # ── Boot loader ───────────────────────────────────────────────────────────
 [[tool]]
 name = "ventoy"

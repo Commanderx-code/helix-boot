@@ -23,6 +23,10 @@ tagged releases also publish the Windows app.
   existing build VM keeps its name and folder.
 
 ### Added
+- **OS Images** (`ISO/OSimages`): your own folder for Windows and Linux
+  installers. It has a menu name, tip and disc icon, Helix Boot never changes
+  what you put there, and Ventoy only shows it once it holds a bootable image.
+  Categories with `user = true` in `tools.toml` behave this way.
 - Curated tool icons preserve product colours and proportions across theme
   rebuilds: 17 project/product marks, six publisher marks, two Windows logos
   from Wikimedia Commons and the custom Lazarus phoenix. MemTest86 Free and

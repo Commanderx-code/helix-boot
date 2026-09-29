@@ -92,6 +92,7 @@ too: Ventoy's wimboot plugin comes with the stick.
 | Partition Tools | GParted Live | SourceForge · sha512 |
 | Password Removal | *bring your own* (e.g. Jayro's Lockpick) | [`byo/`](byo/README.md) |
 | Windows Recovery | *bring your own* (Windows 10/11 setup, DaRT) | [`byo/`](byo/README.md) |
+| OS Images | *yours*: drop Windows or Linux installer ISOs into `ISO/OSimages` on the stick | shown once it holds an image |
 
 **Portable apps** for any Windows PE, in `USB:\Apps` with a menu launcher:
 Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO,
@@ -323,6 +324,7 @@ category icon. For Ventoy's stock look, set `theme = ""` under `[settings]`.
 ISO/1-Antivirus/  ISO/2-Backup-and-Recovery/  ISO/3-Boot-Repair/
 ISO/4-Diagnostic-Tools/  ISO/5-Disk-Wipe/  ISO/6-Live-Operating-Systems/
 ISO/7-Partition-Tools/  ISO/8-Password-Removal/  ISO/9-Windows-Recovery/
+ISO/OSimages/       your own installer ISOs (never touched; hidden while empty)
 Apps/               portable apps + HelixApps.cmd launcher
 ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 .helix-boot/        sync state (which files this project manages)

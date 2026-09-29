@@ -41,7 +41,7 @@ SS = 8                        # draw icons this many times larger, then scale do
 # Category tile colours, by [[category]] id in tools.toml
 CATEGORY_COLOURS = dict.fromkeys((
     "antivirus", "imaging", "boot-repair", "diagnostics", "wipe", "live",
-    "partitioning", "password", "windows",
+    "partitioning", "password", "windows", "images",
 ), CYAN)
 
 # Badge text for tools whose initials don't read well; the rest use their title's initials.
@@ -216,6 +216,12 @@ def glyph(cid: str, pen: Pen, fg, bg) -> None:
         d.rectangle(xy(.44, .43, .86, .5), fill=fg)
         d.rectangle(xy(.7, .5, .76, .62), fill=fg)
         d.rectangle(xy(.8, .5, .86, .58), fill=fg)
+    elif cid == "images":       # disc with a download arrow
+        d.ellipse(xy(.14, .14, .76, .76), outline=fg, width=w(.07))
+        d.ellipse(xy(.37, .37, .53, .53), fill=fg)
+        d.ellipse(xy(.56, .56, .9, .9), fill=bg)
+        d.line(xy(.73, .6, .73, .8), fill=fg, width=w(.07))
+        d.polygon(xy(.63, .74, .83, .74, .73, .87), fill=fg)
     elif cid == "windows":      # window with a restore arrow
         d.rounded_rectangle(xy(.16, .2, .84, .8), radius=w(.05), outline=fg, width=w(.06))
         d.rectangle(xy(.16, .2, .84, .33), fill=fg)
