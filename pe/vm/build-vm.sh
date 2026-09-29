@@ -91,6 +91,13 @@ push() {
     drivers=$(find "$DIR/drivers/x64" -mindepth 1 -maxdepth 1 -printf '%f ' | sed 's/ $//')
     step3b='   Drivers > Driver Integration: tick it and set "x64 Drivers" to D:\drivers\x64'
   fi
+  # Anything else for the build (a wallpaper image, ...) rides along from $DIR/extra
+  mdeltree -i "$M" ::/extra 2>/dev/null || true
+  local extra=''
+  if [[ -d $DIR/extra ]] && [[ -n $(ls -A "$DIR/extra") ]]; then
+    mcopy -i "$M" -s -m "$DIR/extra" ::/
+    extra=$(find "$DIR/extra" -mindepth 1 -maxdepth 1 -printf '%f ' | sed 's/ $//')
+  fi
   printf '%s\r\n' \
     'Commander Rescue transfer disk' \
     '' \
@@ -106,10 +113,12 @@ push() {
     '   drive root, base image 2, the Pro edition, "Run all programs from RAM" NOT ticked.' \
     "$step3b" \
     '   Then Build.' \
+    '   (Files for the build, e.g. a wallpaper image for Tweaks > Wallpaper > Use Custom' \
+    '    Wallpaper, are in D:\extra.)' \
     '4. Copy the finished .iso into the out folder on this disk, then shut Windows down.' \
     '5. On Linux: pe/vm/build-vm.sh pull' > "$DIR/README.txt"
   mcopy -i "$M" -o "$DIR/README.txt" ::/README.txt
-  ok "transfer disk updated (commander\\, README.txt${pe_zip:+, $pe_zip}${drivers:+, drivers: $drivers})"
+  ok "transfer disk updated (commander\\, README.txt${pe_zip:+, $pe_zip}${drivers:+, drivers: $drivers}${extra:+, extra: $extra})"
 }
 
 case ${1:-} in

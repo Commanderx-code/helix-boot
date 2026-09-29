@@ -839,6 +839,21 @@ class TestPack(Base):
         self.assertEqual((other / "PortableApps/PortableApps.com/App/Graphics/Themes/Helix Teal/PATheme.ini")
                          .read_text(), "[ThemeDetails]\nName=Helix Teal\n")
 
+    def test_ventoy_mode_goes_into_the_file_name(self):
+        self.fetch()
+        self.assertEqual(self.sync()[0], 0)
+        (self.repo / "local.toml").write_text('[overrides.systemrescue]\nventoy_mode = "wimboot"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.assertEqual(self.sync()[0], 0)
+        rescue = self.stick / "ISO/2-Rescue"
+        self.assertEqual(sorted(f.name for f in rescue.iterdir()), ["systemrescue-12.02-amd64_VTWIMBOOT.iso"])
+        menu = json.loads((self.stick / "ventoy/ventoy.json").read_text())
+        self.assertIn({"image": "/ISO/2-Rescue/systemrescue-12.02-amd64_VTWIMBOOT.iso", "alias": "SystemRescue"},
+                      menu["menu_alias"])
+        (self.repo / "local.toml").write_text('[overrides.systemrescue]\nventoy_mode = "fast"\n')
+        with self.assertRaisesRegex(cr.RescueError, "ventoy_mode must be one of"):
+            cr.Config(repo=self.repo)
+
     def test_local_tree_seeds_settings_once(self):
         seed = self.repo / "seed"
         seed.mkdir()

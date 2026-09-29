@@ -144,6 +144,8 @@ class Config:
             raise RescueError(f"{where} is defined twice")
         if t.get("kind") not in KINDS:
             raise RescueError(f"{where}: kind must be one of {sorted(KINDS)}")
+        if t.get("ventoy_mode") and t.get("ventoy_mode") not in VENTOY_MODES:
+            raise RescueError(f"{where}: ventoy_mode must be one of {sorted(VENTOY_MODES)}")
         if t["kind"] == "file":
             dest = t.get("dest") or ""
             if not dest or dest.startswith("/") or ".." in dest.split("/"):
@@ -1046,6 +1048,18 @@ def _boot_modes(path: Path) -> set[str] | None:
         return None
 
 
+VENTOY_MODES = {"wimboot": "_VTWIMBOOT", "grub2": "_VTGRUB2", "memdisk": "_VTMEMDISK"}
+
+
+def _stick_name(file: str, mode: str | None) -> str:
+    """The file's name on the stick. Ventoy boots a file whose name ends in _VTWIMBOOT,
+    _VTGRUB2 or _VTMEMDISK (before the extension) in that mode, with no key press."""
+    if not mode:
+        return file
+    stem, dot, ext = file.rpartition(".")
+    return f"{stem}{VENTOY_MODES[mode]}.{ext}" if dot else file + VENTOY_MODES[mode]
+
+
 def _plan(cfg: Config, lock: dict) -> tuple[list[dict], list[tuple], list[str]]:
     """What belongs on the stick: (boot images, apps, titles of tools not fetched yet)."""
     placed, missing = [], []
@@ -1058,8 +1072,9 @@ def _plan(cfg: Config, lock: dict) -> tuple[list[dict], list[tuple], list[str]]:
         if not src or not src.exists():
             missing.append(t["title"])
             continue
-        rel = f"{cfg.iso_root}/{cfg.categories[t['category']]['dir']}/{src.name}"
-        placed.append({"rel": rel, "src": src, "file": src.name, "title": t["title"], "name": t["name"],
+        name = _stick_name(src.name, t.get("ventoy_mode"))
+        rel = f"{cfg.iso_root}/{cfg.categories[t['category']]['dir']}/{name}"
+        placed.append({"rel": rel, "src": src, "file": name, "title": t["title"], "name": t["name"],
                        "version": entry["version"], "category": t["category"],
                        "description": t.get("description"), "sha256": entry.get("sha256"),
                        "local": t["source"] == "local", "modes": _boot_modes(src)})

@@ -1,10 +1,16 @@
 @echo off
 rem Commander Rescue - start the PortableApps.com Platform from the USB, if it's there.
-rem Lazarus PE runs this at startup; it also works from plain Windows.
+rem Lazarus PE runs this at startup; it also works from plain Windows. If the stick
+rem has Apps\LazarusStartup.cmd, that runs instead.
 setlocal EnableDelayedExpansion
 rem The USB can take a few seconds to get a drive letter after the desktop loads.
 for /l %%T in (1,1,15) do (
   for %%D in (C D E F G H I J K L M N O P Q R S T U V W Y Z) do (
+    rem The stick's own startup script wins: it changes with refresh.sh, no PE rebuild
+    if exist "%%D:\commander-rescue.tag" if exist "%%D:\Apps\LazarusStartup.cmd" (
+      call "%%D:\Apps\LazarusStartup.cmd" %%D:
+      exit /b 0
+    )
     if exist "%%D:\commander-rescue.tag" if exist "%%D:\Start.exe" (
       start "" /d "%%D:\" "%%D:\Start.exe"
       exit /b 0

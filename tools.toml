@@ -47,6 +47,7 @@
 #                                  so record ours and warn if it ever changes
 #                                  without a version bump
 #   user_agent  "browser" for sites that refuse anything but a browser (pages and hashes)
+#   ventoy_mode "wimboot" | "grub2" | "memdisk": always boot this image in that Ventoy mode
 #   description short tip shown at the bottom of the Ventoy menu
 
 [settings]
@@ -298,6 +299,7 @@ kind = "iso"
 category = "antivirus"
 source = "url"
 url = "https://download.geo.drweb.com/pub/drweb/livedisk/drweb-livedisk-900-cd.iso"
+ventoy_mode = "wimboot"     # only boots from Ventoy in WIMBOOT mode
 checksum = ["tofu"]
 description = "Second-opinion offline malware scanner. Free."
 

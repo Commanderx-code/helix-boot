@@ -5,6 +5,16 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- `ventoy_mode = "wimboot" | "grub2" | "memdisk"` boots an image in that
+  Ventoy mode every time (it's written into the file name on the stick). Dr.Web
+  LiveDisk now always boots in WIMBOOT mode, the one that works for it.
+- Lazarus PE's startup helper hands over to `Apps\LazarusStartup.cmd` on the
+  stick (from the next PE build), so what happens at startup changes with a
+  refresh instead of a PE rebuild.
+- `build-vm.sh push` carries `vm/extra/` (e.g. a wallpaper image) to the
+  transfer disk.
+
 ## [0.4.0] - 2026-09-28
 
 ### Added
