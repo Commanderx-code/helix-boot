@@ -1262,7 +1262,7 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
     out: list[tuple[str, Path | bytes]] = []
     for c in cfg.categories.values():   # your own folders: a note in each, and a new stick has them too
         if c.get("user"):
-            out.append((f"{cfg.iso_root}/{c['dir']}/README.txt", (
+            out.append((f"{cfg.iso_root}/{c['dir']}/HELIX-BOOT.txt", (
                 f"{c['title']}: {c.get('description', '')}\r\n\r\n"
                 "Put bootable images (.iso, .wim, .img, .vhd) here. The folder shows up in the\r\n"
                 "boot menu as soon as it holds one; until then it stays hidden. Helix Boot never\r\n"

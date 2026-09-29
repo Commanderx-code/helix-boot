@@ -452,6 +452,7 @@ class TestFetchAndSync(Base):
         mine = self.stick / "ISO/OSimages/Win11.iso"
         mine.parent.mkdir(parents=True)
         mine.write_bytes(b"mine")
+        (self.stick / "ISO/OSimages/ReadMe.txt").write_bytes(b"your notes")   # FAT ignores case: keep off it
         for _ in range(2):                                          # second sync: nothing of yours pruned
             rc, out = self.sync(init=_ == 0)
             self.assertEqual(rc, 0, out)
@@ -460,8 +461,9 @@ class TestFetchAndSync(Base):
         self.assertEqual(aliases["/ISO/OSimages"], "OS Images  →")
         tips = {t.get("dir") or t.get("image"): t["tip"] for t in vj["menu_tip"]["tips"]}
         self.assertEqual(tips["/ISO/OSimages"], "Installers you add yourself.")
-        self.assertIn(b"stays hidden", (self.stick / "ISO/OSimages/README.txt").read_bytes())
+        self.assertIn(b"stays hidden", (self.stick / "ISO/OSimages/HELIX-BOOT.txt").read_bytes())
         self.assertEqual(mine.read_bytes(), b"mine")
+        self.assertEqual((self.stick / "ISO/OSimages/ReadMe.txt").read_bytes(), b"your notes")
         self.assertNotIn("/ISO/1-Windows-PE", aliases)             # ordinary empty categories still hidden
 
     def test_existing_ventoy_json_is_backed_up(self):
