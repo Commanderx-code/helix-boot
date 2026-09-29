@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""crescue — build and refresh the Commander Rescue USB.
+"""helix — build and refresh the Helix Boot USB.
 
 Resolves the newest upstream release of every tool in tools.toml, downloads and
 verifies it into a local cache, then syncs the cache onto a Ventoy stick with a
@@ -30,18 +30,21 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 if sys.version_info < (3, 11):
-    sys.exit("✗ crescue needs Python 3.11 or newer (for tomllib).")
+    sys.exit("✗ helix needs Python 3.11 or newer (for tomllib).")
 import tomllib  # noqa: E402
 
 __version__ = "0.4.0"
 
 REPO = Path(__file__).resolve().parent
-GITHUB_API = os.environ.get("CRESCUE_GITHUB_API", "https://api.github.com")
-SF_RSS = os.environ.get(
-    "CRESCUE_SF_RSS", "https://sourceforge.net/projects/{project}/rss?path={path}"  # SourceForge rejects limit > 100
-)
-SF_DL = os.environ.get("CRESCUE_SF_DL", "https://downloads.sourceforge.net/project/{project}{path}")
-USER_AGENT = f"commander-rescue/{__version__} (+https://github.com/Commanderx-code/commander-rescue)"
+def _env(name: str, default: str | None = None) -> str | None:
+    """HELIX_<name>, or the CRESCUE_<name> it was called before the rename to Helix Boot."""
+    return os.environ.get(f"HELIX_{name}") or os.environ.get(f"CRESCUE_{name}") or default
+
+
+GITHUB_API = _env("GITHUB_API", "https://api.github.com")
+SF_RSS = _env("SF_RSS", "https://sourceforge.net/projects/{project}/rss?path={path}")  # SourceForge rejects limit > 100
+SF_DL = _env("SF_DL", "https://downloads.sourceforge.net/project/{project}{path}")
+USER_AGENT = f"helix-boot/{__version__} (+https://github.com/Commanderx-code/helix-boot)"
 # For the few sites that turn away anything but a browser (`user_agent = "browser"` on a tool)
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 KINDS = {"iso", "app", "ventoy", "file", "tree"}
@@ -49,8 +52,13 @@ SOURCES = {"github": ["repo"], "sourceforge": ["project", "path"], "url": ["url"
            "local": ["path"]}
 HASH_BY_LEN = {32: "md5", 40: "sha1", 64: "sha256", 128: "sha512"}
 STRENGTH = {"md5": 1, "sha1": 2, "sha256": 3, "sha512": 4}
-STATE_DIR = ".commander-rescue"
-TAG_FILE = "commander-rescue.tag"
+STATE_DIR = ".helix-boot"
+TAG_FILE = "helix-boot.tag"
+# Before the rename to Helix Boot: still written or read, so older sticks, launchers and
+# Lazarus PE builds keep working
+OLD_STATE_DIR = ".commander-rescue"
+OLD_TAG_FILE = "commander-rescue.tag"
+OLD_CACHE = "~/.cache/commander-rescue"
 # Category ids from before the MediCat-style menu; local.toml entries using them keep working.
 OLD_CATEGORIES = {"windows-pe": "live", "rescue": "live"}
 
@@ -130,10 +138,12 @@ class Config:
         if unknown:
             raise RescueError(f"local.toml overrides unknown tool(s): {', '.join(sorted(unknown))}")
 
-        cache = os.environ.get("CRESCUE_CACHE") or self.settings.get(
-            "cache_dir", "~/.cache/commander-rescue"
-        )
+        cache = _env("CACHE") or self.settings.get("cache_dir", "~/.cache/helix-boot")
         self.cache = Path(cache).expanduser()
+        old = Path(OLD_CACHE).expanduser()
+        if not self.cache.exists() and old.is_dir() and self.cache.name == "helix-boot":
+            self.cache.parent.mkdir(parents=True, exist_ok=True)
+            os.rename(old, self.cache)          # renamed with the project: move it over, don't re-download
         self.iso_root = self.settings.get("iso_root", "ISO")
         self.apps_root = self.settings.get("apps_root", "Apps")
 
@@ -190,7 +200,7 @@ class Config:
             known = {t["name"] for t in self.tools}
             missing = [n for n in names if n not in known]
             if missing:
-                raise RescueError(f"unknown tool(s): {', '.join(missing)} (see `crescue list`)")
+                raise RescueError(f"unknown tool(s): {', '.join(missing)} (see `helix list`)")
             picked = [t for t in self.tools if t["name"] in names]
         else:
             picked = [t for t in self.tools if t.get("enabled", True)]
@@ -909,7 +919,7 @@ def build_ventoy_json(cfg: Config, placed: list[dict], icons: set[str] = frozens
     for p in placed:
         img = f"/{cfg.iso_root}/{cfg.categories[p['category']]['dir']}/{p['file']}"
         only = {frozenset({"bios"}): "  [BIOS]", frozenset({"uefi"}): "  [UEFI]"}.get(frozenset(p.get("modes") or ()), "")
-        alias.append({"image": img, "alias": f"{p['title']}{only}"})  # versions: `crescue list` / `check`
+        alias.append({"image": img, "alias": f"{p['title']}{only}"})  # versions: `helix list` / `check`
         if p.get("description"):
             tips.append({"image": img, "tip": p["description"]})
         # Ventoy matches "key" as a substring that must be shorter than the file name, so
@@ -1109,11 +1119,12 @@ def _trees(cfg: Config, lock: dict) -> list[tuple[dict, dict, Path]]:
         if src and src.is_dir():
             out.append((t, entry, src))
         else:
-            warn(f"{t['title']}: not fetched yet — run `crescue fetch` (skipping)")
+            warn(f"{t['title']}: not fetched yet — run `helix fetch` (skipping)")
     return out
 
 
-PA_MARK = b"Commander Rescue: restyled"     # in every image we write, so a patched file is recognised
+PA_MARK = b"Helix Boot: restyled"     # in every image we write, so a patched file is recognised
+PA_MARKS = (b"Helix Boot:", b"Commander Rescue:")      # this one and the one from before the rename
 
 
 def _png_chunk(kind: bytes, data: bytes) -> bytes:
@@ -1215,7 +1226,7 @@ def _restyle_platform(exe: Path, backup: Path, recolor: dict | None = None) -> s
     missing = sorted(set(recolor or {}) - set(slots))
     if not changed:
         return "already"
-    if b"Commander Rescue:" not in orig:                     # keep the untouched original, not a patched one
+    if not any(mark in orig for mark in PA_MARKS):           # keep the untouched original, not a patched one
         backup.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(exe, backup)
     tmp = exe.with_name(exe.name + ".part")
@@ -1257,7 +1268,7 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
             out += [(f"{t['dest']}/{f.relative_to(src).as_posix()}", f)
                     for f in sorted(src.rglob("*")) if f.is_file()]
         else:
-            warn(f"{t['title']}: not fetched yet — run `crescue fetch` (skipping)")
+            warn(f"{t['title']}: not fetched yet — run `helix fetch` (skipping)")
     # PE launcher index: "Title|relative\path\to.exe" per line (easy to parse from cmd.exe)
     lines = [f"{t['title']}|{t['name']}\\{t.get('entry', '').replace('/', chr(92))}"
              for t, _, _ in apps if t.get("entry")]
@@ -1289,6 +1300,8 @@ def _open_stick(mnt: Path, init: bool) -> tuple[Path, dict]:
     if not mnt.is_dir():
         raise RescueError(f"{mnt} isn't a mounted folder. Plug the stick in and pass its mount point.")
     state_dir = mnt / STATE_DIR
+    if not state_dir.exists() and (mnt / OLD_STATE_DIR).is_dir():
+        os.rename(mnt / OLD_STATE_DIR, state_dir)          # a stick from before the rename to Helix Boot
     if not state_dir.exists():
         label = _label_of(mnt)
         if not init and label != "Ventoy":
@@ -1337,12 +1350,13 @@ def _write_extras(mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]]
 
 
 def _finish(mnt: Path, state_dir: Path, files: set[str], app_state: dict, vjson: Path, extra: dict) -> None:
-    (mnt / TAG_FILE).write_text(f"Commander Rescue {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n",
-                                encoding="utf-8")
+    tag = f"Helix Boot {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n"
+    for name in (TAG_FILE, OLD_TAG_FILE):                    # the old name for older launchers and PEs
+        (mnt / name).write_text(tag, encoding="utf-8")
     state_dir.mkdir(exist_ok=True)
     (state_dir / "state.json").write_text(json.dumps({
         "files": sorted(files), "apps": app_state, "ventoy_json_sha": file_hash(vjson),
-        "synced": dt.datetime.now().isoformat(timespec="seconds"), "crescue": __version__, **extra,
+        "synced": dt.datetime.now().isoformat(timespec="seconds"), "helix": __version__, **extra,
     }, indent=2) + "\n", encoding="utf-8")
     info("flushing writes to the stick…")
     _flush_volume(mnt)
@@ -1354,7 +1368,7 @@ def cmd_sync(cfg: Config, args) -> int:
     placed, apps, missing = _plan(cfg, load_lock(cfg))
     want_files = {p["rel"] for p in placed}
     for m in missing:
-        warn(f"{m}: not fetched yet — run `crescue fetch` (skipping)")
+        warn(f"{m}: not fetched yet — run `helix fetch` (skipping)")
 
     stale = [f for f in state.get("files", []) if f not in want_files]
     head(f"Syncing to {mnt}{'  (dry run)' if args.dry_run else ''}")
@@ -1468,14 +1482,15 @@ def cmd_sync(cfg: Config, args) -> int:
 # Ventoy and this project's own installer (under installer/), and PACK_META, which lists
 # every boot image with its sha256. `unpack` streams it onto a stick, so no downloads are
 # needed, and the bundled installer means the zip is all another machine needs.
-PACK_META = "commander-rescue-pack.json"
+PACK_META = "helix-boot-pack.json"
+OLD_PACK_META = "commander-rescue-pack.json"   # packs made before the rename
 PACK_FORMAT = 1
-BUNDLED = ["crescue", "tools.toml", "install.sh", "refresh.sh", "scripts/common.sh", "LICENSE"]
+BUNDLED = ["helix", "tools.toml", "install.sh", "refresh.sh", "scripts/common.sh", "LICENSE"]
 BUNDLED_MARK = "installer/.bundled"   # tells install.sh / refresh.sh to look for the pack beside them
-BUNDLED_README = """Commander Rescue pack
-=====================
+BUNDLED_README = """Helix Boot pack
+===============
 
-Everything for a Commander Rescue USB stick, including your own tools. Keep it private.
+Everything for a Helix Boot USB stick, including your own tools. Keep it private.
 
 On any Linux PC with Python 3.11+, unzip just the installer (a few MB) next to this zip:
 
@@ -1485,7 +1500,7 @@ New stick (ERASES it; you choose the stick and confirm):
 
     installer/install.sh
 
-Update a stick already made with Commander Rescue:
+Update a stick already made with Helix Boot:
 
     installer/refresh.sh
 
@@ -1510,10 +1525,10 @@ def cmd_pack(cfg: Config, args) -> int:
     lock = load_lock(cfg)
     placed, apps, missing = _plan(cfg, lock)
     for m in missing:
-        warn(f"{m}: not fetched yet — run `crescue fetch` (leaving it out of the pack)")
+        warn(f"{m}: not fetched yet — run `helix fetch` (leaving it out of the pack)")
     if not placed:
-        raise RescueError("nothing to pack yet — run `crescue fetch` first")
-    out = Path(args.output or f"commander-rescue-{dt.date.today().isoformat()}.zip").expanduser().resolve()
+        raise RescueError("nothing to pack yet — run `helix fetch` first")
+    out = Path(args.output or f"helix-boot-{dt.date.today().isoformat()}.zip").expanduser().resolve()
     if out.suffix.lower() != ".zip":
         raise RescueError(f"{out.name}: a pack must end in .zip")
 
@@ -1522,7 +1537,7 @@ def cmd_pack(cfg: Config, args) -> int:
     vsrc = cfg.cache / vt["name"] / ventry["source_file"] if ventry and ventry.get("source_file") else None
     if not vsrc or not vsrc.is_file():
         warn("Ventoy isn't fetched, so this pack can refresh a stick but not set up a new one "
-             "(`crescue fetch ventoy` fixes that)")
+             "(`helix fetch ventoy` fixes that)")
         vsrc = None
 
     size = sum(p["src"].stat().st_size for p in placed) + sum(s.stat().st_size for _, _, s in apps)
@@ -1542,7 +1557,7 @@ def cmd_pack(cfg: Config, args) -> int:
                 sha = _zip_file(zf, p["src"], f"stick/{p['rel']}", zipfile.ZIP_STORED)  # ISOs don't compress
                 if p["sha256"] and sha != p["sha256"] and not p["local"]:
                     raise RescueError(f"{p['title']}: the cached {p['file']} has changed since it was verified. "
-                                      f"Run `crescue fetch --force {p['name']}`.")
+                                      f"Run `helix fetch --force {p['name']}`.")
                 isos.append({"rel": p["rel"], "title": p["title"], "version": p["version"], "sha256": sha,
                              "size": p["src"].stat().st_size})
             for t, entry, src in apps:
@@ -1580,7 +1595,7 @@ def cmd_pack(cfg: Config, args) -> int:
             zf.writestr(BUNDLED_MARK, f"{__version__}\n", zipfile.ZIP_DEFLATED)
             zf.writestr("installer/README.txt", BUNDLED_README.format(zip=out.name), zipfile.ZIP_DEFLATED)
             zf.writestr(PACK_META, json.dumps({
-                "format": PACK_FORMAT, "crescue": __version__,
+                "format": PACK_FORMAT, "helix": __version__,
                 "created": dt.datetime.now().isoformat(timespec="seconds"),
                 "iso_root": cfg.iso_root, "apps_root": cfg.apps_root, "isos": isos,
                 "apps": {t["name"]: e["version"] for t, e, _ in apps},
@@ -1601,13 +1616,14 @@ def cmd_pack(cfg: Config, args) -> int:
 
 
 def _read_pack(zf: zipfile.ZipFile) -> dict:
-    try:
-        meta = json.loads(zf.read(PACK_META))
-    except KeyError:
-        raise RescueError(f"not a Commander Rescue pack (no {PACK_META} inside)") from None
+    names = set(zf.namelist())
+    meta_name = next((n for n in (PACK_META, OLD_PACK_META) if n in names), None)
+    if not meta_name:
+        raise RescueError(f"not a Helix Boot pack (no {PACK_META} inside)")
+    meta = json.loads(zf.read(meta_name))
     if meta.get("format") != PACK_FORMAT:
-        raise RescueError(f"this pack is format {meta.get('format')}; this crescue reads format {PACK_FORMAT}. "
-                          "Update Commander Rescue.")
+        raise RescueError(f"this pack is format {meta.get('format')}; this helix reads format {PACK_FORMAT}. "
+                          "Update Helix Boot.")
     _safe_zip_members(zf)
     for rel in ([i["rel"] for i in meta["isos"]] + list(meta["apps"])
                 + [t[k] for t in meta.get("trees", []) for k in ("dest", "once", "name") if t[k]]):
@@ -1769,7 +1785,7 @@ def _ventoy_from_pack(cfg: Config, pack: str) -> Path:
     with _open_pack(pack) as zf:
         v = _read_pack(zf).get("ventoy")
         if not v:
-            raise RescueError("this pack has no Ventoy installer. Make it again after `crescue fetch ventoy`.")
+            raise RescueError("this pack has no Ventoy installer. Make it again after `helix fetch ventoy`.")
         dest = cfg.cache / "ventoy-from-pack" / v["version"]
         tops = [d for d in dest.iterdir() if d.is_dir()] if dest.is_dir() else []
         if len(tops) == 1 and any((tops[0] / f).exists() for f in ("Ventoy2Disk.sh", "Ventoy2Disk.exe")):
@@ -1800,7 +1816,7 @@ def cmd_ventoy_path(cfg: Config, args) -> int:
     entry = lock.get(t["name"]) if t else None
     path = cfg.cache / t["name"] / entry["final"] if entry else None
     if not path or not any((path / f).exists() for f in ("Ventoy2Disk.sh", "Ventoy2Disk.exe")):
-        raise RescueError("Ventoy isn't fetched yet — run `crescue fetch ventoy`")
+        raise RescueError("Ventoy isn't fetched yet — run `helix fetch ventoy`")
     print(path)
     return 0
 
@@ -1809,8 +1825,8 @@ def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):  # line-buffered keeps a shared log in order; errors=replace
         if hasattr(stream, "reconfigure"):     # keeps ✓/✗ from crashing a non-UTF-8 Windows console
             stream.reconfigure(line_buffering=True, errors="replace")
-    ap = argparse.ArgumentParser(prog="crescue", description="Build and refresh the Commander Rescue USB.")
-    ap.add_argument("--version", action="version", version=f"crescue {__version__}")
+    ap = argparse.ArgumentParser(prog="helix", description="Build and refresh the Helix Boot USB.")
+    ap.add_argument("--version", action="version", version=f"helix {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")
 
     sub.add_parser("list", help="show every tool in the manifest").set_defaults(fn=cmd_list)
@@ -1834,11 +1850,11 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_sync)
 
     p = sub.add_parser("pack", help="put the whole stick (and Ventoy) into one .zip for offline use")
-    p.add_argument("output", nargs="?", help="where to write it (default: commander-rescue-<date>.zip here)")
+    p.add_argument("output", nargs="?", help="where to write it (default: helix-boot-<date>.zip here)")
     p.set_defaults(fn=cmd_pack)
 
     p = sub.add_parser("unpack", help="fill a mounted Ventoy stick from a pack")
-    p.add_argument("pack", help="the .zip made by `crescue pack`")
+    p.add_argument("pack", help="the .zip made by `helix pack`")
     p.add_argument("target", help="mount point of the Ventoy data partition")
     p.add_argument("--init", action="store_true", help="adopt a stick not labelled 'Ventoy'")
     p.add_argument("--dry-run", action="store_true", help="show what would change")

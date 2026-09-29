@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate the Commander Rescue Ventoy theme's images and fonts.
+"""Regenerate the Helix Boot Ventoy theme's images and fonts.
 
 The generated files are committed, so you only need this to change the look.
 Needs Pillow, grub-mkfont (grub package) and the DejaVu fonts:
@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 HERE = Path(__file__).resolve().parent
 W, H = 1920, 1080
 
-# Palette (keep theme.txt and crescue's menu_tip colour in step with these)
+# Palette (keep theme.txt and helix's menu_tip colour in step with these)
 BG_TOP = (11, 16, 26)
 BG_BOTTOM = (18, 28, 44)
 PANEL = (13, 20, 32, 215)
@@ -91,9 +91,9 @@ def background() -> None:
     x, y = 192, 118                                     # aligned with the menu's left edge (10%)
     d.rectangle((x, y + 8, x + 8, y + 70), fill=ACCENT)  # accent bar
     x += 32
-    d.text((x, y), "COMMANDER", font=bold, fill=TEXT)
-    x += d.textlength("COMMANDER ", font=bold)
-    d.text((x, y), "RESCUE", font=thin, fill=ACCENT)
+    d.text((x, y), "HELIX", font=bold, fill=TEXT)
+    x += d.textlength("HELIX ", font=bold)
+    d.text((x, y), "BOOT", font=thin, fill=ACCENT)
     d.text((224, y + 88), "Multiboot rescue USB  ·  verified upstream tools", font=small, fill=MUTED)
     img.save(HERE / "background.png", optimize=True)
 

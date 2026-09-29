@@ -28,10 +28,10 @@ jobs:
       - name: App tests (PowerShell and Ventoy faked)
         run: python -m unittest tests.test_windows_app -v
 
-      - name: Build CommanderRescue.exe
+      - name: Build HelixBoot.exe
         run: |
           pip install --disable-pip-version-check pyinstaller
-          pyinstaller --noconfirm windows/CommanderRescue.spec
+          pyinstaller --noconfirm windows/HelixBoot.spec
 
       - name: Smoke test the real .exe
         shell: pwsh
@@ -40,26 +40,26 @@ jobs:
         run: |
           $dir = "$env:RUNNER_TEMP\app"
           New-Item -ItemType Directory $dir | Out-Null
-          Copy-Item dist\CommanderRescue.exe $dir
-          $exe = "$dir\CommanderRescue.exe"
+          Copy-Item dist\HelixBoot.exe $dir
+          $exe = "$dir\HelixBoot.exe"
           function Run([string]$argv, [int]$minutes = 10) {
-            Write-Host "::group::CommanderRescue $argv"
+            Write-Host "::group::HelixBoot $argv"
             $p = Start-Process $exe -ArgumentList $argv -PassThru -NoNewWindow
             $finished = $p.WaitForExit($minutes * 60000)
             if (-not $finished) { Stop-Process -Id $p.Id -Force }
-            Get-Content "$dir\commander-rescue.log" -Tail 40
+            Get-Content "$dir\helix-boot.log" -Tail 40
             Write-Host "::endgroup::"
-            if (-not $finished) { throw "CommanderRescue $argv hung for $minutes minutes (log above)" }
-            if ($p.ExitCode) { throw "CommanderRescue $argv exited $($p.ExitCode)" }
+            if (-not $finished) { throw "HelixBoot $argv hung for $minutes minutes (log above)" }
+            if ($p.ExitCode) { throw "HelixBoot $argv exited $($p.ExitCode)" }
           }
           Run "--list --all"                                  # PowerShell Get-Disk, every disk
           Run "--list"                                        # USB only: the runner has none
           Run "--fetch ventoy supergrub2 memtest86plus"       # the Windows Ventoy .zip, verified
-          $v = Get-ChildItem "$env:LOCALAPPDATA\CommanderRescue\cache\ventoy\*\Ventoy2Disk.exe"
+          $v = Get-ChildItem "$env:LOCALAPPDATA\HelixBoot\cache\ventoy\*\Ventoy2Disk.exe"
           if (-not $v) { throw "Windows Ventoy package wasn't unpacked" }
           New-Item -ItemType Directory "$env:RUNNER_TEMP\stick" | Out-Null   # stands in for a mounted stick
           Run "--sync-to $env:RUNNER_TEMP\stick --init"
-          foreach ($f in "ventoy\ventoy.json", "Apps\CommanderApps.cmd", "ventoy\theme\theme.txt") {
+          foreach ($f in "ventoy\ventoy.json", "Apps\HelixApps.cmd", "ventoy\theme\theme.txt") {
             if (-not (Test-Path "$env:RUNNER_TEMP\stick\$f")) { throw "missing on the stick: $f" }
           }
           Get-ChildItem -Recurse "$env:RUNNER_TEMP\stick\ISO" | Select-Object FullName, Length
@@ -67,8 +67,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: CommanderRescue-windows
-          path: dist/CommanderRescue.exe
+          name: HelixBoot-windows
+          path: dist/HelixBoot.exe
 
       # A pushed v* tag, or "Run workflow" on main with a version: the release (and its tag,
       # at this commit) is created after the tests above have passed on this exact build.
@@ -78,6 +78,6 @@ jobs:
         with:
           tag_name: ${{ inputs.release || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          name: Commander Rescue ${{ inputs.release || github.ref_name }}
+          name: Helix Boot ${{ inputs.release || github.ref_name }}
           generate_release_notes: true
-          files: dist/CommanderRescue.exe
+          files: dist/HelixBoot.exe

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Commander Rescue for Windows: build or refresh the rescue stick from a window.
+"""Helix Boot for Windows: build or refresh the rescue stick from a window.
 
-The same engine as the Linux scripts (crescue: tools.toml, verified downloads,
+The same engine as the Linux scripts (helix: tools.toml, verified downloads,
 local.toml, byo/, theme) behind a small tkinter GUI. Ventoy is installed with
 its own command-line mode (Ventoy2Disk.exe VTOYCLI …).
 
-    CommanderRescue.exe                   the window
-    CommanderRescue.exe --list [--all]    USB disks as JSON
-    CommanderRescue.exe --fetch [tool…]   download + verify into the cache
-    CommanderRescue.exe --install N --yes erase disk N, install Ventoy, fill it
-    CommanderRescue.exe --update N        refresh a stick in place
-    CommanderRescue.exe --sync-to DIR     fill a folder (testing)
+    HelixBoot.exe                   the window
+    HelixBoot.exe --list [--all]    USB disks as JSON
+    HelixBoot.exe --fetch [tool…]   download + verify into the cache
+    HelixBoot.exe --install N --yes erase disk N, install Ventoy, fill it
+    HelixBoot.exe --update N        refresh a stick in place
+    HelixBoot.exe --sync-to DIR     fill a folder (testing)
 
-The .exe has no console, so command-line output also goes to commander-rescue.log
+The .exe has no console, so command-line output also goes to helix-boot.log
 next to it (or wherever --log points).
 """
 from __future__ import annotations
@@ -31,8 +31,8 @@ import threading
 import time
 from pathlib import Path
 
-# crescue is loaded from a data file, so PyInstaller can't see what it imports; name it here.
-# (tests/test_windows_app.py checks this list against crescue.)
+# helix is loaded from a data file, so PyInstaller can't see what it imports; name it here.
+# (tests/test_windows_app.py checks this list against helix.)
 import ctypes  # noqa: F401
 import email.utils  # noqa: F401
 import hashlib  # noqa: F401
@@ -48,7 +48,7 @@ import xml.etree.ElementTree  # noqa: F401
 import zipfile  # noqa: F401
 import zlib  # noqa: F401
 
-APP = "Commander Rescue"
+APP = "Helix Boot"
 FROZEN = getattr(sys, "frozen", False)
 USB_BUSES = {"USB", "SD", "MMC"}
 BIG_DISK = 300 * 1000**3
@@ -56,7 +56,7 @@ NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW: no console flashing up for PowerShel
 
 
 def bundle_dir() -> Path:
-    """Shipped files: crescue, tools.toml, theme/, pe/launcher/."""
+    """Shipped files: helix, tools.toml, theme/, pe/launcher/."""
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 
 
@@ -65,16 +65,16 @@ def user_dir() -> Path:
     return Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
 
 
-def load_crescue():
-    path = bundle_dir() / "crescue"
-    loader = importlib.machinery.SourceFileLoader("crescue", str(path))
-    spec = importlib.util.spec_from_loader("crescue", loader)
+def load_helix():
+    path = bundle_dir() / "helix"
+    loader = importlib.machinery.SourceFileLoader("helix", str(path))
+    spec = importlib.util.spec_from_loader("helix", loader)
     mod = importlib.util.module_from_spec(spec)
     loader.exec_module(mod)
     return mod
 
 
-cr = load_crescue()
+cr = load_helix()
 
 
 class RescueError(cr.RescueError):
@@ -82,9 +82,11 @@ class RescueError(cr.RescueError):
 
 
 def config():
-    if "CRESCUE_CACHE" not in os.environ and os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home())
-        os.environ["CRESCUE_CACHE"] = str(Path(base) / "CommanderRescue" / "cache")
+    if "HELIX_CACHE" not in os.environ and "CRESCUE_CACHE" not in os.environ and os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA") or str(Path.home()))
+        if not (base / "HelixBoot").exists() and (base / "CommanderRescue").is_dir():
+            os.rename(base / "CommanderRescue", base / "HelixBoot")   # its name before the rename
+        os.environ["HELIX_CACHE"] = str(base / "HelixBoot" / "cache")
     mine = user_dir()
     (mine / "byo").mkdir(exist_ok=True)
     readme = bundle_dir() / "byo" / "README.md"
@@ -259,7 +261,7 @@ def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None,
 
 def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda pct: None,
            run=powershell, ventoy=run_ventoy) -> str:
-    """Refresh a Commander Rescue / Ventoy stick in place. Never erases."""
+    """Refresh a Helix Boot / Ventoy stick in place. Never erases."""
     cfg = config()
     d = pick(disk_no, run)
     if not d.get("IsVentoy") or not d.get("Ventoy"):
@@ -302,7 +304,7 @@ class Tee:
 
 
 def open_log(path: Path | None):
-    path = path or user_dir() / "commander-rescue.log"
+    path = path or user_dir() / "helix-boot.log"
     try:
         f = open(path, "a", encoding="utf-8", buffering=1)
     except OSError:
@@ -332,7 +334,7 @@ def gui(selftest: bool = False) -> int:
 
     frm = ttk.Frame(root, padding=14)
     frm.pack(fill="both", expand=True)
-    ttk.Label(frm, text="Commander Rescue", style="Title.TLabel").pack(anchor="w")
+    ttk.Label(frm, text="Helix Boot", style="Title.TLabel").pack(anchor="w")
     ttk.Label(frm, text="Pick a USB stick, then Install (erases it) or Update (keeps your files).",
               foreground="#555").pack(anchor="w", pady=(0, 10))
 
@@ -494,7 +496,7 @@ def gui(selftest: bool = False) -> int:
 
 # ── Command line ───────────────────────────────────────────────────────────
 def cli(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog="CommanderRescue", description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(prog="HelixBoot", description=__doc__.split("\n\n")[0])
     ap.add_argument("--list", action="store_true", help="print USB disks as JSON")
     ap.add_argument("--all", action="store_true", help="with --list: every disk, marked")
     ap.add_argument("--fetch", nargs="*", metavar="TOOL", help="download + verify (all enabled tools if none named)")
@@ -507,7 +509,7 @@ def cli(argv: list[str]) -> int:
     ap.add_argument("--no-secure-boot", action="store_true")
     ap.add_argument("--upgrade-ventoy", action="store_true", help="with --update: refresh Ventoy too")
     ap.add_argument("--selftest-gui", action="store_true", help=argparse.SUPPRESS)
-    ap.add_argument("--log", type=Path, help="log file (default: commander-rescue.log next to the app)")
+    ap.add_argument("--log", type=Path, help="log file (default: helix-boot.log next to the app)")
     a = ap.parse_args(argv)
 
     log = open_log(a.log)

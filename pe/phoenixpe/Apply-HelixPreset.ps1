@@ -3,8 +3,8 @@
   Set up a PhoenixPE folder for the Lazarus PE build.
 
 .DESCRIPTION
-  1. Copies the Commander Rescue add-on (CommanderRescue.script + the app
-     launcher) into PhoenixPE's Projects\MyApps\Commander Rescue\.
+  1. Copies the Helix Boot add-on (HelixBoot.script + the app launcher) into
+     PhoenixPE's Projects\MyApps\Helix Boot\, replacing the Commander Rescue one.
   2. Ticks / unticks the scripts listed in preset.txt, exactly as if you had
      clicked their checkboxes in PEBakery.
 
@@ -12,10 +12,10 @@
   updating PhoenixPE, or unpack a fresh PhoenixPE to undo it.
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 -PhoenixPE C:\PhoenixPE
+  powershell -ExecutionPolicy Bypass -File .\Apply-HelixPreset.ps1 -PhoenixPE C:\PhoenixPE
 
 .EXAMPLE
-  .\Apply-CommanderPreset.ps1 C:\PhoenixPE -WhatIf     # show what would change
+  .\Apply-HelixPreset.ps1 C:\PhoenixPE -WhatIf     # show what would change
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -32,11 +32,17 @@ if (-not (Test-Path (Join-Path (Join-Path $projects 'PhoenixPE') 'script.project
 }
 
 # ── 1. Add-on ───────────────────────────────────────────────────────────────
-$launcher = Join-Path (Join-Path (Split-Path $here) 'launcher') 'CommanderApps.cmd'
-$addonDir = Join-Path (Join-Path $projects 'MyApps') 'Commander Rescue'
-if ($PSCmdlet.ShouldProcess($addonDir, 'Install Commander Rescue add-on')) {
+$launcher = Join-Path (Join-Path (Split-Path $here) 'launcher') 'HelixApps.cmd'
+$addonDir = Join-Path (Join-Path $projects 'MyApps') 'Helix Boot'
+# Its name before the rename to Helix Boot: remove it, or the PE would get both launchers
+$oldAddon = Join-Path (Join-Path $projects 'MyApps') 'Commander Rescue'
+if ((Test-Path $oldAddon) -and $PSCmdlet.ShouldProcess($oldAddon, 'Remove the old Commander Rescue add-on')) {
+  Remove-Item $oldAddon -Recurse -Force
+  Write-Host "- old Commander Rescue add-on removed"
+}
+if ($PSCmdlet.ShouldProcess($addonDir, 'Install Helix Boot add-on')) {
   New-Item -ItemType Directory -Force $addonDir | Out-Null
-  Copy-Item (Join-Path $here 'CommanderRescue.script') $addonDir -Force
+  Copy-Item (Join-Path $here 'HelixBoot.script') $addonDir -Force
   Copy-Item $launcher $addonDir -Force
   Copy-Item (Join-Path (Split-Path $launcher) 'StartPortableApps.cmd') $addonDir -Force
   Write-Host "+ add-on installed in $addonDir"

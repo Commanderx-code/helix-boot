@@ -1,9 +1,21 @@
 # Changelog
 
-Notable changes to Commander Rescue. Versions follow `crescue --version`;
+Notable changes to Helix Boot (called Commander Rescue before 0.5.0). Versions
+follow `helix --version` (`crescue --version` before 0.5.0);
 tagged releases also publish the Windows app.
 
 ## [Unreleased]
+
+### Changed
+- **Renamed to Helix Boot**, and the engine from `crescue` to `helix`. The
+  repository is now `Commanderx-code/helix-boot` (GitHub redirects the old
+  address), the Windows app is `HelixBoot.exe`, and the launcher is Helix Apps.
+  Nothing made before breaks: sticks get both `helix-boot.tag` and
+  `commander-rescue.tag`, a stick's `.commander-rescue` state folder and the
+  `~/.cache/commander-rescue` (or `%LOCALAPPDATA%\CommanderRescue`) cache are
+  moved over on first use, old packs still unpack, `CRESCUE_*` settings still
+  work, Lazarus PE builds with the old launcher open the new one, and an
+  existing build VM keeps its name and folder.
 
 ### Added
 - PortableApps themes carry the folder-button icons (Material Design, CC-BY
@@ -140,7 +152,7 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/commander-rescue/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/Commanderx-code/commander-rescue/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Commanderx-code/commander-rescue/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Commanderx-code/commander-rescue/compare/v0.1.0...v0.2.0

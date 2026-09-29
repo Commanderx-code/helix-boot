@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Commander Rescue — update an existing stick in place. Never erases anything
+# Helix Boot — update an existing stick in place. Never erases anything
 # except old versions of the tools this project put there.
 #
 #   ./refresh.sh                 find the plugged-in Ventoy stick and update it
 #   ./refresh.sh --upgrade-ventoy  also update the Ventoy boot loader itself
-#   ./refresh.sh --from pack.zip   update it from a pack (`crescue pack`), no downloads
+#   ./refresh.sh --from pack.zip   update it from a pack (`helix pack`), no downloads
 set -Eeuo pipefail
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/common.sh
 source "$HERE/scripts/common.sh"
 trap on_err ERR
-CRESCUE="$HERE/crescue"
+HELIX="$HERE/helix"
 
 usage() {
   cat <<EOF
@@ -22,7 +22,7 @@ onto your Ventoy stick. Files you added yourself are left alone.
 Options:
   --upgrade-ventoy   also upgrade Ventoy on the stick (non-destructive, needs sudo)
   --skip-fetch       only sync what's already cached
-  --from PACK        update from a pack made by "crescue pack" instead of downloading
+  --from PACK        update from a pack made by "helix pack" instead of downloading
   --verify           re-hash every file on the stick after copying (slow)
   --dry-run          show what would change
   --eject            unmount when finished
@@ -79,10 +79,10 @@ ok "Stick: ${part:-?} at $mnt"
 if ((upgrade)); then
   need sudo
   if [[ -n $from ]]; then
-    vdir=$("$CRESCUE" ventoy-path --from "$from")
+    vdir=$("$HELIX" ventoy-path --from "$from")
   else
-    "$CRESCUE" fetch ventoy
-    vdir=$("$CRESCUE" ventoy-path)
+    "$HELIX" fetch ventoy
+    vdir=$("$HELIX" ventoy-path)
   fi
   disk=/dev/$(lsblk -no PKNAME "$part" | head -n1)
   [[ -b $disk ]] || die "can't work out which disk $part is on"
@@ -108,12 +108,12 @@ fi
 
 # ── Fetch + sync ─────────────────────────────────────────────────────────
 if [[ -n $from ]]; then
-  "$CRESCUE" unpack "$from" "$mnt" "${sync_args[@]}"
+  "$HELIX" unpack "$from" "$mnt" "${sync_args[@]}"
 else
   if ! ((skip_fetch)); then
-    "$CRESCUE" fetch || warn "some downloads failed — syncing everything else"
+    "$HELIX" fetch || warn "some downloads failed — syncing everything else"
   fi
-  "$CRESCUE" sync "$mnt" "${sync_args[@]}"
+  "$HELIX" sync "$mnt" "${sync_args[@]}"
 fi
 
 if ((eject)) && [[ -n $part ]]; then

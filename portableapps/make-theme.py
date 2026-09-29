@@ -10,7 +10,7 @@ matching panel (at any size) is found, scaled and cropped so that panel lands
 exactly there, then the panel is darkened a little so white text stays legible.
 
 A theme is just chrome.png, preview.png, a tinted drive-space bar and
-PATheme.ini (colours, from the Platform's Default theme in crescue's cache);
+PATheme.ini (colours, from the Platform's Default theme in helix's cache);
 buttons and icons come from the Platform's shared graphics, as for its own
 themes. It's written to portableapps/themes/<slot>/, which tools.toml
 copies onto every stick.
@@ -38,12 +38,13 @@ SLOTS = ["Default", "DefaultDark", "Classic", "ClassicDark", "Flat", "FlatDark",
 
 
 def base_theme() -> Path:
-    """The Platform's untouched Default theme, from crescue's cache."""
-    for d in sorted((Path.home() / ".cache/commander-rescue/portableapps").glob("tree-*"), reverse=True):
+    """The Platform's untouched Default theme, from helix's cache."""
+    caches = [Path.home() / ".cache/helix-boot", Path.home() / ".cache/commander-rescue"]   # the latter: before the rename
+    for d in sorted((d for c in caches for d in (c / "portableapps").glob("tree-*")), reverse=True):
         p = d / "PortableApps/PortableApps.com/App/Graphics/Themes/Default"
         if (p / "PATheme.ini").exists():
             return p
-    sys.exit("no PortableApps.com Platform in the cache: run ./crescue fetch portableapps first")
+    sys.exit("no PortableApps.com Platform in the cache: run ./helix fetch portableapps first")
 
 
 def edge(line, lo: float, hi: float) -> int:
@@ -156,7 +157,7 @@ def main() -> None:
     # Light text over the dark art; the search box stays white with dark text, as in the mockups
     dim = "".join(f"{int(c * .55):02X}" for c in accent)
     ini = (base / "PATheme.ini").read_text(encoding="utf-8-sig")
-    for section, key, value in (("ThemeDetails", "Name", args.name), ("ThemeDetails", "Author", "Commander Rescue"),
+    for section, key, value in (("ThemeDetails", "Name", args.name), ("ThemeDetails", "Author", "Helix Boot"),
                                 ("ButtonApplications", "FontColor", "FFFFFF"), ("ButtonApplications", "DividerColor", dim),
                                 ("ButtonFolders", "FontColor", "FFFFFF"), ("ButtonFolders", "FontColorWhite", "FFFFFF"),
                                 ("DriveSpace", "FontColor", "E6EDF3"), ("DriveSpace", "FontShadowColor", "000000"),

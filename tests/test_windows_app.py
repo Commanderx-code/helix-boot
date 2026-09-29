@@ -1,4 +1,4 @@
-"""Tests for windows/commander_rescue.py with PowerShell and Ventoy faked, so they run anywhere."""
+"""Tests for windows/helix_boot.py with PowerShell and Ventoy faked, so they run anywhere."""
 import importlib.util
 import io
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("commander_rescue", ROOT / "windows" / "commander_rescue.py")
+spec = importlib.util.spec_from_file_location("helix_boot", ROOT / "windows" / "helix_boot.py")
 app = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(app)
 
@@ -175,8 +175,8 @@ class TestConsole(unittest.TestCase):
 
 
 class TestPackaging(unittest.TestCase):
-    def test_app_names_every_module_crescue_imports(self):
-        # PyInstaller can't see inside crescue (it's a data file), so the app imports them for it.
+    def test_app_names_every_module_helix_imports(self):
+        # PyInstaller can't see inside helix (it's a data file), so the app imports them for it.
         import ast
 
         def imported(path):
@@ -188,8 +188,8 @@ class TestPackaging(unittest.TestCase):
                     mods.add(node.module)
             return mods - {"__future__"}
 
-        missing = imported(ROOT / "crescue") - imported(ROOT / "windows" / "commander_rescue.py")
-        self.assertEqual(sorted(missing), [], "add these imports to windows/commander_rescue.py")
+        missing = imported(ROOT / "helix") - imported(ROOT / "windows" / "helix_boot.py")
+        self.assertEqual(sorted(missing), [], "add these imports to windows/helix_boot.py")
 
 
 if __name__ == "__main__":

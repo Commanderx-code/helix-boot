@@ -40,7 +40,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
-          ./crescue check --json > upstream.json
+          ./helix check --json > upstream.json
           rc=$?
           python - <<'EOF'
           import json, os
@@ -75,11 +75,11 @@ jobs:
       - name: Fetch and verify
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CRESCUE_CACHE: ${{ runner.temp }}/crescue
+          HELIX_CACHE: ${{ runner.temp }}/helix
           NO_COLOR: "1"
         run: |
           set +e
-          ./crescue fetch > fetch.log 2>&1
+          ./helix fetch > fetch.log 2>&1
           rc=$?
           cat fetch.log
           enc() { sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g'; }
@@ -87,8 +87,8 @@ jobs:
           [[ -n $ok ]]   && echo "::notice title=verified::$ok"
           [[ -n $warn ]] && echo "::warning title=warnings::$warn"
           [[ -n $err ]]  && echo "::error title=failed::$err"
-          echo "::notice title=cache::$(du -sh "$CRESCUE_CACHE"/* 2>/dev/null | enc)"
+          echo "::notice title=cache::$(du -sh "$HELIX_CACHE"/* 2>/dev/null | enc)"
           # Second run must be a no-op (proves "up to date" detection works upstream-side too)
-          ./crescue fetch > again.log 2>&1
+          ./helix fetch > again.log 2>&1
           echo "::notice title=second run::$(grep -c 'up to date' again.log) up to date, $(grep -c 'downloading' again.log) re-downloaded"
           exit $rc

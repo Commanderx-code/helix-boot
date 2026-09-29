@@ -1,7 +1,7 @@
-# Commander Rescue — tool manifest
+# Helix Boot — tool manifest
 #
 # Every ISO, portable app and the Ventoy loader itself is described here.
-# `crescue fetch` resolves the newest upstream release of each enabled entry,
+# `helix fetch` resolves the newest upstream release of each enabled entry,
 # downloads it, and verifies it before anything touches your USB stick.
 #
 # Personal tweaks go in `local.toml` (git-ignored), so this file stays clean:
@@ -51,7 +51,7 @@
 #   description short tip shown at the bottom of the Ventoy menu
 
 [settings]
-cache_dir = "~/.cache/commander-rescue"
+cache_dir = "~/.cache/helix-boot"
 iso_root  = "ISO"
 apps_root = "Apps"
 theme     = "theme"   # Ventoy boot-menu theme (folder in this repo); remove for Ventoy's default

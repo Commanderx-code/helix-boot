@@ -7,6 +7,10 @@ byo/*
 !byo/README.md
 build/
 dist/
+helix-boot.log
+helix-boot-*.zip
+helix-boot-*.zip.part
+# from before the rename to Helix Boot
 commander-rescue.log
 commander-rescue-*.zip
 commander-rescue-*.zip.part

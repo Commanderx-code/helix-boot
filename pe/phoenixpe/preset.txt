@@ -1,4 +1,4 @@
-# Lazarus PE preset: what Apply-CommanderPreset.ps1 switches on or off in
+# Lazarus PE preset: what Apply-HelixPreset.ps1 switches on or off in
 # PhoenixPE. Anything not listed keeps PhoenixPE's default, which is already a
 # good lean base (Explorer + StartAllBack, networking, audio, ramdisk, 7-Zip,
 # Firefox, ISO output).
@@ -23,4 +23,4 @@ off  PhoenixPE\Applications\Diagnostics & Repair\MS-DaRT.script
 off  PhoenixPE\Applications\Productivity\Notepad++.script
 
 # Our launcher
-on   MyApps\Commander Rescue\CommanderRescue.script
+on   MyApps\Helix Boot\HelixBoot.script

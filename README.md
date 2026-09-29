@@ -1,13 +1,13 @@
 <div align="center">
 
-# Commander Rescue
+# Helix Boot
 
 **A multiboot rescue USB that builds itself from upstream sources.**<br>
 Current tools, verified downloads, a MediCat-style boot menu, and room for your own licensed software.
 
-[![CI](https://github.com/Commanderx-code/commander-rescue/actions/workflows/ci.yml/badge.svg)](https://github.com/Commanderx-code/commander-rescue/actions/workflows/ci.yml)
-[![Windows build](https://github.com/Commanderx-code/commander-rescue/actions/workflows/windows.yml/badge.svg)](https://github.com/Commanderx-code/commander-rescue/actions/workflows/windows.yml)
-[![Release](https://img.shields.io/github/v/release/Commanderx-code/commander-rescue?sort=semver)](https://github.com/Commanderx-code/commander-rescue/releases)
+[![CI](https://github.com/Commanderx-code/helix-boot/actions/workflows/ci.yml/badge.svg)](https://github.com/Commanderx-code/helix-boot/actions/workflows/ci.yml)
+[![Windows build](https://github.com/Commanderx-code/helix-boot/actions/workflows/windows.yml/badge.svg)](https://github.com/Commanderx-code/helix-boot/actions/workflows/windows.yml)
+[![Release](https://img.shields.io/github/v/release/Commanderx-code/helix-boot?sort=semver)](https://github.com/Commanderx-code/helix-boot/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)
@@ -19,7 +19,7 @@ Current tools, verified downloads, a MediCat-style boot menu, and room for your 
 [Customising](#customising) ·
 [Changelog](CHANGELOG.md)
 
-<img src="docs/boot-menu.png" alt="The Commander Rescue boot menu in Ventoy" width="820">
+<img src="docs/boot-menu.png" alt="The Helix Boot boot menu in Ventoy" width="820">
 
 </div>
 
@@ -27,7 +27,7 @@ Current tools, verified downloads, a MediCat-style boot menu, and room for your 
 
 MediCat was the stick everyone carried, but its last full build dates from
 December 2021: frozen versions, overlapping tools and plenty of trialware.
-Commander Rescue keeps the idea (one stick, a categorised menu, a Windows PE
+Helix Boot keeps the idea (one stick, a categorised menu, a Windows PE
 desktop) and fixes the rest:
 
 | | |
@@ -44,10 +44,10 @@ desktop) and fixes the rest:
 **Linux.** Needs Python 3.11+ and `sudo`; nothing to `pip install`.
 
 ```fish
-git clone https://github.com/Commanderx-code/commander-rescue
-cd commander-rescue
+git clone https://github.com/Commanderx-code/helix-boot
+cd helix-boot
 
-./crescue check        # latest version of everything (no downloads)
+./helix check        # latest version of everything (no downloads)
 ./install.sh           # download + verify, pick a stick, type its name to confirm
 ```
 
@@ -58,8 +58,8 @@ Keep it current later:
 ./refresh.sh --upgrade-ventoy   # …and the Ventoy boot loader too
 ```
 
-**Windows.** Download **`CommanderRescue.exe`** from
-[Releases](https://github.com/Commanderx-code/commander-rescue/releases), put it
+**Windows.** Download **`HelixBoot.exe`** from
+[Releases](https://github.com/Commanderx-code/helix-boot/releases), put it
 in a folder of its own and run it (see [below](#windows-app)).
 
 **From a pack.** Already have a pack zip? No clone needed:
@@ -140,9 +140,9 @@ Every tool is described in [`tools.toml`](tools.toml); adding one is a few lines
 The [PortableApps.com Platform](https://portableapps.com) sits at the root of
 the stick (`Start.exe`), like on MediCat: run it on any Windows PC, and
 Lazarus PE opens it by itself when the desktop loads. Pick apps from its App
-Store; it keeps them and itself up to date. Commander Rescue puts the Platform
+Store; it keeps them and itself up to date. Helix Boot puts the Platform
 on once and never overwrites or prunes it, so your apps survive every refresh.
-The Commander Apps menu also has **p) PortableApps.com menu**.
+The Helix Apps menu also has **p) PortableApps.com menu**.
 
 It comes with six menu themes, **Lazarus PE** (the default on a new stick)
 and five **Helix** colours. The Platform's picker lists only its own themes,
@@ -178,20 +178,20 @@ extract onto a stick. It's made from your cache, so it includes your
 bring-your-own tools and the Ventoy installer, and a new stick needs no internet:
 
 ```fish
-./crescue fetch                                 # bring everything up to date
-./crescue pack                                  # → commander-rescue-<date>.zip
-./install.sh --from commander-rescue-<date>.zip # new stick
-./refresh.sh --from commander-rescue-<date>.zip # update a stick
+./helix fetch                                 # bring everything up to date
+./helix pack                                  # → helix-boot-<date>.zip
+./install.sh --from helix-boot-<date>.zip # new stick
+./refresh.sh --from helix-boot-<date>.zip # update a stick
 ```
 
 The pack carries its own installer, so on another Linux PC the zip is all you need:
 
 ```fish
-unzip commander-rescue-<date>.zip 'installer/*'   # a few MB
+unzip helix-boot-<date>.zip 'installer/*'   # a few MB
 installer/install.sh                               # finds the zip beside it
 ```
 
-Inside is the stick exactly as `crescue sync` lays it out, with boot images
+Inside is the stick exactly as `helix sync` lays it out, with boot images
 stored uncompressed and each one's sha256 recorded. Extracting streams files
 straight onto the stick and checks every image, so a damaged pack is caught,
 not booted. A stick filled from a pack refreshes normally afterwards.
@@ -203,7 +203,7 @@ not booted. A stick filled from a pack refreshes normally afterwards.
 
 ## Windows app
 
-`CommanderRescue.exe` asks for admin rights, because installing Ventoy writes
+`HelixBoot.exe` asks for admin rights, because installing Ventoy writes
 to the disk.
 
 1. Pick the USB stick. Only USB/SD disks are listed, never the one Windows is
@@ -214,8 +214,8 @@ to the disk.
 
 It uses the same engine as the Linux scripts: the same tool list, checksums,
 theme and menu. Your `local.toml` and `byo/` folder live next to the `.exe`, and
-downloads are cached in `%LOCALAPPDATA%\CommanderRescue`. The command line
-works too: `CommanderRescue.exe --help`. Packs are Linux-only for now.
+downloads are cached in `%LOCALAPPDATA%\HelixBoot`. The command line
+works too: `HelixBoot.exe --help`. Packs are Linux-only for now.
 
 ## Lazarus PE
 
@@ -229,19 +229,19 @@ the build VM for you. See the [Lazarus PE guide](pe/README.md).
 Until yours is built, Hiren's BootCD PE covers for it, and the app launcher
 works there too.
 
-## `crescue`, the engine
+## `helix`, the engine
 
-`install.sh` and `refresh.sh` are thin wrappers around `crescue`, a single
+`install.sh` and `refresh.sh` are thin wrappers around `helix`, a single
 standard-library Python script:
 
 | Command | Does |
 |---|---|
-| `crescue list` | every tool, its source, and whether it's enabled |
-| `crescue check [--json]` | compares your cache against upstream, no downloads |
-| `crescue fetch [tool…] [--force]` | downloads, verifies and caches (`~/.cache/commander-rescue`); resumes interrupted downloads |
-| `crescue sync <mount> [--dry-run] [--verify]` | copies the cache to a Ventoy stick, prunes old versions, writes the menu |
-| `crescue pack [file.zip]` | the whole stick, your own tools and Ventoy in one zip |
-| `crescue unpack <pack.zip> <mount> [--dry-run] [--verify]` | fills a Ventoy stick from a pack, no downloads |
+| `helix list` | every tool, its source, and whether it's enabled |
+| `helix check [--json]` | compares your cache against upstream, no downloads |
+| `helix fetch [tool…] [--force]` | downloads, verifies and caches (`~/.cache/helix-boot`); resumes interrupted downloads |
+| `helix sync <mount> [--dry-run] [--verify]` | copies the cache to a Ventoy stick, prunes old versions, writes the menu |
+| `helix pack [file.zip]` | the whole stick, your own tools and Ventoy in one zip |
+| `helix unpack <pack.zip> <mount> [--dry-run] [--verify]` | fills a Ventoy stick from a pack, no downloads |
 
 ### Verification
 
@@ -301,9 +301,9 @@ category icon. For Ventoy's stock look, set `theme = ""` under `[settings]`.
 ISO/1-Antivirus/  ISO/2-Backup-and-Recovery/  ISO/3-Boot-Repair/
 ISO/4-Diagnostic-Tools/  ISO/5-Disk-Wipe/  ISO/6-Live-Operating-Systems/
 ISO/7-Partition-Tools/  ISO/8-Password-Removal/  ISO/9-Windows-Recovery/
-Apps/               portable apps + CommanderApps.cmd launcher
+Apps/               portable apps + HelixApps.cmd launcher
 ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
-.commander-rescue/  sync state (which files this project manages)
+.helix-boot/        sync state (which files this project manages)
 ```
 
 </details>
@@ -313,9 +313,9 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 - [x] Manifest, fetch/verify engine, installer, refresher, Ventoy menu and theme
 - [x] PE app launcher (works in any WinPE)
 - [x] CI: tests, ShellCheck, weekly live resolve + download + verify of every tool
-- [x] Windows app (`CommanderRescue.exe`)
+- [x] Windows app (`HelixBoot.exe`)
 - [x] Packs: offline, self-installing zip of the whole stick
-- [x] PhoenixPE preset, Commander Rescue add-on and build VM ([guide](pe/README.md))
+- [x] PhoenixPE preset, Helix Boot add-on and build VM ([guide](pe/README.md))
 - [x] First Lazarus PE build
 - [x] PortableApps.com Platform with custom menu themes
 - [ ] Packs in the Windows app

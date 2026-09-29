@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Commander Rescue — give a PE ISO a newer Windows boot manager.
+# Helix Boot — give a PE ISO a newer Windows boot manager.
 #
 #   pe/fix-bootmgr.sh <windows.iso>            fix pe/out/LazarusPE.iso in place
 #   pe/fix-bootmgr.sh <windows.iso> <pe.iso>   fix another PE ISO
@@ -51,4 +51,4 @@ mkisofs -quiet -iso-level 3 -udf -J -joliet-long -l -D -N -relaxed-filenames -V 
   -o "$work/out.iso" "$work/iso" 2>/dev/null
 mv -f "$work/out.iso" "$pe"
 ok "$(basename "$pe") now boots with the boot manager from $(basename "$donor")"
-info "next: ./crescue fetch lazarus-pe && ./refresh.sh"
+info "next: ./helix fetch lazarus-pe && ./refresh.sh"

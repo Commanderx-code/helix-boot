@@ -1,4 +1,4 @@
-"""End-to-end tests for crescue against a local fake GitHub / SourceForge / web server.
+"""End-to-end tests for helix against a local fake GitHub / SourceForge / web server.
 
 Run with:  python3 -m unittest discover -s tests -v
 """
@@ -23,7 +23,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WEB = Path(tempfile.mkdtemp(prefix="crescue-web-"))
+WEB = Path(tempfile.mkdtemp(prefix="helix-web-"))
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
@@ -44,14 +44,14 @@ SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Qui
 BASE = f"http://127.0.0.1:{SERVER.server_address[1]}"
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 
-os.environ["CRESCUE_GITHUB_API"] = f"{BASE}/gh"
-os.environ["CRESCUE_SF_RSS"] = BASE + "/sf/{project}/rss{path}/feed.xml"
-os.environ["CRESCUE_SF_DL"] = BASE + "/dl/{project}{path}"
+os.environ["HELIX_GITHUB_API"] = f"{BASE}/gh"
+os.environ["HELIX_SF_RSS"] = BASE + "/sf/{project}/rss{path}/feed.xml"
+os.environ["HELIX_SF_DL"] = BASE + "/dl/{project}{path}"
 os.environ["NO_COLOR"] = "1"
 os.environ.pop("GITHUB_TOKEN", None)
 
-loader = importlib.machinery.SourceFileLoader("crescue", str(ROOT / "crescue"))
-spec = importlib.util.spec_from_loader("crescue", loader)
+loader = importlib.machinery.SourceFileLoader("helix", str(ROOT / "helix"))
+spec = importlib.util.spec_from_loader("helix", loader)
 cr = importlib.util.module_from_spec(spec)
 loader.exec_module(cr)
 cr.RETRY_DELAYS = (0, 0, 0)
@@ -186,14 +186,14 @@ checksum = ["tofu"]
 
 class Base(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="crescue-test-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="helix-test-"))
         self.repo = self.tmp / "repo"
         self.repo.mkdir()
         self.stick = self.tmp / "stick"
         self.stick.mkdir()
         (self.repo / "tools.toml").write_text(MANIFEST.format(cache=self.tmp / "cache", base=BASE))
         (self.repo / "pe/launcher").mkdir(parents=True)
-        shutil.copy2(ROOT / "pe/launcher/CommanderApps.cmd", self.repo / "pe/launcher/")
+        shutil.copy2(ROOT / "pe/launcher/HelixApps.cmd", self.repo / "pe/launcher/")
         shutil.rmtree(WEB, ignore_errors=True)
         WEB.mkdir()
         # Upstream world, version 1
@@ -358,7 +358,7 @@ class TestFetchAndSync(Base):
         self.assertTrue((self.stick / "Apps/sysinternals/procexp64.exe").exists())
         self.assertEqual((self.stick / "Apps/apps.txt").read_bytes(),
                          b"Sysinternals Suite|sysinternals\\procexp64.exe\r\n")
-        self.assertTrue((self.stick / "Apps/CommanderApps.cmd").exists())
+        self.assertTrue((self.stick / "Apps/HelixApps.cmd").exists())
         vj = json.loads((self.stick / "ventoy/ventoy.json").read_text())
         aliases = {a.get("dir") or a.get("image"): a["alias"] for a in vj["menu_alias"]}
         self.assertEqual(aliases["/ISO/2-Rescue"], "Linux Rescue  →")
@@ -367,7 +367,8 @@ class TestFetchAndSync(Base):
         self.assertIn("→", (self.stick / "ventoy/ventoy.json").read_text(encoding="utf-8"))  # not \u2192
         self.assertEqual(aliases["/ISO/2-Rescue/systemrescue-12.02-amd64.iso"], "SystemRescue")  # no version: cleaner menu
         self.assertNotIn("/ISO/1-Windows-PE", aliases)             # empty category hidden
-        self.assertTrue((self.stick / "commander-rescue.tag").exists())
+        self.assertTrue((self.stick / "helix-boot.tag").exists())
+        self.assertTrue((self.stick / "commander-rescue.tag").exists())   # for launchers and PEs from before
 
         # user file on the stick must survive syncs
         mine = self.stick / "ISO/2-Rescue/my-own.iso"
@@ -630,7 +631,7 @@ class TestFetchAndSync(Base):
         assets = self.tmp / "bundle"
         (assets / "pe/launcher").mkdir(parents=True)
         shutil.copy2(self.repo / "tools.toml", assets / "tools.toml")
-        (assets / "pe/launcher/CommanderApps.cmd").write_text("rem bundled")
+        (assets / "pe/launcher/HelixApps.cmd").write_text("rem bundled")
         mine = self.tmp / "mine"
         mine.mkdir()
         (mine / "local.toml").write_text('[overrides.systemrescue]\ntitle = "My SR"\n')
@@ -639,7 +640,7 @@ class TestFetchAndSync(Base):
         self.cfg = cfg
         self.fetch("systemrescue")
         self.assertEqual(self.sync()[0], 0)
-        self.assertEqual((self.stick / "Apps/CommanderApps.cmd").read_text(), "rem bundled")
+        self.assertEqual((self.stick / "Apps/HelixApps.cmd").read_text(), "rem bundled")
 
     def test_dry_run_writes_nothing(self):
         self.fetch("systemrescue")
@@ -695,6 +696,41 @@ class TestPack(Base):
         self.assertNotIn("copied", out)
         self.assertNotIn("backed up", out)
 
+    def test_packs_from_before_the_rename_still_unpack(self):
+        self.fetch()
+        pack, _ = self.pack()
+        old = self.tmp / "old.zip"
+        with zipfile.ZipFile(pack) as src, zipfile.ZipFile(old, "w") as dst:
+            for item in src.infolist():
+                name = cr.OLD_PACK_META if item.filename == cr.PACK_META else item.filename
+                dst.writestr(name, src.read(item.filename))
+        rc, out = self.unpack(old)
+        self.assertEqual(rc, 0, out)
+        self.assertTrue((self.stick / "ISO/5-Diagnostics/memtest.iso").exists())
+
+    def test_a_stick_from_before_the_rename_keeps_its_state(self):
+        self.fetch()
+        self.assertEqual(self.sync()[0], 0)
+        (self.stick / cr.STATE_DIR).rename(self.stick / cr.OLD_STATE_DIR)     # as an older version left it
+        rc, out = self.sync(init=False)
+        self.assertEqual(rc, 0, out)
+        self.assertTrue((self.stick / cr.STATE_DIR / "state.json").exists())
+        self.assertFalse((self.stick / cr.OLD_STATE_DIR).exists())
+        self.assertIn("already on stick", out)                               # nothing copied again
+
+    def test_the_old_cache_moves_to_the_new_name(self):
+        home = self.tmp / "home"
+        (home / ".cache/commander-rescue/ventoy").mkdir(parents=True)
+        (home / ".cache/commander-rescue/lock.json").write_text("{}")
+        (self.repo / "tools.toml").write_text((self.repo / "tools.toml").read_text().replace(
+            f'cache_dir = "{self.tmp / "cache"}"', 'cache_dir = "~/.cache/helix-boot"'))
+        with unittest.mock.patch.dict(os.environ, {"HOME": str(home)}):
+            os.environ.pop("HELIX_CACHE", None)
+            cfg = cr.Config(repo=self.repo)
+        self.assertEqual(cfg.cache, home / ".cache/helix-boot")
+        self.assertTrue((home / ".cache/helix-boot/lock.json").exists())
+        self.assertFalse((home / ".cache/commander-rescue").exists())
+
     def test_nothing_fetched(self):
         with self.assertRaisesRegex(cr.RescueError, "nothing to pack"):
             self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(self.tmp / "p.zip")})())
@@ -718,7 +754,7 @@ class TestPack(Base):
     def test_not_a_pack(self):
         z = self.tmp / "x.zip"
         z.write_bytes(zipped({"hello.txt": b"hi"}))
-        with self.assertRaisesRegex(cr.RescueError, "not a Commander Rescue pack"):
+        with self.assertRaisesRegex(cr.RescueError, "not a Helix Boot pack"):
             self.unpack(z)
 
     def test_unpack_prunes_what_the_pack_dropped(self):
@@ -890,7 +926,7 @@ class TestPack(Base):
 
     def test_the_zip_is_all_another_pc_needs(self):
         self.fetch()
-        pack, _ = self.pack(self.tmp / "away" / "commander-rescue-2026-01-01.zip")
+        pack, _ = self.pack(self.tmp / "away" / "helix-boot-2026-01-01.zip")
         away = pack.parent
         with zipfile.ZipFile(pack) as zf:  # like `unzip pack.zip 'installer/*'`: files and their modes
             for m in zf.infolist():
@@ -898,7 +934,7 @@ class TestPack(Base):
                     zf.extract(m, away)
                     os.chmod(away / m.filename, (m.external_attr >> 16) & 0o777 or 0o644)
         inst = away / "installer"
-        for f in ("crescue", "install.sh", "refresh.sh"):
+        for f in ("helix", "install.sh", "refresh.sh"):
             self.assertTrue(os.access(inst / f, os.X_OK), f)
         self.assertIn(pack.name, (inst / "README.txt").read_text())
         found = subprocess.run(["bash", "-c", f'source "{inst}/scripts/common.sh"; bundled_pack "{inst}"'],
@@ -909,9 +945,9 @@ class TestPack(Base):
         none = subprocess.run(["bash", "-c", f'source "{ROOT}/scripts/common.sh"; bundled_pack "{ROOT}"'],
                               capture_output=True, text=True)
         self.assertEqual((none.returncode, none.stdout), (0, ""))
-        # the bundled crescue fills a stick on its own
-        env = {**os.environ, "CRESCUE_CACHE": str(self.tmp / "away-cache"), "NO_COLOR": "1"}
-        run = subprocess.run([str(inst / "crescue"), "unpack", str(pack), str(self.stick), "--init"],
+        # the bundled helix fills a stick on its own
+        env = {**os.environ, "HELIX_CACHE": str(self.tmp / "away-cache"), "NO_COLOR": "1"}
+        run = subprocess.run([str(inst / "helix"), "unpack", str(pack), str(self.stick), "--init"],
                              capture_output=True, text=True, env=env)
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         self.assertTrue((self.stick / "ISO/5-Diagnostics/memtest.iso").exists())
@@ -964,7 +1000,7 @@ def fake_iso(platforms: list[int], efi_file: bool = False) -> bytes:
 
 class TestPortableAppsLogo(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="crescue-test-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="helix-test-"))
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -1075,7 +1111,7 @@ class TestPortableAppsLogo(unittest.TestCase):
 
 class TestBootModes(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="crescue-test-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="helix-test-"))
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -1123,7 +1159,7 @@ class TestProgress(unittest.TestCase):
 
 class TestDownloadRetry(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="crescue-test-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="helix-test-"))
         put("retry/tool.iso", b"iso bytes")
         Quiet.fail.clear()
 
@@ -1179,7 +1215,7 @@ class TestEncoding(unittest.TestCase):
         # Windows defaults to cp1252: tools.toml's "→" would reach the boot menu as "â†’".
         import ast
         bad = []
-        for node in ast.walk(ast.parse((ROOT / "crescue").read_text(encoding="utf-8"))):
+        for node in ast.walk(ast.parse((ROOT / "helix").read_text(encoding="utf-8"))):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
                     and node.func.attr in ("read_text", "write_text") \
                     and not any(k.arg == "encoding" for k in node.keywords):

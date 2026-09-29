@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Commander Rescue — build a fresh stick.
+# Helix Boot — build a fresh stick.
 #
 #   ./install.sh                 pick a USB stick interactively
 #   ./install.sh /dev/sdX        use that stick
-#   ./install.sh --from pack.zip  fill it from a pack (`crescue pack`), no downloads
+#   ./install.sh --from pack.zip  fill it from a pack (`helix pack`), no downloads
 #
 # Everything is downloaded and verified BEFORE the stick is touched, and you
 # must type the device name to confirm the wipe.
@@ -12,7 +12,7 @@ HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/common.sh
 source "$HERE/scripts/common.sh"
 trap on_err ERR
-CRESCUE="$HERE/crescue"
+HELIX="$HERE/helix"
 
 usage() {
   cat <<EOF
@@ -26,7 +26,7 @@ Options:
   --no-secure-boot   don't add Ventoy's Secure Boot shim
   --reserve MB       leave MB of unallocated space at the end of the stick
   --skip-fetch       use what's already cached; don't check upstream
-  --from PACK        use a pack made by "crescue pack" instead of downloading
+  --from PACK        use a pack made by "helix pack" instead of downloading
   --list             just list USB sticks and exit
   -h, --help         this help
 EOF
@@ -75,15 +75,15 @@ if [[ -n $from ]]; then
   from=$(realpath -- "$from")
   info "using the pack $from (no downloads)"
 elif ((skip_fetch)); then
-  "$CRESCUE" ventoy-path >/dev/null 2>&1 || "$CRESCUE" fetch ventoy
+  "$HELIX" ventoy-path >/dev/null 2>&1 || "$HELIX" fetch ventoy
 else
-  if ! "$CRESCUE" fetch; then
+  if ! "$HELIX" fetch; then
     warn "some tools failed to download (listed above)."
     read -rp "Continue with what was fetched? [y/N] " a
     [[ ${a,,} == y* ]] || die "stopped — nothing was written to any disk"
   fi
 fi
-if [[ -n $from ]]; then vdir=$("$CRESCUE" ventoy-path --from "$from"); else vdir=$("$CRESCUE" ventoy-path); fi
+if [[ -n $from ]]; then vdir=$("$HELIX" ventoy-path --from "$from"); else vdir=$("$HELIX" ventoy-path); fi
 
 # ── 2. Pick the stick ────────────────────────────────────────────────────
 mapfile -t sticks < <(usb_disks)
@@ -142,9 +142,9 @@ ok "Ventoy installed, data partition mounted at $mnt"
 
 # ── 5. Fill it ───────────────────────────────────────────────────────────
 if [[ -n $from ]]; then
-  "$CRESCUE" unpack "$from" "$mnt" --init --verify
+  "$HELIX" unpack "$from" "$mnt" --init --verify
 else
-  "$CRESCUE" sync "$mnt" --init --verify
+  "$HELIX" sync "$mnt" --init --verify
 fi
 
 section "Finishing"

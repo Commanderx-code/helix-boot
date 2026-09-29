@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Commander Rescue — a Windows 11 VM for building Lazarus PE.
+# Helix Boot — a Windows 11 VM for building Lazarus PE.
 #
 #   pe/vm/build-vm.sh create ~/Downloads/Win11.iso   make the VM, start Windows setup
 #   pe/vm/build-vm.sh push                           copy pe/ tooling onto the transfer disk
@@ -16,9 +16,21 @@ REPO=$(cd -- "$HERE/../.." && pwd)
 source "$REPO/scripts/common.sh"
 trap on_err ERR
 
-VM=${CRVM_NAME:-commander-pe-build}
 CONN=${CRVM_CONNECT:-qemu:///session}
-DIR=${CRVM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/commander-rescue/vm}
+DATA=${XDG_DATA_HOME:-$HOME/.local/share}
+# A VM made before the rename to Helix Boot keeps its folder and name: libvirt records its disks' paths.
+if [[ -z ${CRVM_DIR:-} && ! -d $DATA/helix-boot/vm && -d $DATA/commander-rescue/vm ]]; then
+  DIR=$DATA/commander-rescue/vm
+else
+  DIR=${CRVM_DIR:-$DATA/helix-boot/vm}
+fi
+if [[ -n ${CRVM_NAME:-} ]]; then
+  VM=$CRVM_NAME
+elif [[ $DIR == */commander-rescue/vm ]]; then
+  VM=commander-pe-build                 # made before the rename; see DIR above
+else
+  VM=helix-pe-build
+fi
 DISK=$DIR/windows.qcow2
 XFER=$DIR/transfer.img
 XFER_GB=16
@@ -72,9 +84,10 @@ make_transfer() {
 push() {
   need_xfer
   need_off
-  mdeltree -i "$M" ::/commander 2>/dev/null || true
-  mmd -i "$M" ::/commander
-  mcopy -i "$M" -s -m "$REPO/pe/phoenixpe" "$REPO/pe/launcher" "$REPO/pe/README.md" ::/commander/
+  mdeltree -i "$M" ::/commander 2>/dev/null || true   # its name before the rename to Helix Boot
+  mdeltree -i "$M" ::/helix 2>/dev/null || true
+  mmd -i "$M" ::/helix
+  mcopy -i "$M" -s -m "$REPO/pe/phoenixpe" "$REPO/pe/launcher" "$REPO/pe/README.md" ::/helix/
   # A PhoenixPE release saved in $DIR rides along, so Windows needn't download it
   local pe_zip='' step1='1. Unpack PhoenixPE (https://github.com/PhoenixPE/PhoenixPE/releases) to C:\PhoenixPE'
   pe_zip=$(find "$DIR" -maxdepth 1 -name 'PhoenixPE-*.7z' -printf '%f\n' | sort -V | tail -n1)
@@ -99,7 +112,7 @@ push() {
     extra=$(find "$DIR/extra" -mindepth 1 -maxdepth 1 -printf '%f ' | sed 's/ $//')
   fi
   printf '%s\r\n' \
-    'Commander Rescue transfer disk' \
+    'Helix Boot transfer disk' \
     '' \
     'Before anything else: Windows Security > Virus & threat protection > Manage settings >' \
     'Tamper Protection off, then in Terminal (Admin):' \
@@ -107,8 +120,8 @@ push() {
     '  (D: is this disk.) Defender flags some PhoenixPE tools; exclusions stop it for good.' \
     '' \
     "$step1" \
-    '2. In PowerShell, from commander\phoenixpe on this disk:' \
-    '     powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 C:\PhoenixPE' \
+    '2. In PowerShell, from helix\phoenixpe on this disk:' \
+    '     powershell -ExecutionPolicy Bypass -File .\Apply-HelixPreset.ps1 C:\PhoenixPE' \
     '3. Run C:\PhoenixPE\PEBakeryLauncher.exe as administrator. Source Config: the Windows DVD' \
     '   drive root, base image 2, the Pro edition, "Run all programs from RAM" NOT ticked.' \
     "$step3b" \
@@ -118,7 +131,7 @@ push() {
     '4. Copy the finished .iso into the out folder on this disk, then shut Windows down.' \
     '5. On Linux: pe/vm/build-vm.sh pull' > "$DIR/README.txt"
   mcopy -i "$M" -o "$DIR/README.txt" ::/README.txt
-  ok "transfer disk updated (commander\\, README.txt${pe_zip:+, $pe_zip}${drivers:+, drivers: $drivers}${extra:+, extra: $extra})"
+  ok "transfer disk updated (helix\\, README.txt${pe_zip:+, $pe_zip}${drivers:+, drivers: $drivers}${extra:+, extra: $extra})"
 }
 
 case ${1:-} in
@@ -139,7 +152,7 @@ case ${1:-} in
     qconf=${XDG_CONFIG_HOME:-$HOME/.config}/libvirt/qemu.conf
     if [[ $(ulimit -Hc) == 0 ]] && ! grep -qs '^[[:space:]]*max_core' "$qconf"; then
       mkdir -p "$(dirname "$qconf")"
-      printf '# Added by Commander Rescue: core dumps are disabled for this user\nmax_core = 0\n' >> "$qconf"
+      printf '# Added by Helix Boot: core dumps are disabled for this user\nmax_core = 0\n' >> "$qconf"
       pkill -u "$(id -u)" -x virtqemud || true  # restarts on demand with the new setting
       info "set max_core = 0 in $qconf (core dumps are off for your user)"
     fi
@@ -181,7 +194,7 @@ case ${1:-} in
     mv -f "$newest" "$REPO/pe/out/LazarusPE.iso"
     rm -rf "$tmp"
     ok "pe/out/LazarusPE.iso ← $(basename "$newest") ($(du -h "$REPO/pe/out/LazarusPE.iso" | cut -f1))"
-    info "next: ./crescue fetch lazarus-pe && ./refresh.sh"
+    info "next: ./helix fetch lazarus-pe && ./refresh.sh"
     ;;
   status)
     if exists; then info "VM '$VM': $(virsh_ domstate "$VM")"; else info "VM '$VM': not created"; fi

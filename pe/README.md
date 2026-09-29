@@ -14,10 +14,10 @@ USB in `Apps/` and are updated by `refresh.sh` **without rebuilding the PE**.
 USB (Ventoy data partition)
 ├── ISO/6-Live-Operating-Systems/LazarusPE.iso   ← what you build here (rebuild rarely)
 ├── Apps/                              ← refreshed from Linux, any time
-│   ├── CommanderApps.cmd              ← menu launcher
+│   ├── HelixApps.cmd              ← menu launcher
 │   ├── apps.txt
 │   ├── sysinternals/  hwinfo/  crystaldiskinfo/ …
-└── commander-rescue.tag               ← how the launcher finds the stick
+└── helix-boot.tag               ← how the launcher finds the stick
 ```
 
 ## What you need
@@ -27,7 +27,7 @@ USB (Ventoy data partition)
 | Build host | Windows 10/11 **x64**. On Linux, `pe/vm/build-vm.sh` makes a VM for you (below). |
 | Source | A Windows 11 ISO. PhoenixPE recommends **Win11 23H2** for the fewest quirks. 24H2 and 25H2 work, but taskbar pins can misbehave. Win10 2004 also works. |
 | Disk | ~40 GB free on Linux for the VM (its disk grows as it fills, up to 64 GB) |
-| PhoenixPE | Latest release from [PhoenixPE releases](https://github.com/PhoenixPE/PhoenixPE/releases). It bundles the PEBakery build engine. With the build VM, save the `PhoenixPE-*.7z` in `~/.local/share/commander-rescue/vm/` and it goes onto the transfer disk for you. |
+| PhoenixPE | Latest release from [PhoenixPE releases](https://github.com/PhoenixPE/PhoenixPE/releases). It bundles the PEBakery build engine. With the build VM, save the `PhoenixPE-*.7z` in `~/.local/share/helix-boot/vm/` (`commander-rescue/vm` for a VM made before the rename) and it goes onto the transfer disk for you. |
 
 ### VM on Garuda (one-time)
 
@@ -68,16 +68,16 @@ tooling and `pull` fetches the ISO.
 1. Unpack the PhoenixPE release inside the VM to `C:\PhoenixPE` (the `.7z` has no
    top folder, so extract into that folder). With the build VM it's on the
    transfer disk: right-click it, *Extract All*.
-2. Apply the Commander preset from PowerShell, using the copy of `pe\` on the
-   transfer disk (`CRTRANSFER\commander`), or this repo if you build elsewhere:
+2. Apply the Helix preset from PowerShell, using the copy of `pe\` on the
+   transfer disk (`CRTRANSFER\helix`), or this repo if you build elsewhere:
 
    ```powershell
-   cd E:\commander\phoenixpe        # the CRTRANSFER drive letter may differ
-   powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 C:\PhoenixPE -WhatIf   # preview
-   powershell -ExecutionPolicy Bypass -File .\Apply-CommanderPreset.ps1 C:\PhoenixPE
+   cd E:\helix\phoenixpe        # the CRTRANSFER drive letter may differ
+   powershell -ExecutionPolicy Bypass -File .\Apply-HelixPreset.ps1 C:\PhoenixPE -WhatIf   # preview
+   powershell -ExecutionPolicy Bypass -File .\Apply-HelixPreset.ps1 C:\PhoenixPE
    ```
 
-   This installs the **Commander Rescue** add-on (the app launcher, with
+   This installs the **Helix Boot** add-on (the app launcher, with
    desktop and Start menu shortcuts, and the PortableApps.com Platform opening
    from the USB when the desktop loads) and ticks the options in
    [`phoenixpe/preset.txt`](phoenixpe/preset.txt):
@@ -116,7 +116,7 @@ tooling and `pull` fetches the ISO.
 5. **Extra drivers:** Windows PE has no Wi-Fi drivers for most laptop cards.
    Tick *Drivers → Driver Integration* and point **x64 Drivers** at unpacked
    `.inf` driver folders. With the build VM, put them in
-   `~/.local/share/commander-rescue/vm/drivers/x64/` and `pe/vm/build-vm.sh
+   `~/.local/share/helix-boot/vm/drivers/x64/` (or `commander-rescue/vm` for a VM made before the rename) and `pe/vm/build-vm.sh
    push`: they appear as `D:\drivers\x64`. For Intel Wi-Fi (AC 9260/9560 and
    AX201/203/210/211 and newer), unzip Intel's
    [IT-admin driver package](https://www.intel.com/content/www/us/en/download/18231/intel-proset-wireless-software-and-wi-fi-drivers-for-it-administrators.html)
@@ -124,7 +124,7 @@ tooling and `pull` fetches the ISO.
 6. Press **Build**. The first build takes longer because it caches the source.
    Later builds take a few minutes.
 7. Test the ISO in the VM (boot it as a CD) before putting it on the stick:
-   the desktop should show **Commander Apps**.
+   the desktop should show **Helix Apps**.
 
 ## Which Windows to build from
 
@@ -144,7 +144,7 @@ Windows 11 ISO (the one on Microsoft's download page):
 ```fish
 pe/vm/build-vm.sh pull
 pe/fix-bootmgr.sh ~/Downloads/Win11_25H2_English_x64.iso
-./crescue fetch lazarus-pe
+./helix fetch lazarus-pe
 ```
 
 ## Put it on the stick
@@ -159,7 +159,7 @@ pe/out/LazarusPE.iso
 Then, on Linux:
 
 ```fish
-./crescue fetch lazarus-pe   # registers the local build (hash + date)
+./helix fetch lazarus-pe   # registers the local build (hash + date)
 ./refresh.sh                   # copies it to ISO/6-Live-Operating-Systems/
 ```
 
@@ -168,7 +168,7 @@ Then, on Linux:
 ## Until the PE is built
 
 Hiren's BootCD PE is on the stick too: a free, ready-made Win11 PE. It covers
-for Lazarus PE until yours is built, and `Apps\CommanderApps.cmd` works from
+for Lazarus PE until yours is built, and `Apps\HelixApps.cmd` works from
 it as well. To leave it off, set `enabled = false` under `[overrides.hirens]`
 in `local.toml`.
 

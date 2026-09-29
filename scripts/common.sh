@@ -16,8 +16,8 @@ die()  { printf '%s✗%s %s\n' "$R" "$X" "$*" >&2; exit 1; }
 # Friendly failure instead of a bare exit code.
 on_err() {
   local code=$? cmd=$BASH_COMMAND
-  if [[ $cmd == *CRESCUE* || $cmd == *bundled_pack* ]]; then
-    :  # crescue (or die) already explained what went wrong
+  if [[ $cmd == *HELIX* || $cmd == *bundled_pack* ]]; then
+    :  # helix (or die) already explained what went wrong
   elif [[ $code -eq 127 ]]; then
     printf '%s✗%s command not found: %s\n' "$R" "$X" "${cmd%% *}" >&2
   else
@@ -90,7 +90,7 @@ mount_part() {
   if command -v udisksctl >/dev/null; then
     udisksctl mount -b "$part" >/dev/null
   else
-    mnt=$(mktemp -d /tmp/commander-rescue.XXXX)
+    mnt=$(mktemp -d /tmp/helix-boot.XXXX)
     sudo mount -o "uid=$(id -u),gid=$(id -g)" "$part" "$mnt"
   fi
   findmnt -no TARGET "$part" | head -n1
@@ -112,7 +112,8 @@ bundled_pack() {  # bundled_pack <script dir>
   [[ -f $1/.bundled ]] || return 0
   local packs=() z
   for z in "$1"/../*.zip; do
-    [[ -f $z ]] && unzip_has "$z" commander-rescue-pack.json && packs+=("$(realpath -- "$z")")
+    [[ -f $z ]] && { unzip_has "$z" helix-boot-pack.json || unzip_has "$z" commander-rescue-pack.json; } \
+      && packs+=("$(realpath -- "$z")")
   done
   ((${#packs[@]})) || die "can't find the pack beside $(realpath -- "$1"). Pass it with --from /path/to/pack.zip"
   ((${#packs[@]} == 1)) || die "more than one pack beside $(realpath -- "$1") — pass the one you want with --from"

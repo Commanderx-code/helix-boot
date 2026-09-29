@@ -19,7 +19,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: Output of `./crescue --version`, or the Windows app's version.
+      description: Output of `./helix --version`, or the Windows app's version.
     validations:
       required: true
   - type: dropdown
