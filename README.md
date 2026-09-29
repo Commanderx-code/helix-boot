@@ -15,11 +15,11 @@ Current tools, verified downloads, a MediCat-style boot menu, and room for your 
 [Quick start](#quick-start) ·
 [What's on the stick](#whats-on-the-stick) ·
 [Packs](#packs-the-whole-stick-in-one-file) ·
-[Lazarus PE](pe/README.md) ·
+[Lazarus PE](#lazarus-pe) ·
 [Customising](#customising) ·
 [Changelog](CHANGELOG.md)
 
-<img src="docs/boot-menu.png" alt="The Helix Boot boot menu in Ventoy" width="820">
+<img src="docs/boot-menu.jpg" alt="The Helix Boot menu (Helix Neon theme) in Ventoy" width="820">
 
 </div>
 
@@ -36,7 +36,8 @@ desktop) and fixes the rest:
 | **Verified** | Downloads are checked against the publisher's own checksums before they reach the stick. Anything without one is flagged, never trusted silently. |
 | **Free by default** | The shipped tool list is free software and freeware. Paid tools get [bring-your-own](#bring-your-own-tools) slots for your licensed copies. |
 | **Refreshable in place** | `./refresh.sh` swaps in new versions and leaves files you added yourself alone. |
-| **Offline-ready** | [Packs](#packs-the-whole-stick-in-one-file) put the whole stick, your own tools included, into one zip that builds a stick with no internet. |
+| **Offline-ready** | [Packs](#packs-the-whole-stick-in-one-file) put the whole stick, your own tools included, into one zip that builds a stick with no internet, from Linux or Windows. |
+| **A real recovery desktop** | [Lazarus PE](#lazarus-pe), your own Windows 11 PE, opens on a full-screen launcher with every tool on the stick sorted into categories. |
 | **Nothing redistributed** | The repo holds a manifest and scripts, not binaries. The Windows PE is built from *your* Windows ISO. |
 
 ## Quick start
@@ -70,12 +71,13 @@ in a folder of its own and run it (see [below](#windows-app)).
 ## What's on the stick
 
 Nine categories, each with its own icon, and every tool inside with an icon
-and a one-line tip. Tools that only start on older BIOS PCs (DBAN, HDAT2,
+and a one-line tip. A tenth, **OS Images**, is your own folder for installer
+ISOs; it appears as soon as you put one in. Tools that only start on older BIOS PCs (DBAN, HDAT2,
 SpinRite) are marked **[BIOS]**, and UEFI-only ones **[UEFI]**, detected from
 each ISO's boot records. Windows `.wim` boot images (WinRE, WinPE tools) work
 too: Ventoy's wimboot plugin comes with the stick.
 
-<img src="docs/boot-menu-folder.png" alt="Inside a boot-menu category" width="820">
+<img src="docs/boot-menu-folder.jpg" alt="Inside a boot-menu category, with tool icons" width="820">
 
 | Menu | Tools | Source · verification |
 |---|---|---|
@@ -95,7 +97,12 @@ too: Ventoy's wimboot plugin comes with the stick.
 | Windows Recovery | *bring your own* (Windows 10/11 setup, DaRT) | [`byo/`](byo/README.md) |
 | OS Images | *yours*: drop Windows or Linux installer ISOs into `ISO/OSimages` on the stick | shown once it holds an image |
 
-**Portable apps** for any Windows PE, in `USB:\Apps` with a menu launcher:
+Screenshots are real Ventoy renders of a Helix Boot stick. In the menu, use
+Up/Down, Enter and Esc: Ventoy's left/right keys only slide the highlighted
+name sideways (built into Ventoy, not a setting).
+
+**Portable apps** for any Windows PE, in `USB:\Apps`, listed by the Lazarus
+launcher and by the Helix Apps menu (`HelixApps.cmd`, for other PEs such as Hiren's):
 Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO,
 TestDisk & PhotoRec, ProduKey, DiskGenius Free, Microsoft Safety Scanner and
 Kaspersky Virus Removal Tool *(off by default)*. The launcher also carries
@@ -113,8 +120,10 @@ definitions, so `./refresh.sh` before a job keeps them current. Microsoft
 Safety Scanner stops working 10 days after download.
 
 On newer PCs, Kaspersky Rescue Disk's *Graphic mode* can end on a black
-screen (its 2018 kernel predates their graphics): choose *Limited graphic
-mode* in its menu instead.
+screen when it doesn't support the graphics card: choose *Limited graphic
+mode* in its menu instead (the boot-menu tip says so). Dr.Web LiveDisk runs a
+2018 Linux, which may not start at all on newer PCs; Kaspersky, Malwarebytes
+and the scanners in Lazarus PE cover those.
 
 Kaspersky refuses downloads from the US, so its two tools are off. Outside the
 US, turn them on in `local.toml`:
@@ -140,9 +149,10 @@ Every tool is described in [`tools.toml`](tools.toml); adding one is a few lines
 ### PortableApps.com
 
 The [PortableApps.com Platform](https://portableapps.com) sits at the root of
-the stick (`Start.exe`), like on MediCat: run it on any Windows PC, and
-Lazarus PE opens it by itself when the desktop loads. Pick apps from its App
-Store; it keeps them and itself up to date. Helix Boot puts the Platform
+the stick (`Start.exe`), like on MediCat: run it on any Windows PC, or from
+the **PortableApps** quick action in Lazarus PE, whose launcher also lists
+every app you install. Pick apps from its App Store; it keeps them and itself
+up to date. Helix Boot puts the Platform
 on once and never overwrites or prunes it, so your apps survive every refresh.
 The Helix Apps menu also has **p) PortableApps.com menu**.
 
@@ -234,9 +244,11 @@ pack next to the `.exe` is chosen for you. From the command line, add
 Lazarus PE is the stick's Windows 11 desktop, filling the role of MediCat's
 Mini Windows. You build it yourself with PhoenixPE from your own Windows ISO,
 because WinPE images contain Microsoft files that can't be redistributed. The
-image stays lean: drivers, networking and Explorer. The portable apps live on
-the stick and update without a rebuild. On Linux, `pe/vm/build-vm.sh` sets up
-the build VM for you. See the [Lazarus PE guide](pe/README.md).
+image stays lean: drivers (including Intel Wi-Fi and RST), networking and
+Explorer, in its own look: the phoenix wallpaper and profile picture, dark
+mode and a teal accent. The launcher, apps and startup live on the stick and
+update without a rebuild. On Linux, `pe/vm/build-vm.sh` sets up the build VM
+for you. See the [Lazarus PE guide](pe/README.md).
 
 Until yours is built, Hiren's BootCD PE covers for it, and the app launcher
 works there too.
@@ -257,7 +269,7 @@ from its App Store) and the PE's own Start menu, the same tool only once. It
 lives on the stick in `Apps\Lazarus` (from [`pe/lazarus`](pe/lazarus)), so a
 refresh updates it without a PE rebuild. Categories, sorting rules, names and
 quick actions are in [`launcher.json`](pe/lazarus/launcher.json). Without it,
-Lazarus PE opens the PortableApps.com menu as before.
+Lazarus PE opens the PortableApps.com menu instead.
 
 ## `helix`, the engine
 
@@ -330,9 +342,9 @@ two remaining letter-badge fallbacks. The builder preserves these icons.
 
 ![Helix Neon layout preview](docs/artwork/helix-neon-preview.jpg)
 
-The image above is a layout preview, not a booted Ventoy screenshot. The theme
-targets 1920×1080; other screen modes use the existing resolution fallback,
-and shorter menus scroll. Long ISO names may need left/right to scroll.
+The image above is a layout preview; the screenshots at the top are the real
+thing. The theme targets 1920×1080; other screen modes use Ventoy's resolution
+fallback, and longer menus scroll.
 
 After pulling the changes, `./refresh.sh` installs the new theme on an existing
 stick. No PE rebuild is needed. See [theme notes](docs/theming.md) for rebuilding
@@ -354,7 +366,9 @@ ISO/1-Antivirus/  ISO/2-Backup-and-Recovery/  ISO/3-Boot-Repair/
 ISO/4-Diagnostic-Tools/  ISO/5-Disk-Wipe/  ISO/6-Live-Operating-Systems/
 ISO/7-Partition-Tools/  ISO/8-Password-Removal/  ISO/9-Windows-Recovery/
 ISO/OSimages/       your own installer ISOs (never touched; hidden while empty)
-Apps/               portable apps + HelixApps.cmd launcher
+Apps/               portable apps, the Helix Apps menu and LazarusStartup.cmd
+Apps/Lazarus/       the Lazarus launcher (Lazarus PE's start screen)
+PortableApps/       the PortableApps.com Platform's apps (Start.exe at the root)
 ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 .helix-boot/        sync state (which files this project manages)
 ```
@@ -372,6 +386,8 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 - [x] First Lazarus PE build
 - [x] PortableApps.com Platform with custom menu themes
 - [x] Packs in the Windows app
+- [x] Renamed to Helix Boot (0.5.0), Helix Neon boot-menu theme
+- [x] Lazarus PE look and the Lazarus launcher
 - [ ] Commander Toolbox entry
 
 ## Contributing
@@ -382,9 +398,12 @@ privately as described in [SECURITY.md](SECURITY.md).
 
 ## Credits and license
 
-Built on [Ventoy](https://www.ventoy.net) and
-[PhoenixPE](https://github.com/PhoenixPE/PhoenixPE), with thanks to every tool
-author listed in [`tools.toml`](tools.toml). Inspired by MediCat USB.
+Built on [Ventoy](https://www.ventoy.net),
+[PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) and the
+[PortableApps.com Platform](https://portableapps.com), with thanks to every tool
+author listed in [`tools.toml`](tools.toml). Icons from
+[Material Design Icons](https://pictogrammers.com/library/mdi/). Inspired by
+MediCat USB.
 
 This repo's scripts are [MIT](LICENSE) licensed. Each tool keeps its own
 license, and nothing here grants rights to software you bring yourself.

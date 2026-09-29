@@ -7,8 +7,7 @@ The other five PortableApps themes and the user's saved selection are unchanged.
 
 ## Apply
 
-Pull this change after it is merged, then run `./refresh.sh` with the stick
-attached. The normal refresh copies the committed theme assets and writes
+Run `./refresh.sh` with the stick attached. The normal refresh copies the committed theme assets and writes
 Ventoy's menu configuration. It also checks for tool updates as usual.
 No Windows PE rebuild or PortableApps reinstall is needed.
 
@@ -45,9 +44,10 @@ actual entries, status, timeout and hotkey text.
 ## Check on hardware
 
 The primary layout is 1920×1080. Ventoy's existing `resolution_fit` fallback
-remains enabled. At smaller resolutions fewer rows fit, so the menu scrolls;
-long ISO names use Ventoy's left/right text scrolling. The background stretches
-to the available screen, including 4:3 displays.
+remains enabled. At smaller resolutions fewer rows fit, so the menu scrolls.
+Ventoy's left/right keys slide the highlighted name sideways; that's built into
+Ventoy and can't be switched off. The background stretches to the available
+screen, including 4:3 displays.
 
 Offline previews can catch basic fit problems:
 
@@ -56,7 +56,9 @@ python3 theme/preview-theme.py --size 1280x720 --out /tmp/helix-720p.png
 python3 theme/preview-theme.py --size 1024x768 --out /tmp/helix-4x3.png
 ```
 
-These previews approximate GRUB layout; they do not execute Ventoy. After
+These previews approximate GRUB layout; they do not execute Ventoy. The
+screenshots in the README (`docs/boot-menu*.jpg`) are real Ventoy 1.1.17
+renders, taken by booting a stick's `ventoy/` folder in a UEFI virtual machine. After
 refreshing, boot the stick and check all category rows, entering a category,
 long names, scrolling, F1/F2/F3, Enter/Esc, timeout (if configured), and any
 boot-mode indicators you use. Check UEFI and legacy BIOS when available.

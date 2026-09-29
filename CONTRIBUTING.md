@@ -26,11 +26,17 @@ shellcheck -x install.sh refresh.sh scripts/common.sh pe/vm/build-vm.sh
 ```
 
 The tests run against a local fake GitHub / SourceForge / web server, so they
-need no network. CI also runs a weekly live download-and-verify of every tool.
+need no network; the Windows app's tests fake PowerShell and Ventoy, so they run
+here too. CI also runs a weekly live download-and-verify of every tool, builds
+and smoke-tests `HelixBoot.exe` on Windows, and checks the Lazarus launcher
+(`pe/lazarus`) on Windows PowerShell 5.1, uploading screenshots of it.
 
 ## Pull requests
 
 - Keep `helix` standard-library only, and match the surrounding style.
+- PowerShell for Lazarus PE must run on Windows PowerShell 5.1; save `.ps1`
+  files with non-ASCII text as UTF-8 **with** a BOM (5.1 reads them as ANSI
+  otherwise).
 - Add or update tests for behaviour changes, and keep ShellCheck clean.
 - After adding a tool or category, run `theme/build-theme.py` so it gets a menu
   icon (a test checks this).

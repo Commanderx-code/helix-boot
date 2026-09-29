@@ -7,25 +7,39 @@ legally redistributed. This repo ships the recipe, and your own Windows ISO
 provides the files.
 
 The PE image stays **lean**. It boots to a desktop with drivers, networking, and
-Explorer. The portable apps (Sysinternals, HWiNFO, CrystalDiskInfo…) live on the
-USB in `Apps/` and are updated by `refresh.sh` **without rebuilding the PE**.
+Explorer. Everything else lives on the USB and is updated by `refresh.sh`
+**without rebuilding the PE**: the portable apps (Sysinternals, HWiNFO,
+CrystalDiskInfo…), the PortableApps.com apps, the Lazarus launcher and what
+happens at startup.
 
 ```
 USB (Ventoy data partition)
 ├── ISO/6-Live-Operating-Systems/LazarusPE.iso   ← what you build here (rebuild rarely)
-├── Apps/                              ← refreshed from Linux, any time
-│   ├── HelixApps.cmd              ← menu launcher
-│   ├── apps.txt
-│   ├── sysinternals/  hwinfo/  crystaldiskinfo/ …
-└── helix-boot.tag               ← how the launcher finds the stick
+├── Apps/                          ← refreshed from Linux, any time
+│   ├── LazarusStartup.cmd         ← run by the PE when its desktop loads
+│   ├── Lazarus/                   ← the Lazarus launcher (start screen)
+│   ├── HelixApps.cmd, apps.txt    ← text menu, for any WinPE
+│   └── sysinternals/  hwinfo/  crystaldiskinfo/ …
+├── Start.exe, PortableApps/       ← PortableApps.com Platform and its apps
+└── helix-boot.tag                 ← how the PE finds the stick
 ```
+
+## At startup
+
+When the desktop loads, the PE's small Helix Boot helper finds the stick by
+`helix-boot.tag` and runs `Apps\LazarusStartup.cmd` from it. That opens the
+**Lazarus launcher** full screen (or, without it, the PortableApps.com menu).
+Both are on the stick, so changing what happens at startup
+([`launcher/LazarusStartup.cmd`](launcher/LazarusStartup.cmd)) or the
+launcher itself ([`lazarus/`](lazarus/), settings in
+[`launcher.json`](lazarus/launcher.json)) takes a refresh, not a rebuild.
 
 ## What you need
 
 | | |
 |---|---|
 | Build host | Windows 10/11 **x64**. On Linux, `pe/vm/build-vm.sh` makes a VM for you (below). |
-| Source | A Windows 11 ISO. PhoenixPE recommends **Win11 23H2** for the fewest quirks. 24H2 and 25H2 work, but taskbar pins can misbehave. Win10 2004 also works. |
+| Source | A **Windows 11 22H2 or 23H2** ISO for the PE (see [Which Windows to build from](#which-windows-to-build-from)), and a current Windows 11 ISO (24H2/25H2) for the build VM and the PE's boot manager. |
 | Disk | ~40 GB free on Linux for the VM (its disk grows as it fills, up to 64 GB) |
 | PhoenixPE | Latest release from [PhoenixPE releases](https://github.com/PhoenixPE/PhoenixPE/releases). It bundles the PEBakery build engine. With the build VM, save the `PhoenixPE-*.7z` in `~/.local/share/helix-boot/vm/` (`commander-rescue/vm` for a VM made before the rename) and it goes onto the transfer disk for you. |
 
@@ -77,10 +91,10 @@ tooling and `pull` fetches the ISO.
    powershell -ExecutionPolicy Bypass -File .\Apply-HelixPreset.ps1 C:\PhoenixPE
    ```
 
-   This installs the **Helix Boot** add-on (the app launcher, with
-   desktop and Start menu shortcuts, and the PortableApps.com Platform opening
-   from the USB when the desktop loads) and ticks the options in
-   [`phoenixpe/preset.txt`](phoenixpe/preset.txt):
+   This installs the **Helix Boot** add-on (Helix Apps desktop and Start menu
+   shortcuts, the startup helper described [above](#at-startup), and the
+   Start menu profile picture), replacing a Commander Rescue add-on from before
+   the rename, and applies [`phoenixpe/preset.txt`](phoenixpe/preset.txt):
 
    | | |
    |---|---|
@@ -128,7 +142,8 @@ tooling and `pull` fetches the ISO.
 6. Press **Build**. The first build takes longer because it caches the source.
    Later builds take a few minutes.
 7. Test the ISO in the VM (boot it as a CD) before putting it on the stick:
-   the desktop should show **Helix Apps**.
+   the desktop should show **Helix Apps**. Booted from the stick, the Lazarus
+   launcher opens a few seconds after the desktop.
 
 ## Which Windows to build from
 
@@ -182,4 +197,5 @@ in `local.toml`.
 - New hardware that needs storage or network drivers
 - A PhoenixPE release with fixes you care about
 
-App updates **never** need a rebuild. `./refresh.sh` handles those.
+App, launcher and startup changes **never** need a rebuild. `./refresh.sh`
+handles those.

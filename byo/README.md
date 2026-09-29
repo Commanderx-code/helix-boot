@@ -57,13 +57,13 @@ name = "acronis"                 # any short id
 title = "Acronis True Image"     # menu text
 kind = "iso"
 category = "imaging"             # antivirus, imaging, boot-repair, diagnostics, wipe,
-source = "local"                 #   live, partitioning, password, windows
+source = "local"                 #   live, partitioning, password, windows, images
 byo = true
 path = "byo/acronis.iso"
 description = "Shown under the menu when it's highlighted."
 ```
 
-A portable Windows program, run from the PE's **Commander Apps** menu. The
+A portable Windows program, listed by the Lazarus launcher and the **Helix Apps** menu. The
 path can be a single `.exe` or a `.zip` (it's unpacked into `USB:\Apps\<name>\`),
 and `entry` is the program to launch, relative to that folder:
 

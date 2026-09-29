@@ -16,6 +16,10 @@ tagged releases also publish the Windows app.
   renders screenshots at six screen sizes.
 - Descriptions for every app in `tools.toml`, carried in `Apps\apps.txt`.
 
+### Changed
+- Documentation brought up to date: real Ventoy screenshots of the Helix Neon
+  menu, Lazarus PE's startup and look, the launcher, and packs on Windows.
+
 ## [0.5.0] - 2026-09-29
 
 ### Changed
