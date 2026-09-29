@@ -312,6 +312,7 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 - [x] Packs: offline, self-installing zip of the whole stick
 - [x] PhoenixPE preset, Commander Rescue add-on and build VM ([guide](pe/README.md))
 - [x] First Lazarus PE build
+- [x] PortableApps.com Platform with custom menu themes
 - [ ] Packs in the Windows app
 - [ ] Commander Toolbox entry
 
