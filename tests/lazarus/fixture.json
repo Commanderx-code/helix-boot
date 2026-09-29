@@ -1,0 +1,980 @@
+{
+ "_about": "Names and descriptions from a real Helix Boot stick, for the launcher's CI screenshots.",
+ "helix": [
+  {
+   "title": "Sysinternals Suite",
+   "path": "sysinternals\\procexp64.exe",
+   "description": "Process Explorer, Autoruns, TCPView and 70 more Microsoft tools"
+  },
+  {
+   "title": "Explorer++",
+   "path": "explorerpp\\Explorer++.exe",
+   "description": "Tabbed file manager, handy where File Explorer is limited"
+  },
+  {
+   "title": "Notepad++",
+   "path": "notepadpp\\notepad++.exe",
+   "description": "Text and code editor for logs, configs and scripts"
+  },
+  {
+   "title": "CrystalDiskInfo",
+   "path": "crystaldiskinfo\\DiskInfo64.exe",
+   "description": "Drive health: S.M.A.R.T. status, temperature and power-on hours"
+  },
+  {
+   "title": "CrystalDiskMark",
+   "path": "crystaldiskmark\\DiskMark64.exe",
+   "description": "Drive speed test for SSDs, NVMe and hard drives"
+  },
+  {
+   "title": "HWiNFO",
+   "path": "hwinfo\\HWiNFO64.exe",
+   "description": "Hardware details and live sensors: temperatures, voltages, fans"
+  },
+  {
+   "title": "TestDisk & PhotoRec",
+   "path": "testdisk\\testdisk-7.2\\qphotorec_win.exe",
+   "description": "Recover lost partitions (TestDisk) and deleted files (PhotoRec)"
+  },
+  {
+   "title": "ProduKey",
+   "path": "produkey\\ProduKey.exe",
+   "description": "Show Windows and Office product keys, also from an offline Windows"
+  },
+  {
+   "title": "DiskGenius Free",
+   "path": "diskgenius\\DiskGenius\\DiskGenius.exe",
+   "description": "Partitions, file recovery, disk cloning and bad sector checks"
+  },
+  {
+   "title": "Chris Titus Tech WinUtil (run in Windows)",
+   "path": "winutil\\winutil.ps1",
+   "description": "Chris Titus Tech's tweak, debloat and install utility; run it in Windows"
+  },
+  {
+   "title": "Microsoft Safety Scanner",
+   "path": "msert\\msert.exe",
+   "description": "Microsoft's on-demand scanner for malware"
+  }
+ ],
+ "portableapps": [
+  {
+   "folder": "7-ZipPortable",
+   "name": "7-Zip Portable",
+   "category": "Utilities",
+   "description": "File archiver with support for 7z, ZIP, GZIP, BZIP2, TAR, RAR, etc",
+   "start": "7-ZipPortable.exe",
+   "version": "26.03"
+  },
+  {
+   "folder": "AIDA64 Engineer Edition",
+   "name": "AIDA64 Engineer",
+   "category": "",
+   "description": "",
+   "start": "AIDA64 Engineer.exe",
+   "version": ""
+  },
+  {
+   "folder": "AngryIPScannerPortable",
+   "name": "Angry IP Scanner Portable",
+   "category": "Utilities",
+   "description": "Network scanner",
+   "start": "AngryIPScannerPortable.exe",
+   "version": "3.9.3"
+  },
+  {
+   "folder": "AutorunsPortable",
+   "name": "Autoruns Portable",
+   "category": "Utilities",
+   "description": "Configure auto-running programs and utilities",
+   "start": "AutorunsPortable.exe",
+   "version": "14.3",
+   "encoding": "utf-16"
+  },
+  {
+   "folder": "BleachBitPortable",
+   "name": "BleachBit Portable",
+   "category": "Utilities",
+   "description": "Clean application settings",
+   "start": "BleachBitPortable.exe",
+   "version": "6.0.2"
+  },
+  {
+   "folder": "CPU-ZPortable",
+   "name": "CPU-Z Portable",
+   "category": "Utilities",
+   "description": "System information",
+   "start": "CPU-ZPortable.exe",
+   "version": "2.20.2"
+  },
+  {
+   "folder": "CaesiumPortable",
+   "name": "Caesium Portable",
+   "category": "Graphics & Pictures",
+   "description": "Image compressor",
+   "start": "CaesiumPortable.exe",
+   "version": "2.8.5"
+  },
+  {
+   "folder": "Capture2TextPortable",
+   "name": "Capture2Text Portable",
+   "category": "Utilities",
+   "description": "Screen OCR",
+   "start": "Capture2TextPortable.exe",
+   "version": "4.6.3"
+  },
+  {
+   "folder": "ChromiumPortable",
+   "name": "Chromium Portable",
+   "category": "Internet",
+   "description": "Web browser",
+   "start": "ChromiumPortable.exe",
+   "version": "154.0.8037.58"
+  },
+  {
+   "folder": "ClamWinPortable",
+   "name": "ClamWin Portable",
+   "category": "Security",
+   "description": "Antivirus",
+   "start": "ClamWinPortable.exe",
+   "version": "0.103.2.1 Build 1.4.3"
+  },
+  {
+   "folder": "CoreinfoPortable",
+   "name": "Coreinfo Portable",
+   "category": "Utilities",
+   "description": "Processor details utility",
+   "start": "CoreinfoPortable.exe",
+   "version": "4.0.2",
+   "encoding": "utf-16"
+  },
+  {
+   "folder": "CpuFrequenzPortable",
+   "name": "CpuFrequenz Portable",
+   "category": "Utilities",
+   "description": "CPU load and frequency utility",
+   "start": "CpuFrequenzPortable.exe",
+   "version": "4.55"
+  },
+  {
+   "folder": "CrystalDiskInfoPortable",
+   "name": "CrystalDiskInfo Portable",
+   "category": "Utilities",
+   "description": "HDD/SSD S.M.A.R.T. temperature and status monitor",
+   "start": "CrystalDiskInfoPortable.exe",
+   "version": "9.9.1"
+  },
+  {
+   "folder": "CrystalDiskMarkPortable",
+   "name": "CrystalDiskMark Portable",
+   "category": "Utilities",
+   "description": "Disk benchmarking",
+   "start": "CrystalDiskMarkPortable.exe",
+   "version": "9.0.3"
+  },
+  {
+   "folder": "CrystalMarkRetroPortable",
+   "name": "CrystalMark Retro Portable",
+   "category": "Utilities",
+   "description": "Comprehensive Benchmarking",
+   "start": "CrystalMarkRetroPortable.exe",
+   "version": "2.1.0"
+  },
+  {
+   "folder": "DamnVidPortable",
+   "name": "DamnVid Portable",
+   "category": "Internet",
+   "description": "video downloader/converter",
+   "start": "DamnVidPortable.exe",
+   "version": "1.6.0.1",
+   "encoding": "ansi"
+  },
+  {
+   "folder": "DaphnePortable",
+   "name": "Daphne Portable",
+   "category": "Utilities",
+   "description": "Process explorer, killer and debugger.",
+   "start": "DaphnePortable.exe",
+   "version": "2.04",
+   "encoding": "ansi"
+  },
+  {
+   "folder": "DetectItEasyPortable",
+   "name": "Detect It Easy Portable",
+   "category": "Utilities",
+   "description": "analyze file types",
+   "start": "DetectItEasyPortable.exe",
+   "version": "3.21"
+  },
+  {
+   "folder": "DiskCleanerPortable",
+   "name": "Disk Cleaner Portable",
+   "category": "Utilities",
+   "description": "temp, cache, and history cleaning utility",
+   "start": "DiskCleanerPortable.exe",
+   "version": "1.7.1645 Rev 2"
+  },
+  {
+   "folder": "DiskMonPortable",
+   "name": "DiskMon Portable",
+   "category": "Utilities",
+   "description": "Disk activity monitor",
+   "start": "DiskMonPortable.exe",
+   "version": "2.02",
+   "encoding": "utf-16"
+  },
+  {
+   "folder": "DynDNSSimplyClientPortable",
+   "name": "DynDNS Simply Client Portable",
+   "category": "Utilities",
+   "description": "DynDNS hostname IP updater",
+   "start": "DynDNSSimplyClientPortable.exe",
+   "version": "2.0.0.2 Rev 2"
+  },
+  {
+   "folder": "EmsisoftEmergencyKitPortable",
+   "name": "Emsisoft Emergency Kit Portable",
+   "category": "Security",
+   "description": "virus and malware scanner and remover",
+   "start": "EmsisoftEmergencyKitPortable.exe",
+   "version": "2025.7.0.12683"
+  },
+  {
+   "folder": "EraserDotNetPortable",
+   "name": "Eraser .Net Portable",
+   "category": "Security",
+   "description": "Secure data removal tool",
+   "start": "EraserDotNetPortable.exe",
+   "version": "6.2.0.2996"
+  },
+  {
+   "folder": "EraserDropPortable",
+   "name": "EraserDrop Portable",
+   "category": "Security",
+   "description": "Securely wipe files and folders.",
+   "start": "EraserDropPortable.exe",
+   "version": "2.1.1"
+  },
+  {
+   "folder": "EraserPortable",
+   "name": "Eraser Classic Portable",
+   "category": "Security",
+   "description": "Secure data removal tool",
+   "start": "EraserPortable.exe",
+   "version": "5.8.8.2"
+  },
+  {
+   "folder": "EverythingPortable",
+   "name": "Everything Portable",
+   "category": "Utilities",
+   "description": "Local search",
+   "start": "EverythingPortable.exe",
+   "version": "1.4.1.1032"
+  },
+  {
+   "folder": "Explorer++Portable",
+   "name": "Explorer++ Portable",
+   "category": "Utilities",
+   "description": "File manager",
+   "start": "Explorer++Portable.exe",
+   "version": "1.4.0"
+  },
+  {
+   "folder": "FastCopyPortableLegacy4",
+   "name": "FastCopy Portable (Legacy 4)",
+   "category": "Utilities",
+   "description": "Copy and delete utility",
+   "start": "FastCopyPortable.exe",
+   "version": "4.2.2"
+  },
+  {
+   "folder": "FileZillaPortable",
+   "name": "FileZilla Portable",
+   "category": "Internet",
+   "description": "FTP, FTPS and SFTP client",
+   "start": "FileZillaPortable.exe",
+   "version": "3.71.1"
+  },
+  {
+   "folder": "GPU-ZPortable",
+   "name": "GPU-Z Portable",
+   "category": "Utilities",
+   "description": "Graphics profiler",
+   "start": "GPU-ZPortable.exe",
+   "version": "2.70.0"
+  },
+  {
+   "folder": "HDHackerPortable",
+   "name": "HDHacker Portable",
+   "category": "Utilities",
+   "description": "Hard drive MBR and boot sector manager",
+   "start": "HDHackerPortable.exe",
+   "version": "1.6.5"
+  },
+  {
+   "folder": "HWMonitorPortable",
+   "name": "HWMonitor Portable",
+   "category": "Utilities",
+   "description": "Hardware monitor",
+   "start": "HWMonitorPortable.exe",
+   "version": "1.65.1"
+  },
+  {
+   "folder": "HWiNFOPortable",
+   "name": "HWiNFO Portable",
+   "category": "Utilities",
+   "description": "System information and diagnostics",
+   "start": "HWiNFOPortable.exe",
+   "version": "8.52.6060"
+  },
+  {
+   "folder": "HexChatPortable",
+   "name": "HexChat Portable",
+   "category": "Internet",
+   "description": "customizable IRC chat client",
+   "start": "HexChatPortable.exe",
+   "version": "2.16.2"
+  },
+  {
+   "folder": "HijackThisPortable",
+   "name": "HiJackThis Fork Portable",
+   "category": "Security",
+   "description": "Registry and file badware analysis",
+   "start": "HijackThisPortable.exe",
+   "version": "2.10.0.10"
+  },
+  {
+   "folder": "HitmanPro",
+   "name": "Hitman Pro",
+   "category": "",
+   "description": "",
+   "start": "Hitman Pro.exe",
+   "version": ""
+  },
+  {
+   "folder": "IObit Driver Booster",
+   "name": "Driver Booster",
+   "category": "",
+   "description": "",
+   "start": "Driver Booster.exe",
+   "version": ""
+  },
+  {
+   "folder": "IObitUninstallerPortable",
+   "name": "IObit Uninstaller Portable",
+   "category": "Utilities",
+   "description": "App uninstaller and cleaner",
+   "start": "IObitUninstallerPortable.exe",
+   "version": "7.5.0.7",
+   "encoding": "utf-16"
+  },
+  {
+   "folder": "IObitUnlockerPortable",
+   "name": "IObit Unlocker Portable",
+   "category": "Utilities",
+   "description": "Unlock undeleteable and unmovable files",
+   "start": "IObitUnlockerPortable.exe",
+   "version": "1.3"
+  },
+  {
+   "folder": "JoplinPortable",
+   "name": "Joplin Portable",
+   "category": "Office",
+   "description": "Note-taking",
+   "start": "JoplinPortable.exe",
+   "version": "3.7.16"
+  },
+  {
+   "folder": "KeePassPortable",
+   "name": "KeePass Classic Portable",
+   "category": "Security",
+   "description": "Password manager",
+   "start": "KeePassPortable.exe",
+   "version": "1.43"
+  },
+  {
+   "folder": "KeePassXCPortable",
+   "name": "KeePassXC Portable",
+   "category": "Security",
+   "description": "Password manager",
+   "start": "KeePassXCPortable.exe",
+   "version": "2.7.12"
+  },
+  {
+   "folder": "KiTTYPortable",
+   "name": "KiTTY Portable",
+   "category": "Internet",
+   "description": "Telnet/SSH client",
+   "start": "KiTTYPortable.exe",
+   "version": "0.76.1.13"
+  },
+  {
+   "folder": "KuduPortable",
+   "name": "Kudu Portable",
+   "category": "Utilities",
+   "description": "PC maintenance suite",
+   "start": "KuduPortable.exe",
+   "version": "2.6.0"
+  },
+  {
+   "folder": "Malwarebytes",
+   "name": "Windows Firewall Control",
+   "category": "",
+   "description": "",
+   "start": "Windows Firewall Control.exe",
+   "version": ""
+  },
+  {
+   "folder": "Notepad++Portable",
+   "name": "Notepad++ Portable",
+   "category": "Development",
+   "description": "Text and code editor",
+   "start": "Notepad++Portable.exe",
+   "version": "8.9.8.1"
+  },
+  {
+   "folder": "Notepad++PortableLegacyWinVista",
+   "name": "Notepad++ Portable (Legacy WinVista)",
+   "category": "Development",
+   "description": "Text and code editor",
+   "start": "Notepad++PortableLegacyWinVista.exe",
+   "version": "8.4.6"
+  },
+  {
+   "folder": "PCI-ZPortable",
+   "name": "PCI-Z Portable",
+   "category": "Utilities",
+   "description": "information about PCI devices",
+   "start": "PCI-ZPortable.exe",
+   "version": "2.0"
+  },
+  {
+   "folder": "PWGenPortable",
+   "name": "Password Tech Portable",
+   "category": "Security",
+   "description": "Secure password generator",
+   "start": "PWGenPortable.exe",
+   "version": "3.6.0",
+   "encoding": "ansi"
+  },
+  {
+   "folder": "PeerBlockPortable",
+   "name": "PeerBlock Plus Portable",
+   "category": "Security",
+   "description": "Firewall based on IP blocklists and allow lists",
+   "start": "PeerBlockPortable.exe",
+   "version": "1.2.0.1"
+  },
+  {
+   "folder": "PortableApps.com",
+   "name": "PortableApps.com Platform",
+   "category": "None",
+   "description": "PortableApps.com Platform",
+   "start": "PortableAppsPlatform.exe",
+   "version": "30.5"
+  },
+  {
+   "folder": "PrivaZerPortable",
+   "name": "PrivaZer Portable",
+   "category": "Utilities",
+   "description": "PC cleaner and privacy tool",
+   "start": "PrivaZerPortable.exe",
+   "version": "4.0.126"
+  },
+  {
+   "folder": "ProcessExplorerPortable",
+   "name": "Process Explorer Portable",
+   "category": "Utilities",
+   "description": "Task manager and process analyzer",
+   "start": "ProcessExplorerPortable.exe",
+   "version": "17.14"
+  },
+  {
+   "folder": "ProcessHackerPortable",
+   "name": "Process Hacker Portable",
+   "category": "Utilities",
+   "description": "Task manager and process analyzer",
+   "start": "ProcessHackerPortable.exe",
+   "version": "2.39"
+  },
+  {
+   "folder": "ProcessKOPortable",
+   "name": "ProcessKO Portable",
+   "category": "Utilities",
+   "description": "process killer",
+   "start": "ProcessKOPortable.exe",
+   "version": "6.77"
+  },
+  {
+   "folder": "PuTTYPortable",
+   "name": "PuTTY Portable",
+   "category": "Internet",
+   "description": "Telnet and SSH client",
+   "start": "PuTTYPortable.exe",
+   "version": "0.85"
+  },
+  {
+   "folder": "R-Studio",
+   "name": "R-Studio",
+   "category": "",
+   "description": "",
+   "start": "R-Studio.exe",
+   "version": "",
+   "encoding": "utf-16"
+  },
+  {
+   "folder": "RAMMapPortable",
+   "name": "RAMMap Portable",
+   "category": "Utilities",
+   "description": "Memory usage analyzer",
+   "start": "RAMMapPortable.exe",
+   "version": "1.63",
+   "encoding": "utf-16"
+  },
+  {
+   "folder": "ReNamerPortable",
+   "name": "ReNamer Portable",
+   "category": "Utilities",
+   "description": "File renaming tool",
+   "start": "ReNamerPortable.exe",
+   "version": "7.9"
+  },
+  {
+   "folder": "RegAlyzerPortable",
+   "name": "RegAlyzer Portable",
+   "category": "Utilities",
+   "description": "RegAlyzer is a tool to browse and change the registry",
+   "start": "RegAlyzerPortable.exe",
+   "version": "1.6.2.16"
+  },
+  {
+   "folder": "Revo Uninstaller",
+   "name": "Revo Uninstaller Pro",
+   "category": "",
+   "description": "",
+   "start": "Revo Uninstaller Pro.exe",
+   "version": ""
+  },
+  {
+   "folder": "RufusPortable",
+   "name": "Rufus Portable",
+   "category": "Utilities",
+   "description": "USB drive formatter",
+   "start": "RufusPortable.exe",
+   "version": "4.15"
+  },
+  {
+   "folder": "SSD-ZPortable",
+   "name": "SSD-Z Portable",
+   "category": "Utilities",
+   "description": "SSD info tool",
+   "start": "SSD-ZPortable.exe",
+   "version": "16.09.09b"
+  },
+  {
+   "folder": "ShareXPortable",
+   "name": "ShareX Portable",
+   "category": "Graphics & Pictures",
+   "description": "Screen capture, file sharing and productivity tool",
+   "start": "ShareXPortable.exe",
+   "version": "21.0.0"
+  },
+  {
+   "folder": "SmartDefragPortable",
+   "name": "Smart Defrag Portable",
+   "category": "Utilities",
+   "description": "Disk defragment utility",
+   "start": "SmartDefragPortable.exe",
+   "version": "11.4.0.508"
+  },
+  {
+   "folder": "SpeedyFoxPortable",
+   "name": "SpeedyFox Portable",
+   "category": "Utilities",
+   "description": "App data optimizer",
+   "start": "SpeedyFoxPortable.exe",
+   "version": "2.0.30 Rev 2"
+  },
+  {
+   "folder": "SpybotPortable",
+   "name": "Spybot - Search & Destroy Portable",
+   "category": "Security",
+   "description": "Detects and removes spyware",
+   "start": "SpybotPortable.exe",
+   "version": "2.9.85.5-1"
+  },
+  {
+   "folder": "StartupSentinelPortable",
+   "name": "Startup Sentinel Portable",
+   "category": "Utilities",
+   "description": "Local startup manager",
+   "start": "StartupSentinelPortable.exe",
+   "version": "1.9.0.28"
+  },
+  {
+   "folder": "StressMyPCPortable",
+   "name": "StressMyPC Portable",
+   "category": "Utilities",
+   "description": "PC Stress Test",
+   "start": "StressMyPCPortable.exe",
+   "version": "5.88"
+  },
+  {
+   "folder": "TCPViewPortable",
+   "name": "TCPView Portable",
+   "category": "Utilities",
+   "description": "TCP connection analysis",
+   "start": "TCPViewPortable.exe",
+   "version": "4.19",
+   "encoding": "utf-16"
+  },
+  {
+   "folder": "TeamViewerPortable",
+   "name": "TeamViewer Portable",
+   "category": "Utilities",
+   "description": "TeamViewer Remote Control Software",
+   "start": "TeamViewerPortable.exe",
+   "version": "15.81.6"
+  },
+  {
+   "folder": "TrellixStingerPortable",
+   "name": "Trellix Stinger Portable",
+   "category": "Security",
+   "description": "On-demand Fake Alert and virus remover",
+   "start": "TrellixStingerPortable.exe",
+   "version": "26.09.38.1"
+  },
+  {
+   "folder": "UltraDefragPortable",
+   "name": "UltraDefrag Portable",
+   "category": "Utilities",
+   "description": "Disk defragmenter and optimizer",
+   "start": "UltraDefragPortable.exe",
+   "version": "7.1.4"
+  },
+  {
+   "folder": "UltraISO",
+   "name": "UltraISO Premium",
+   "category": "",
+   "description": "",
+   "start": "UltraISO Premium.exe",
+   "version": ""
+  },
+  {
+   "folder": "VMMapPortable",
+   "name": "VMMap Portable",
+   "category": "Utilities",
+   "description": "Process memory analyzer",
+   "start": "VMMapPortable.exe",
+   "version": "3.40"
+  },
+  {
+   "folder": "VeraCryptPortable",
+   "name": "VeraCrypt Portable",
+   "category": "Security",
+   "description": "Disk encryption",
+   "start": "VeraCryptPortable.exe",
+   "version": "1.26.29"
+  },
+  {
+   "folder": "VeraCryptPortableLegacyTC",
+   "name": "VeraCrypt Portable (Legacy TrueCrypt)",
+   "category": "Security",
+   "description": "Disk encryption",
+   "start": "VeraCryptPortableLegacyTC.exe",
+   "version": "1.25.9"
+  },
+  {
+   "folder": "WhoDatPortable",
+   "name": "WhoDat Portable",
+   "category": "Utilities",
+   "description": "WHOIS client",
+   "start": "WhoDatPortable.exe",
+   "version": "0.9.1"
+  },
+  {
+   "folder": "WhyNotWin11Portable",
+   "name": "WhyNotWin11 Portable",
+   "category": "Utilities",
+   "description": "Windows 11 upgrade readiness utility",
+   "start": "WhyNotWin11Portable.exe",
+   "version": "2.7.0.0 Rev 2"
+  },
+  {
+   "folder": "WinDirStatPortable",
+   "name": "WinDirStat Portable",
+   "category": "Utilities",
+   "description": "disk usage analyzer and cleanup tool",
+   "start": "WinDirStatPortable.exe",
+   "version": "2.7.0"
+  },
+  {
+   "folder": "WinToHDD",
+   "name": "WinToHDD Technician",
+   "category": "",
+   "description": "",
+   "start": "WinToHDD Technician.exe",
+   "version": ""
+  },
+  {
+   "folder": "WinTools.net",
+   "name": "WinTools.net",
+   "category": "",
+   "description": "",
+   "start": "WinTools.net.exe",
+   "version": "",
+   "encoding": "utf-16"
+  },
+  {
+   "folder": "WindowsErrorLookupToolPortable",
+   "name": "Windows Error Lookup Tool Portable",
+   "category": "Utilities",
+   "description": "Windows Error Lookup Tool will display a description of windows errors in english with the ability to create a note for that error.",
+   "start": "WindowsErrorLookupToolPortable.exe",
+   "version": "3.0.7"
+  },
+  {
+   "folder": "WiseDataRecoveryPortable",
+   "name": "Wise Data Recovery Portable",
+   "category": "Utilities",
+   "description": "File recovery",
+   "start": "WiseDataRecoveryPortable.exe",
+   "version": "6.2.2"
+  },
+  {
+   "folder": "WiseDiskCleanerPortable",
+   "name": "Wise Disk Cleaner Portable",
+   "category": "Utilities",
+   "description": "Disk cleaner and defragmenter",
+   "start": "WiseDiskCleanerPortable.exe",
+   "version": "11.3.6"
+  },
+  {
+   "folder": "WiseDuplicateFinderPortable",
+   "name": "Wise Duplicate Finder Portable",
+   "category": "Utilities",
+   "description": "Duplicate File Finder",
+   "start": "WiseDuplicateFinderPortable.exe",
+   "version": "2.1.9"
+  },
+  {
+   "folder": "WiseForceDeleterPortable",
+   "name": "Wise Force Deleter Portable",
+   "category": "Utilities",
+   "description": "Delete locked folders and files",
+   "start": "WiseForceDeleterPortable.exe",
+   "version": "1.5.7.59"
+  },
+  {
+   "folder": "WiseProgramUninstallerPortable",
+   "name": "Wise Program Uninstaller Portable",
+   "category": "Utilities",
+   "description": "Local software uninstaller",
+   "start": "WiseProgramUninstallerPortable.exe",
+   "version": "3.2.9"
+  },
+  {
+   "folder": "WiseRegistryCleanerPortable",
+   "name": "Wise Registry Cleaner Portable",
+   "category": "Utilities",
+   "description": "Registry cleaner and defragmenter",
+   "start": "WiseRegistryCleanerPortable.exe",
+   "version": "11.3.3"
+  },
+  {
+   "folder": "WiseRegistryCleanerPortableLegacyWinXP",
+   "name": "Wise Registry Cleaner Portable (Legacy WinXP)",
+   "category": "Utilities",
+   "description": "Registry cleaner and defragmenter",
+   "start": "WiseRegistryCleanerPortableLegacyWinXP.exe",
+   "version": "11.1.2"
+  },
+  {
+   "folder": "WizTreePortable",
+   "name": "WizTree Portable",
+   "category": "Utilities",
+   "description": "Disk space analyzer",
+   "start": "WizTreePortable.exe",
+   "version": "4.31"
+  },
+  {
+   "folder": "YUMI-UEFIPortable",
+   "name": "YUMI-UEFI Portable",
+   "category": "Utilities",
+   "description": "Multiboot USB creator with UEFI support",
+   "start": "YUMI-UEFIPortable.exe",
+   "version": "0.0.4.6"
+  },
+  {
+   "folder": "YUMI-exFATPortable",
+   "name": "YUMI-exFAT Portable",
+   "category": "Utilities",
+   "description": "Multiboot USB creator with exFAT support",
+   "start": "YUMI-exFATPortable.exe",
+   "version": "1.0.4.1"
+  },
+  {
+   "folder": "YUMIPortable",
+   "name": "YUMI Portable",
+   "category": "Utilities",
+   "description": "Multiboot USB creator",
+   "start": "YUMIPortable.exe",
+   "version": "2.0.9.4"
+  },
+  {
+   "folder": "balenaEtcherPortable",
+   "name": "balenaEtcher Portable",
+   "category": "Utilities",
+   "description": "Flash OS images to SD cards and USB drives",
+   "start": "balenaEtcherPortable.exe",
+   "version": "2.1.6"
+  },
+  {
+   "folder": "ccPortable",
+   "name": "ccPortable",
+   "category": "Utilities",
+   "description": "Clean PCs with CCleaner® portably",
+   "start": "ccPortable.exe",
+   "version": "6.41.11567",
+   "encoding": "ansi"
+  },
+  {
+   "folder": "dfgPortable",
+   "name": "dfgPortable",
+   "category": "Utilities",
+   "description": "Defragment disks with Defraggler® portably",
+   "start": "dfgPortable.exe",
+   "version": "2.22.33 Upd1 Rev 2",
+   "encoding": "ansi"
+  },
+  {
+   "folder": "dotNETInspectorPortable",
+   "name": "dotNETInspector Portable",
+   "category": "Utilities",
+   "description": "Display versions of the .NET Framework installed on the PC",
+   "start": "dotNETInspectorPortable.exe",
+   "version": "1.5.0"
+  },
+  {
+   "folder": "mssPortable",
+   "name": "mssPortable",
+   "category": "Security",
+   "description": "Malware removal tool",
+   "start": "mssPortable.exe",
+   "version": "1.459.324",
+   "junk": "-"
+  },
+  {
+   "folder": "qBittorrentPortable",
+   "name": "qBittorrent Portable",
+   "category": "Internet",
+   "description": "BitTorrent P2P client",
+   "start": "qBittorrentPortable.exe",
+   "version": "5.2.3"
+  },
+  {
+   "folder": "rcvPortable",
+   "name": "rcvPortable",
+   "category": "Utilities",
+   "description": "Recover files with Recuva® portably",
+   "start": "rcvPortable.exe",
+   "version": "1.55.133",
+   "encoding": "ansi"
+  },
+  {
+   "folder": "specPortable",
+   "name": "specPortable",
+   "category": "Utilities",
+   "description": "System information with Speccy® portably",
+   "start": "specPortable.exe",
+   "version": "1.34.0.84",
+   "encoding": "ansi"
+  }
+ ],
+ "startmenu": [
+  [
+   "Backup & Imaging",
+   "AOMEI Backupper"
+  ],
+  [
+   "Backup & Imaging",
+   "Macrium Reflect"
+  ],
+  [
+   "Diagnostics & Repair",
+   "DISM++"
+  ],
+  [
+   "Diagnostics & Repair",
+   "Windows Recovery Environment"
+  ],
+  [
+   "Disk Management",
+   "AOMEI Partition Assistant"
+  ],
+  [
+   "Disk Management",
+   "Disk Management"
+  ],
+  [
+   "File Management",
+   "Everything"
+  ],
+  [
+   "File Management",
+   "TeraCopy"
+  ],
+  [
+   "File Management",
+   "7-Zip File Manager"
+  ],
+  [
+   "File Recovery",
+   "EaseUS Data Recovery Wizard"
+  ],
+  [
+   "Malware Removal",
+   "Emsisoft Emergency Kit"
+  ],
+  [
+   "Networking",
+   "PENetwork"
+  ],
+  [
+   "Password Recovery",
+   "NTPWEdit"
+  ],
+  [
+   "System Information",
+   "HWiNFO"
+  ],
+  [
+   "System Tools",
+   "Registry Editor"
+  ],
+  [
+   "System Tools",
+   "Task Manager"
+  ],
+  [
+   "System Tools",
+   "Helix Apps"
+  ],
+  [
+   "",
+   "Firefox"
+  ],
+  [
+   "",
+   "Google Chrome"
+  ],
+  [
+   "Accessibility",
+   "Narrator"
+  ],
+  [
+   "Accessories",
+   "Notepad"
+  ]
+ ]
+}

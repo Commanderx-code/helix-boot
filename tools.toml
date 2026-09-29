@@ -521,6 +521,7 @@ windows = { enabled = false }
 [[tool]]
 name = "sysinternals"
 title = "Sysinternals Suite"
+description = "Process Explorer, Autoruns, TCPView and 70 more Microsoft tools"
 kind = "app"
 source = "url"
 url = "https://download.sysinternals.com/files/SysinternalsSuite.zip"
@@ -530,6 +531,7 @@ checksum = ["tofu"]
 [[tool]]
 name = "explorerpp"
 title = "Explorer++"
+description = "Tabbed file manager, handy where File Explorer is limited"
 kind = "app"
 source = "github"
 repo = "derceg/explorerplusplus"
@@ -540,6 +542,7 @@ checksum = ["github-digest", "tofu"]
 [[tool]]
 name = "notepadpp"
 title = "Notepad++"
+description = "Text and code editor for logs, configs and scripts"
 kind = "app"
 source = "github"
 repo = "notepad-plus-plus/notepad-plus-plus"
@@ -551,6 +554,7 @@ checksum = ["github-digest", { asset = 'checksums\.sha256$' }]
 [[tool]]
 name = "crystaldiskinfo"
 title = "CrystalDiskInfo"
+description = "Drive health: S.M.A.R.T. status, temperature and power-on hours"
 kind = "app"
 source = "sourceforge"
 project = "crystaldiskinfo"
@@ -563,6 +567,7 @@ checksum = ["sf-md5"]
 [[tool]]
 name = "crystaldiskmark"
 title = "CrystalDiskMark"
+description = "Drive speed test for SSDs, NVMe and hard drives"
 kind = "app"
 source = "sourceforge"
 project = "crystaldiskmark"
@@ -575,6 +580,7 @@ checksum = ["sf-md5"]
 [[tool]]
 name = "hwinfo"
 title = "HWiNFO"
+description = "Hardware details and live sensors: temperatures, voltages, fans"
 kind = "app"
 source = "sourceforge"
 project = "hwinfo"
@@ -587,6 +593,7 @@ checksum = ["sf-md5"]
 [[tool]]
 name = "testdisk"
 title = "TestDisk & PhotoRec"
+description = "Recover lost partitions (TestDisk) and deleted files (PhotoRec)"
 kind = "app"
 source = "url"
 url = "https://www.cgsecurity.org/testdisk-7.2.win64.zip"   # bump by hand
@@ -597,6 +604,7 @@ checksum = ["tofu"]
 [[tool]]
 name = "produkey"
 title = "ProduKey"
+description = "Show Windows and Office product keys, also from an offline Windows"
 kind = "app"
 source = "url"
 url = "https://www.nirsoft.net/utils/produkey-x64.zip"
@@ -606,6 +614,7 @@ checksum = ["tofu"]
 [[tool]]
 name = "diskgenius"
 title = "DiskGenius Free"
+description = "Partitions, file recovery, disk cloning and bad sector checks"
 kind = "app"
 source = "page"
 page = "https://www.diskgenius.com/download.php"
@@ -620,6 +629,7 @@ checksum = ["tofu"]
 [[tool]]
 name = "winutil"
 title = "Chris Titus Tech WinUtil (run in Windows)"
+description = "Chris Titus Tech's tweak, debloat and install utility; run it in Windows"
 kind = "app"
 source = "github"
 repo = "ChrisTitusTech/winutil"
@@ -632,6 +642,7 @@ checksum = ["github-digest"]
 [[tool]]
 name = "kvrt"
 title = "Kaspersky Virus Removal Tool"
+description = "Kaspersky's free on-demand malware scanner"
 kind = "app"
 enabled = false            # Kaspersky blocks downloads from the US; enable in local.toml elsewhere
 source = "url"
@@ -642,6 +653,7 @@ checksum = ["tofu"]
 [[tool]]
 name = "msert"
 title = "Microsoft Safety Scanner"
+description = "Microsoft's on-demand scanner for malware"
 kind = "app"
 source = "url"
 url = "https://go.microsoft.com/fwlink/?LinkId=212732"   # x64; expires 10 days after download

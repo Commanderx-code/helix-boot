@@ -7,6 +7,14 @@ setlocal
 set "CR=%~1"
 if not defined CR set "CR=%~d0"
 
-rem The PortableApps.com Platform menu
+rem The Lazarus launcher (Apps\Lazarus), full screen; PortableApps is one of its quick actions
+set "LL=%CR%\Apps\Lazarus\LazarusLauncher.ps1"
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if exist "%LL%" if exist "%PS%" (
+  start "" "%PS%" -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "%LL%"
+  exit /b 0
+)
+
+rem Without it (or without PowerShell): the PortableApps.com Platform menu
 if exist "%CR%\Start.exe" start "" /d "%CR%\" "%CR%\Start.exe"
 exit /b 0

@@ -1279,14 +1279,20 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
                     for f in sorted(src.rglob("*")) if f.is_file()]
         else:
             warn(f"{t['title']}: not fetched yet — run `helix fetch` (skipping)")
-    # PE launcher index: "Title|relative\path\to.exe" per line (easy to parse from cmd.exe)
-    lines = [f"{t['title']}|{t['name']}\\{t.get('entry', '').replace('/', chr(92))}"
+    # PE launcher index: "Title|relative\path\to.exe|description" per line (easy to parse from
+    # cmd.exe, which reads the first two; the Lazarus launcher shows the description too)
+    lines = [f"{t['title']}|{t['name']}\\{t.get('entry', '').replace('/', chr(92))}|"
+             + " ".join(t.get("description", "").replace("|", "/").split())
              for t, _, _ in apps if t.get("entry")]
     out.append((f"{cfg.apps_root}/apps.txt", ("\r\n".join(lines) + "\r\n").encode("utf-8")))
     launcher = cfg.assets / "pe" / "launcher"
     if launcher.is_dir():  # works from any WinPE, including Hiren's
         out += [(f"{cfg.apps_root}/{f.name}", f) for f in sorted(launcher.iterdir())
                 if f.suffix.lower() in (".cmd", ".ps1")]
+    lazarus = cfg.assets / "pe" / "lazarus"
+    if lazarus.is_dir():  # the Lazarus launcher: Lazarus PE opens it at startup (Apps\LazarusStartup.cmd)
+        out += [(f"{cfg.apps_root}/Lazarus/{f.name}", f) for f in sorted(lazarus.iterdir())
+                if f.is_file() and f.suffix.lower() != ".md"]
     theme_src = cfg.assets / cfg.settings["theme"] if cfg.settings.get("theme") else None
     if theme_src and theme_src.is_dir():
         files = {f.relative_to(theme_src).as_posix(): f for f in sorted(theme_src.rglob("*"))

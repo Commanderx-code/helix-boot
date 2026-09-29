@@ -1,0 +1,96 @@
+name: lazarus-launcher
+
+# The Lazarus launcher (pe/lazarus) on a stand-in stick, with Windows PowerShell 5.1 as in
+# Lazarus PE: checks how tools are found and sorted, and renders screenshots to look at.
+on:
+  push:
+    paths: ["pe/lazarus/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
+  pull_request:
+    paths: ["pe/lazarus/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
+  workflow_dispatch:
+
+jobs:
+  launcher:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Stand-in stick
+        shell: powershell
+        run: |
+          $stick = "$env:RUNNER_TEMP\stick"; $menu = "$env:RUNNER_TEMP\menu"
+          & .\tests\lazarus\Make-FakeStick.ps1 -Stick $stick -Menu $menu
+          Copy-Item -Recurse pe\lazarus "$stick\Apps\Lazarus"
+
+      - name: Tools found and sorted
+        shell: powershell
+        run: |
+          $stick = "$env:RUNNER_TEMP\stick"; $menu = "$env:RUNNER_TEMP\menu"
+          $out = "$env:RUNNER_TEMP\tools.json"
+          powershell -NoProfile -STA -ExecutionPolicy Bypass -File "$stick\Apps\Lazarus\LazarusLauncher.ps1" -StartMenu $menu -ListTo $out
+          if ($LASTEXITCODE) { throw "the launcher failed to list tools ($LASTEXITCODE)" }
+          $tools = Get-Content -Raw -Encoding UTF8 $out | ConvertFrom-Json
+          $tools | Sort-Object Category, Title | Format-Table Category, Title, Where, Icon, IconType -AutoSize | Out-String -Width 220
+          $fail = @()
+          function Expect([string]$title, [string]$category) {
+            $hit = @($tools | Where-Object Title -eq $title)
+            if ($hit.Count -ne 1) { $script:fail += "$title listed $($hit.Count) times (want once)" }
+            elseif ($hit[0].Category -ne $category) { $script:fail += "$title is in $($hit[0].Category), want $category" }
+          }
+          Expect 'CrystalDiskInfo' 'diagnostics'           # Helix App, also in PortableApps: once
+          Expect 'HWiNFO' 'diagnostics'                    # Helix App, PortableApps and the Start menu
+          Expect 'Wise Data Recovery' 'recovery'
+          Expect 'AOMEI Backupper' 'backup'                # Start menu folder Backup & Imaging
+          Expect 'WizTree' 'disk'
+          Expect 'Smart Defrag' 'disk'
+          Expect 'KeePassXC' 'security'
+          Expect 'PuTTY' 'network'
+          Expect 'Everything' 'utilities'
+          Expect 'Autoruns' 'diagnostics'                  # appinfo.ini in UTF-16
+          Expect 'Brave' 'network'                         # no appinfo.ini: one program at the top
+          foreach ($gone in 'PortableApps.com Platform', 'Narrator', 'Helix Apps', 'CommonFiles') {
+            if ($tools | Where-Object Title -eq $gone) { $fail += "$gone should be hidden" }
+          }
+          $sys = $tools | Where-Object Title -eq 'Sysinternals Suite'
+          if (-not $sys -or -not $sys.Description) { $fail += 'Sysinternals Suite has no description from apps.txt' }
+          if (@($tools | Where-Object { -not $_.Icon }).Count -gt 2) { $fail += 'too many tools without an icon' }
+          $wiz = $tools | Where-Object Title -eq 'WizTree'
+          if (-not $wiz -or $wiz.Icon -lt 64) { $fail += "a PortableApps icon didn't load (WizTree: $($wiz.Icon) px)" }
+          Expect 'Recuva' 'recovery'                       # renamed from rcvPortable; appinfo.ini in ANSI
+          $rcv = $tools | Where-Object Title -eq 'Recuva'
+          if ($rcv -and $rcv.Description -ne "Recover files with Recuva$([char]0xAE) portably") { $fail += "ANSI text misread: $($rcv.Description)" }
+          if ($tools | Where-Object Title -match 'Portable$') { $fail += 'a name still ends in Portable' }
+          if ($fail) { $fail | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
+          "$(@($tools).Count) tools, all where they belong"
+
+      - name: Screenshots
+        shell: powershell
+        run: |
+          $stick = "$env:RUNNER_TEMP\stick"; $menu = "$env:RUNNER_TEMP\menu"
+          $shots = New-Item -ItemType Directory -Force screens
+          function Shot([string]$name, [string[]]$more) {
+            $argv = @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "$stick\Apps\Lazarus\LazarusLauncher.ps1",
+                      '-StartMenu', $menu, '-Screenshot', "$shots\$name.png")
+            if ($more) { $argv += $more }
+            $p = Start-Process powershell -ArgumentList $argv -PassThru -NoNewWindow -RedirectStandardError "$shots\$name.err.txt"
+            if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "$name hung" }
+            Get-Content "$shots\$name.err.txt" -ErrorAction SilentlyContinue
+            if ($p.ExitCode -or -not (Test-Path "$shots\$name.png")) { throw "$name failed ($($p.ExitCode))" }
+            Remove-Item "$shots\$name.err.txt"
+            "$name.png  $((Get-Item "$shots\$name.png").Length) bytes"
+          }
+          Shot '1-recovery'
+          Shot '2-diagnostics' @('-Category', 'diagnostics')
+          Shot '3-search-disk' @('-SearchText', 'disk')
+          Shot '4-system-info' @('-ShowInfo')
+          Shot '5-1366x768' @('-Width', '1366', '-Height', '768', '-Category', 'security')
+          Shot '6-ultrawide' @('-Width', '2560', '-Height', '1080', '-Category', 'network')
+          Shot '7-16x10' @('-Width', '1920', '-Height', '1200', '-Category', 'backup')
+          Shot '8-4x3' @('-Width', '1024', '-Height', '768', '-Category', 'utilities')
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lazarus-launcher-screens
+          path: screens/

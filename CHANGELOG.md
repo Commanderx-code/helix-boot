@@ -6,6 +6,16 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **Lazarus launcher**: Lazarus PE's start screen, opened full screen when the
+  desktop loads (PortableApps.com is one of its quick actions). Every tool on the
+  stick and in the PE in seven categories, with search, quick actions and a
+  System Info panel; it scales to any screen. It lives on the stick
+  (`Apps\Lazarus`), so a refresh updates it; `launcher.json` holds its
+  categories and rules. Windows CI checks how it sorts real tool lists and
+  renders screenshots at six screen sizes.
+- Descriptions for every app in `tools.toml`, carried in `Apps\apps.txt`.
+
 ## [0.5.0] - 2026-09-29
 
 ### Changed

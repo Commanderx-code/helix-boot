@@ -181,6 +181,7 @@ source = "url"
 url = "{base}/web/SysinternalsSuite.zip"
 entry = "procexp64.exe"
 checksum = ["tofu"]
+description = "Process Explorer | Autoruns   and more"
 """
 
 
@@ -357,7 +358,7 @@ class TestFetchAndSync(Base):
         self.assertTrue((self.stick / "ISO/5-Diagnostics/memtest.iso").exists())
         self.assertTrue((self.stick / "Apps/sysinternals/procexp64.exe").exists())
         self.assertEqual((self.stick / "Apps/apps.txt").read_bytes(),
-                         b"Sysinternals Suite|sysinternals\\procexp64.exe\r\n")
+                         b"Sysinternals Suite|sysinternals\\procexp64.exe|Process Explorer / Autoruns and more\r\n")
         self.assertTrue((self.stick / "Apps/HelixApps.cmd").exists())
         vj = json.loads((self.stick / "ventoy/ventoy.json").read_text())
         aliases = {a.get("dir") or a.get("image"): a["alias"] for a in vj["menu_alias"]}
@@ -461,6 +462,18 @@ class TestFetchAndSync(Base):
         rc, out = self.sync(verify=False, init=False)
         self.assertEqual(rc, 0, out)
         self.assertEqual(on_stick.read_bytes(), b"winpe-3")
+
+    def test_lazarus_launcher_goes_into_apps(self):
+        shutil.copytree(ROOT / "pe/lazarus", self.repo / "pe/lazarus")
+        self.fetch("sysinternals")
+        rc, out = self.sync()
+        self.assertEqual(rc, 0, out)
+        got = sorted(p.name for p in (self.stick / "Apps/Lazarus").iterdir())
+        want = sorted(p.name for p in (ROOT / "pe/lazarus").iterdir() if p.suffix != ".md")
+        self.assertEqual(got, want)
+        self.assertIn("LazarusLauncher.ps1", got)
+        # Windows PowerShell 5.1 reads a .ps1 without a BOM as ANSI, mangling its … and ·
+        self.assertTrue((self.stick / "Apps/Lazarus/LazarusLauncher.ps1").read_bytes().startswith(b"\xef\xbb\xbf"))
 
     def test_sync_refuses_non_ventoy_without_init(self):
         self.fetch("systemrescue")

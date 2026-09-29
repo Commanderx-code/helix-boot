@@ -241,6 +241,24 @@ the build VM for you. See the [Lazarus PE guide](pe/README.md).
 Until yours is built, Hiren's BootCD PE covers for it, and the app launcher
 works there too.
 
+### The Lazarus launcher
+
+![The Lazarus launcher](docs/lazarus-launcher.jpg)
+
+When Lazarus PE's desktop loads, the **Lazarus launcher** opens full screen: every
+tool on the stick and in the PE, in seven categories (Recovery, Backup, Disk
+Tools, Diagnostics, Network, Security, Utilities), with search across all of them
+(just start typing), quick actions (Command Prompt, File Explorer, Device
+Manager, PortableApps, Reboot, Shutdown) and a System Info panel that also points
+out which drives hold a Windows install.
+
+It lists your Helix Apps, every PortableApps.com app (including ones you add
+from its App Store) and the PE's own Start menu, the same tool only once. It
+lives on the stick in `Apps\Lazarus` (from [`pe/lazarus`](pe/lazarus)), so a
+refresh updates it without a PE rebuild. Categories, sorting rules, names and
+quick actions are in [`launcher.json`](pe/lazarus/launcher.json). Without it,
+Lazarus PE opens the PortableApps.com menu as before.
+
 ## `helix`, the engine
 
 `install.sh` and `refresh.sh` are thin wrappers around `helix`, a single

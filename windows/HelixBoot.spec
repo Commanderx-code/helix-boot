@@ -8,6 +8,7 @@ datas = [
     (str(root / "helix"), "."),
     (str(root / "tools.toml"), "."),
     (str(root / "pe" / "launcher"), "pe/launcher"),
+    (str(root / "pe" / "lazarus"), "pe/lazarus"),
     (str(root / "byo" / "README.md"), "byo"),
 ]
 datas += [(str(p), (Path("theme") / p.parent.relative_to(root / "theme")).as_posix())

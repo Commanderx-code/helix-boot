@@ -1,0 +1,315 @@
+<!-- Lazarus launcher layout. Drawn on a 1600x900 canvas and scaled to the screen by the Viewbox.
+     LazarusLauncher.ps1 loads this, fills the lists and wires up the buttons (elements with x:Name). -->
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Lazarus PE" WindowStyle="None" ResizeMode="NoResize" Background="#050B0D"
+        FontFamily="Segoe UI" Foreground="#E6F2F1" UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Ideal" SnapsToDevicePixels="True">
+  <Window.Resources>
+    <SolidColorBrush x:Key="Accent" Color="#2DE0C8"/>
+    <SolidColorBrush x:Key="AccentDim" Color="#1A8F84"/>
+    <SolidColorBrush x:Key="Muted" Color="#8FAAA8"/>
+    <SolidColorBrush x:Key="Panel" Color="#D90A1618"/>
+    <SolidColorBrush x:Key="Card" Color="#CC0C1B1D"/>
+    <SolidColorBrush x:Key="Edge" Color="#FF1D3D3E"/>
+
+    <!-- Plain buttons: no Windows chrome, just our border -->
+    <Style x:Key="Bare" TargetType="Button">
+      <Setter Property="Foreground" Value="#E6F2F1"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Edge}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="B" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="B" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                <Setter TargetName="B" Property="Background" Value="#3321C4B0"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="B" Property="BorderBrush" Value="{StaticResource Accent}"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="B" Property="Background" Value="#5521C4B0"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Category list: one card per category, the chosen one lit up -->
+    <Style x:Key="CategoryItem" TargetType="ListBoxItem">
+      <Setter Property="Margin" Value="0,0,0,10"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="B" Height="80" CornerRadius="4" Background="{StaticResource Card}"
+                    BorderBrush="{StaticResource Edge}" BorderThickness="1">
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="B" Property="BorderBrush" Value="{StaticResource AccentDim}"/>
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="B" Property="Background" Value="#E0103437"/>
+                <Setter TargetName="B" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                <Setter TargetName="B" Property="Effect">
+                  <Setter.Value>
+                    <DropShadowEffect Color="#2DE0C8" BlurRadius="18" ShadowDepth="0" Opacity="0.55"/>
+                  </Setter.Value>
+                </Setter>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="Tracked" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+  </Window.Resources>
+
+  <Grid x:Name="Root" TextElement.Foreground="#E6F2F1" TextElement.FontFamily="Segoe UI">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Image x:Name="Backdrop" Grid.RowSpan="2" Stretch="UniformToFill" HorizontalAlignment="Right"/>
+    <!-- keeps the left half readable over the artwork -->
+    <Rectangle Grid.RowSpan="2">
+      <Rectangle.Fill>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+          <GradientStop Color="#E6030809" Offset="0"/>
+          <GradientStop Color="#B3030809" Offset="0.45"/>
+          <GradientStop Color="#00030809" Offset="0.72"/>
+        </LinearGradientBrush>
+      </Rectangle.Fill>
+    </Rectangle>
+
+    <Viewbox Stretch="Uniform">
+      <Canvas Width="1600" Height="852">
+
+        <!-- Top left: tagline and the corner line -->
+        <Path Data="M0,262 L330,0 L362,0" Stroke="{StaticResource AccentDim}" StrokeThickness="1.2" Opacity="0.7"/>
+        <StackPanel x:Name="Tagline" Canvas.Left="38" Canvas.Top="26"/>
+
+        <!-- Top right: window buttons, title -->
+        <StackPanel Orientation="Horizontal" Canvas.Right="14" Canvas.Top="10">
+          <Button x:Name="MinButton" Style="{StaticResource Bare}" Width="34" Height="26" BorderThickness="0" ToolTip="Minimize">
+            <Path x:Name="MinIcon" Width="14" Height="14" Stretch="Uniform" Fill="{StaticResource Muted}"/>
+          </Button>
+          <Button x:Name="CloseButton" Style="{StaticResource Bare}" Width="34" Height="26" BorderThickness="0" Margin="4,0,0,0" ToolTip="Close the launcher">
+            <Path x:Name="CloseIcon" Width="14" Height="14" Stretch="Uniform" Fill="{StaticResource Muted}"/>
+          </Button>
+        </StackPanel>
+        <StackPanel Canvas.Right="40" Canvas.Top="40" HorizontalAlignment="Right">
+          <TextBlock HorizontalAlignment="Right" FontSize="64" FontWeight="Light" Margin="0,-10,0,0">
+            <Run x:Name="TitleMain" Foreground="#D9E4E3"/><Run Text=" "/><Run x:Name="TitleAccent" Foreground="{StaticResource Accent}"/>
+          </TextBlock>
+          <TextBlock x:Name="Subtitle" HorizontalAlignment="Right" FontSize="15" Foreground="#C9D8D7" Margin="0,2,4,0"/>
+        </StackPanel>
+
+        <!-- Right side note -->
+        <Rectangle Canvas.Left="1418" Canvas.Top="436" Width="60" Height="2" Fill="{StaticResource Accent}"/>
+        <StackPanel x:Name="SideNote" Canvas.Left="1418" Canvas.Top="452"/>
+
+        <!-- Left: categories -->
+        <ListBox x:Name="Categories" Canvas.Left="38" Canvas.Top="132" Width="372" Background="Transparent"
+                 BorderThickness="0" ItemContainerStyle="{StaticResource CategoryItem}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" KeyboardNavigation.TabNavigation="Once">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="18,0,16,0" VerticalAlignment="Center" Height="78">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="54"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="20"/>
+                </Grid.ColumnDefinitions>
+                <Path Data="{Binding Icon}" Fill="{StaticResource Accent}" Width="38" Height="38" Stretch="Uniform"
+                      HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0">
+                  <TextBlock Text="{Binding Title}" FontSize="21" Foreground="#E9F4F3"/>
+                  <TextBlock Text="{Binding Subtitle}" FontSize="13" Foreground="{StaticResource Muted}" Margin="0,3,0,0"
+                             TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+                <Path Grid.Column="2" Data="{Binding Chevron}" Fill="#CFE3E1" Width="12" Height="16" Stretch="Uniform"
+                      VerticalAlignment="Center"/>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Left bottom: quote -->
+        <Path Data="M0,0 L330,0 L372,-36" Canvas.Left="38" Canvas.Top="850" Stroke="{StaticResource AccentDim}" StrokeThickness="1" Opacity="0.6"/>
+        <Rectangle Canvas.Left="44" Canvas.Top="776" Width="3" Height="44" Fill="{StaticResource Accent}"/>
+        <StackPanel x:Name="Quote" Canvas.Left="66" Canvas.Top="776"/>
+
+        <!-- Middle: the tools of the chosen category -->
+        <Border Canvas.Left="424" Canvas.Top="126" Width="604" Height="704" Background="{StaticResource Panel}"
+                BorderBrush="{StaticResource Edge}" BorderThickness="1" CornerRadius="6">
+          <Grid Margin="22,22,22,18">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid>
+              <StackPanel>
+                <TextBlock x:Name="ListHeader" Style="{StaticResource Tracked}" FontSize="15"/>
+                <TextBlock x:Name="ListTagline" FontSize="14" Foreground="#C9D8D7" Margin="0,8,0,0"/>
+              </StackPanel>
+              <Border HorizontalAlignment="Right" VerticalAlignment="Top" Width="262" Height="42" CornerRadius="4"
+                      Background="#E0081113" BorderBrush="{StaticResource Edge}" BorderThickness="1">
+                <Grid>
+                  <Path x:Name="SearchIcon" Width="17" Height="17" Stretch="Uniform" Fill="#CFE3E1"
+                        HorizontalAlignment="Left" Margin="14,0,0,0"/>
+                  <TextBox x:Name="Search" Margin="42,0,8,0" VerticalAlignment="Center" Background="Transparent"
+                           BorderThickness="0" Foreground="#E6F2F1" CaretBrush="{StaticResource Accent}" FontSize="14"/>
+                  <TextBlock x:Name="SearchHint" Text="Search all tools…" Margin="44,0,0,0" VerticalAlignment="Center"
+                             FontSize="14" Foreground="#6F8A88" IsHitTestVisible="False"/>
+                </Grid>
+              </Border>
+            </Grid>
+
+            <ScrollViewer x:Name="ToolScroll" Grid.Row="1" Margin="0,20,0,0" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled" Focusable="False">
+              <ItemsControl x:Name="Tools">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border x:Name="Card" Height="92" Margin="0,0,6,10" CornerRadius="4" Background="{StaticResource Card}"
+                            BorderBrush="{StaticResource Edge}" BorderThickness="1" Cursor="Hand">
+                      <Grid Margin="18,0,16,0">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="58"/>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="118"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid Width="44" Height="44" VerticalAlignment="Center" HorizontalAlignment="Left">
+                          <Path Data="{Binding Glyph}" Fill="{StaticResource Accent}" Stretch="Uniform"/>
+                          <Image Source="{Binding Image}" RenderOptions.BitmapScalingMode="HighQuality"/>
+                        </Grid>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,10,0">
+                          <TextBlock Text="{Binding Title}" FontSize="19" Foreground="#E9F4F3" TextTrimming="CharacterEllipsis"/>
+                          <TextBlock Text="{Binding Line1}" FontSize="13" Foreground="#B5C9C7" Margin="0,4,0,0"
+                                     TextTrimming="CharacterEllipsis"/>
+                          <TextBlock Text="{Binding Line2}" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,3,0,0"
+                                     TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <Button Grid.Column="2" Style="{StaticResource Bare}" Width="112" Height="42" Tag="{Binding}"
+                                BorderBrush="#FF2A5A59" Content="Launch" FontSize="14"/>
+                      </Grid>
+                    </Border>
+                    <DataTemplate.Triggers>
+                      <Trigger SourceName="Card" Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource AccentDim}"/>
+                      </Trigger>
+                    </DataTemplate.Triggers>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+
+            <TextBlock x:Name="Empty" Grid.Row="1" Margin="4,30,0,0" FontSize="14" Foreground="{StaticResource Muted}"
+                       TextWrapping="Wrap" Visibility="Collapsed"/>
+            <TextBlock x:Name="Status" Grid.Row="2" Margin="2,10,0,0" FontSize="13" Foreground="{StaticResource Muted}"
+                       TextTrimming="CharacterEllipsis"/>
+          </Grid>
+        </Border>
+
+        <!-- Right bottom: quick actions (the panel also covers the artwork's own lettering) -->
+        <Border Canvas.Left="1036" Canvas.Top="628" Width="556" Height="202" Background="#D2060E10"
+                BorderBrush="#801D3D3E" BorderThickness="1" CornerRadius="6"/>
+        <TextBlock x:Name="QuickHeader" Canvas.Left="1052" Canvas.Top="646" Style="{StaticResource Tracked}"/>
+        <ItemsControl x:Name="Quick" Canvas.Left="1052" Canvas.Top="680">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Style="{StaticResource Bare}" Width="82" Height="130" Margin="0,0,7,0" Tag="{Binding}"
+                      Background="#CC0C1B1D" ToolTip="{Binding Title}">
+                <StackPanel>
+                  <Path Data="{Binding Icon}" Fill="#DDF1EF" Width="30" Height="30" Stretch="Uniform" Margin="0,4,0,12"/>
+                  <TextBlock Text="{Binding Title}" FontSize="12" TextAlignment="Center" TextWrapping="Wrap"
+                             Width="80" Foreground="#E6F2F1"/>
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- System info overlay -->
+        <Border x:Name="InfoPanel" Canvas.Left="424" Canvas.Top="126" Width="604" Height="704" Visibility="Collapsed"
+                Background="#FF081113" BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="6">
+          <Grid Margin="26,22,26,22">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <TextBlock Text="S Y S T E M   I N F O" Style="{StaticResource Tracked}" FontSize="15"/>
+            <Button x:Name="InfoClose" Style="{StaticResource Bare}" Width="96" Height="34" Content="Close"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"/>
+            <ScrollViewer Grid.Row="1" Margin="0,22,0,0" VerticalScrollBarVisibility="Auto">
+              <TextBlock x:Name="InfoText" FontFamily="Consolas" FontSize="13.5" Foreground="#D9E4E3" TextWrapping="Wrap"/>
+            </ScrollViewer>
+          </Grid>
+        </Border>
+      </Canvas>
+    </Viewbox>
+
+    <!-- Bottom bar: across the whole screen, scaled like the design (its height is set in code) -->
+    <Border x:Name="Bar" Grid.Row="1" Background="#E6040A0B" BorderBrush="#FF14292A" BorderThickness="0,1,0,0">
+      <Grid>
+        <Viewbox HorizontalAlignment="Left" Stretch="Uniform">
+          <Grid Height="48" Margin="30,0,0,0">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <Path x:Name="WinIcon" Width="22" Height="22" Stretch="Uniform" Fill="#35A9F0"/>
+              <TextBlock x:Name="BarTitle" Margin="14,0,0,0" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Accent}"/>
+              <Rectangle Width="1" Height="22" Fill="#FF2A4545" Margin="22,0,22,0"/>
+              <TextBlock x:Name="BarPowered" FontSize="13" Foreground="#B5C9C7"/>
+              <Rectangle Width="1" Height="22" Fill="#FF2A4545" Margin="22,0,22,0"/>
+              <Path x:Name="StickIcon" Width="16" Height="16" Stretch="Uniform" Fill="#B5C9C7" Margin="0,0,8,0"/>
+              <TextBlock x:Name="BarStick" FontSize="13" Foreground="#B5C9C7"/>
+            </StackPanel>
+          </Grid>
+        </Viewbox>
+        <Viewbox HorizontalAlignment="Right" Stretch="Uniform">
+          <Grid Height="48" Margin="0,0,30,0">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <Path x:Name="NetIcon" Width="18" Height="18" Stretch="Uniform" Fill="#B5C9C7"/>
+              <TextBlock x:Name="NetText" Margin="8,0,0,0" FontSize="13" Foreground="#B5C9C7"/>
+              <Rectangle Width="1" Height="22" Fill="#FF2A4545" Margin="22,0,22,0"/>
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock x:Name="ClockTime" FontSize="13" TextAlignment="Center" Foreground="#D9E4E3"/>
+                <TextBlock x:Name="ClockDate" FontSize="11.5" TextAlignment="Center" Foreground="{StaticResource Muted}"/>
+              </StackPanel>
+              <Rectangle Width="1" Height="22" Fill="#FF2A4545" Margin="22,0,18,0"/>
+              <Button x:Name="InfoButton" Style="{StaticResource Bare}" Height="34" Padding="0">
+                <StackPanel Orientation="Horizontal" Margin="14,0,14,0">
+                  <Path x:Name="InfoIcon" Width="16" Height="16" Stretch="Uniform" Fill="#DDF1EF"/>
+                  <TextBlock Text="System Info" Margin="9,0,0,0" FontSize="13"/>
+                </StackPanel>
+              </Button>
+            </StackPanel>
+          </Grid>
+        </Viewbox>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>
