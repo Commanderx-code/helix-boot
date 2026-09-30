@@ -26,6 +26,7 @@ import argparse
 import datetime as dt
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import queue
@@ -53,11 +54,22 @@ import xml.etree.ElementTree  # noqa: F401
 import zipfile  # noqa: F401
 import zlib  # noqa: F401
 
+class _NoConsole(io.TextIOBase):
+    """Where output goes before the window takes over, when there's no console. (Not
+    os.devnull: on Windows NUL counts as a terminal, which would turn helix's colours on.)"""
+
+    def write(self, text):
+        return len(text)
+
+    def isatty(self):
+        return False
+
+
 # Started from Explorer, a windowed program has no console: sys.stdout and sys.stderr are
 # None, and anything that prints (or asks isatty) before the window takes over would crash.
 for _name in ("stdout", "stderr"):
     if getattr(sys, _name) is None:
-        setattr(sys, _name, open(os.devnull, "w", encoding="utf-8"))
+        setattr(sys, _name, _NoConsole())
 
 APP = "Helix Boot"
 FROZEN = getattr(sys, "frozen", False)
