@@ -2000,7 +2000,9 @@ def main(argv: list[str] | None = None) -> int:
 
     args = ap.parse_args(argv)
     try:
-        return args.fn(Config(), args)
+        # HELIX_USER_DIR: your local.toml and byo/ live there instead of beside helix (HelixBoot.sh)
+        mine = _env("USER_DIR")
+        return args.fn(Config(repo=Path(mine).expanduser().resolve(), assets=REPO) if mine else Config(), args)
     except RescueError as e:
         bad(str(e))
         return 1

@@ -6,6 +6,16 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **`HelixBoot.sh`**, a one-file Linux installer attached to each release beside
+  `HelixBoot.exe`, like MediCat's `.sh`: download, `chmod +x`, run. A menu for
+  Install, Update and Check (or `install`, `refresh` and `helix` commands);
+  everything it needs is packed inside and checked against its checksum before
+  it unpacks, so it works offline; `local.toml`, `byo/` and a pack live beside it.
+  Built reproducibly by `linux/build.sh`; `HELIX_USER_DIR` tells helix where your
+  files are.
+- A Helix Boot logo banner in `install.sh` and `refresh.sh`.
+
 ## [0.5.1] - 2026-09-29
 
 ### Added

@@ -105,10 +105,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0  # v5.0.0
         with:
           name: HelixBoot-windows
           path: dist
+      - name: Build HelixBoot.sh (the one-file Linux installer)
+        run: linux/build.sh dist/HelixBoot.sh
       - name: Publish the release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
@@ -116,4 +121,6 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Helix Boot ${{ inputs.release || github.ref_name }}
           generate_release_notes: true
-          files: dist/HelixBoot.exe
+          files: |
+            dist/HelixBoot.exe
+            dist/HelixBoot.sh

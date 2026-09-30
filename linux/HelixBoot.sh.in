@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Helix Boot for Linux: the whole installer in one file, like HelixBoot.exe on Windows.
+#
+#   ./HelixBoot.sh                  menu: install on a new stick, update a stick, check for updates
+#   ./HelixBoot.sh install [...]    the installer (./HelixBoot.sh install --help for its options)
+#   ./HelixBoot.sh refresh [...]    the refresher (./HelixBoot.sh refresh --help)
+#   ./HelixBoot.sh helix [...]      the helix engine: list, check, fetch, pack, ...
+#   ./HelixBoot.sh --version
+#
+# Keep it in a folder of its own: your local.toml and byo/ folder live next to it, and a
+# Helix Boot pack beside it is used by Install and Update, with no downloads. Run it as
+# your normal user; it asks for sudo only when Ventoy is written to a stick.
+#
+# Its programs are packed below this script and unpack once per version into
+# ~/.local/share/helix-boot/app/<version>-<checksum>, after a check against the checksum here.
+# Built by linux/build.sh.
+set -Eeuo pipefail
+VERSION='@VERSION@'
+PAYLOAD_SHA256='@SHA256@'
+
+self=$(readlink -f -- "${BASH_SOURCE[0]}")
+here=$(dirname -- "$self")
+app=${XDG_DATA_HOME:-$HOME/.local/share}/helix-boot/app/$VERSION-${PAYLOAD_SHA256:0:12}   # one per build
+
+fail() { printf '✗ %s\n' "$*" >&2; exit 1; }  # common.sh (die) isn't unpacked yet
+[[ $EUID -ne 0 ]] || fail "run this as your normal user — it asks for sudo only when a stick is written"
+
+payload() {  # the bytes after the marker line at the end of this file
+  local at
+  at=$(awk '/^__HELIX_BOOT_PAYLOAD__$/ { print NR + 1; exit }' "$self")
+  [[ -n $at ]] || fail "this file is incomplete; download it again"
+  tail -n +"$at" "$self"
+}
+
+if [[ ! -f $app/.complete ]]; then
+  command -v sha256sum >/dev/null || fail "missing sha256sum (coreutils)"
+  command -v tar >/dev/null || fail "missing tar"
+  got=$(payload | sha256sum) || fail "couldn't read this file"
+  [[ ${got%% *} == "$PAYLOAD_SHA256" ]] || fail "this file is damaged or was changed (checksum mismatch); download it again"
+  mkdir -p -- "$(dirname -- "$app")"
+  tmp=$(mktemp -d -- "$app.XXXXXX")
+  trap 'rm -rf -- "$tmp"' EXIT
+  payload | tar -xz -C "$tmp" || fail "couldn't unpack into $tmp"
+  touch -- "$tmp/.complete"
+  rm -rf -- "$app"
+  mv -- "$tmp" "$app"
+  trap - EXIT
+fi
+
+# Your files next to this one, as with HelixBoot.exe
+export HELIX_USER_DIR=$here
+if mkdir -p -- "$here/byo" 2>/dev/null && [[ ! -f $here/byo/README.md ]]; then
+  cp -- "$app/byo/README.md" "$here/byo/" 2>/dev/null || true
+fi
+
+# shellcheck source=scripts/common.sh
+source "$app/scripts/common.sh"
+HELIX=$app/helix
+
+# The newest Helix Boot pack beside this file, if any
+pack=''
+for z in "$here"/*.zip; do
+  [[ -f $z ]] || continue
+  if unzip_has "$z" helix-boot-pack.json || unzip_has "$z" commander-rescue-pack.json; then
+    if [[ -z $pack || $z -nt $pack ]]; then pack=$z; fi
+  fi
+done
+
+run() {  # run <install|refresh> [options]: with the pack beside this file unless --from is given
+  local script=$1
+  shift
+  local -a from=()
+  if [[ -n $pack && " $* " != *" --from "* ]]; then from=(--from "$pack"); fi
+  exec "$app/$script.sh" "${from[@]}" "$@"
+}
+
+case ${1:-} in
+  --version | -V) echo "Helix Boot $VERSION (HelixBoot.sh)"; exit 0 ;;
+  -h | --help) sed -n '2,15s/^# \{0,1\}//p' "$self"; exit 0 ;;
+  install | refresh) cmd=$1; shift; run "$cmd" "$@" ;;
+  helix) shift; exec "$HELIX" "$@" ;;
+  '') ;;
+  *) die "unknown command: $1 (try --help)" ;;
+esac
+
+# No command: the menu
+banner "Linux installer"
+export HELIX_NO_BANNER=1   # shown once, here
+[[ -z $pack ]] || info "Using the pack beside me, no downloads: $(basename -- "$pack")"
+printf '  %s1)%s Install on a new USB stick   %s(erases the stick)%s\n' "$B" "$X" "$D" "$X"
+printf '  %s2)%s Update a Helix Boot stick    %s(keeps your files)%s\n' "$B" "$X" "$D" "$X"
+printf '  %s3)%s Check for tool updates       %s(no downloads)%s\n' "$B" "$X" "$D" "$X"
+printf '  %sq)%s Quit\n\n' "$B" "$X"
+read -rp "  Choose: " pick
+case $pick in
+  1) run install ;;
+  2) run refresh ;;
+  3) exec "$HELIX" check ;;
+  *) exit 0 ;;
+esac
+exit 0

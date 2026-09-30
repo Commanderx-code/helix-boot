@@ -59,6 +59,13 @@ Keep it current later:
 ./refresh.sh --upgrade-ventoy   # …and the Ventoy boot loader too
 ```
 
+**Linux, one file.** Or skip the clone: download **`HelixBoot.sh`** from
+[Releases](https://github.com/Commanderx-code/helix-boot/releases), put it in a
+folder of its own, then `chmod +x HelixBoot.sh && ./HelixBoot.sh`. A menu offers
+Install, Update and Check; `./HelixBoot.sh --help` lists the rest. Your
+`local.toml` and `byo/` folder live next to it, and a pack beside it is used
+with no downloads.
+
 **Windows.** Download **`HelixBoot.exe`** from
 [Releases](https://github.com/Commanderx-code/helix-boot/releases), put it
 in a folder of its own and run it (see [below](#windows-app)).
@@ -394,6 +401,7 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 - [x] Packs in the Windows app
 - [x] Renamed to Helix Boot (0.5.0), Helix Neon boot-menu theme
 - [x] Lazarus PE look and the Lazarus launcher
+- [x] One-file Linux installer (`HelixBoot.sh`)
 
 ## Contributing
 

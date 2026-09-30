@@ -21,7 +21,7 @@ Requirements: Linux, Python 3.11+ (standard library only) and ShellCheck.
 
 ```fish
 python3 -m unittest discover -s tests -v   # the whole suite runs offline
-shellcheck -x install.sh refresh.sh scripts/common.sh pe/vm/build-vm.sh
+shellcheck -x install.sh refresh.sh scripts/common.sh pe/vm/build-vm.sh linux/build.sh linux/HelixBoot.sh.in
 ./helix check                             # live: does every upstream still resolve?
 ```
 
