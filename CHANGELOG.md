@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-09-30
+
 ### Fixed
 - `HelixBoot.exe` crashed on start when double-clicked ("'NoneType' object has no
   attribute 'isatty'"): started from Explorer, a windowed program has no console.
@@ -247,7 +249,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.4.0...v0.5.0
