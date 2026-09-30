@@ -6,6 +6,11 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Changed
+- The Lazarus launcher opens full screen, over the taskbar, which comes back
+  when you switch to another program; `"fullscreen": false` in `launcher.json`
+  keeps it above the taskbar instead.
+
 ## [0.5.3] - 2026-09-30
 
 ### Fixed

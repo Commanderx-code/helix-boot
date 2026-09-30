@@ -3,6 +3,7 @@
   "title": "Lazarus",
   "title_accent": "PE",
   "subtitle": "Windows PE Recovery Environment",
+  "fullscreen": true,
   "tagline": [
     "RESTORE",
     "REBUILD",

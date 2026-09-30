@@ -468,10 +468,21 @@ if ($Screenshot) {
   exit 0
 }
 
-# ── Normal start: fill the work area, keep the taskbar ───────────────────────
-$area = [Windows.SystemParameters]::WorkArea
+# ── Normal start: the whole screen, over the taskbar ─────────────────────────
+# A borderless maximized window covers the taskbar; it comes back as soon as you switch to
+# another program (the launcher isn't kept on top, so what you start opens in front of it).
+# "fullscreen": false in launcher.json keeps the launcher above the taskbar instead.
 $win.WindowStartupLocation = 'Manual'
-$win.Left = $area.Left; $win.Top = $area.Top; $win.Width = $area.Width; $win.Height = $area.Height
+$fullscreen = -not ($cfg.PSObject.Properties['fullscreen'] -and $cfg.fullscreen -eq $false)
+if ($fullscreen) {
+  $win.Left = 0; $win.Top = 0
+  $win.Width = [Windows.SystemParameters]::PrimaryScreenWidth
+  $win.Height = [Windows.SystemParameters]::PrimaryScreenHeight
+  $win.WindowState = 'Maximized'
+} else {
+  $area = [Windows.SystemParameters]::WorkArea
+  $win.Left = $area.Left; $win.Top = $area.Top; $win.Width = $area.Width; $win.Height = $area.Height
+}
 
 $timer = New-Object Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromSeconds(15)
