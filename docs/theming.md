@@ -65,11 +65,11 @@ boot-mode indicators you use. Check UEFI and legacy BIOS when available.
 
 ## Artwork provenance
 
-The source artwork was produced with the built-in image-generation tool from
-the user's approved purple HELIXBOOT mockup. Prompt: preserve the right-side
-purple/electric-blue DNA helix, planet, nebula, mountains and reflective water;
-remove every text element, logo, panel, icon, selection and hotkey; keep the
-left side dark and calm for live menu content and the bottom dark for status.
-The generator then adds the exact wordmark and tagline reproducibly.
+`docs/artwork/helix-purple-source.png` is a text-free version of the purple
+HELIXBOOT mockup: the purple/electric-blue DNA helix, planet, nebula, mountains
+and reflective water on the right, with no text, logo, panel, icon, selection
+or hotkey, the left side kept dark and calm for the live menu and the bottom
+dark for status. `build-theme.py` adds the wordmark and tagline, so they are
+exact and reproducible.
 
 Layout properties follow the [GNU GRUB theme format](https://www.gnu.org/software/grub/manual/grub/html_node/Theme-file-format.html).

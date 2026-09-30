@@ -31,7 +31,7 @@ tagged releases also publish the Windows app.
 - Descriptions for every app in `tools.toml`, carried in `Apps\apps.txt`.
 
 ### Security
-Fixes from a Claude Security audit of the whole repository (10 findings, each
+Fixes from a security audit of the whole repository (10 findings, each
 now covered by a test that failed before the fix):
 - **Stick detection** (Lazarus PE's startup and the Helix Apps menu): a tag file
   on any drive was enough to be treated as the stick, so the PC being repaired
