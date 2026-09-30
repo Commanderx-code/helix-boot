@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-29
+
 ### Added
 - **`HelixBoot.sh`**, a one-file Linux installer attached to each release beside
   `HelixBoot.exe`, like MediCat's `.sh`: download, `chmod +x`, run. A menu for
@@ -240,7 +242,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Commanderx-code/commander-rescue/compare/v0.3.0...v0.4.0
