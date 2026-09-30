@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-29
+
 ### Added
 - **Lazarus launcher**: Lazarus PE's start screen, opened full screen when the
   desktop loads (PortableApps.com is one of its quick actions). Every tool on the
@@ -228,7 +230,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Commanderx-code/commander-rescue/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Commanderx-code/commander-rescue/compare/v0.2.0...v0.3.0
