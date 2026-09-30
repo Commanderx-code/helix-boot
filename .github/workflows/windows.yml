@@ -85,6 +85,11 @@ jobs:
 
           Copy-Item $pack $dir                                # a pack beside the app: the window finds it
           Run "--selftest-gui"                                # opens the window, closes it
+          # ...and started the way Explorer starts it: no console to inherit, so the app's
+          # stdout/stderr are None. A crash here shows PyInstaller's modal error box, which hangs.
+          $p = Start-Process $exe -ArgumentList "--selftest-gui" -PassThru
+          if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "the app hung or crashed when started without a console" }
+          if ($p.ExitCode) { throw "the app failed when started without a console ($($p.ExitCode))" }
           if (-not (Select-String -Quiet -Path "$dir\helix-boot.log" -Pattern "Pack found beside the app")) {
             throw "the window didn't pick up the pack beside it"
           }

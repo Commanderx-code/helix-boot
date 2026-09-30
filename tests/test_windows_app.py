@@ -223,6 +223,17 @@ class TestFindPack(unittest.TestCase):
 
 
 class TestConsole(unittest.TestCase):
+    def test_starts_from_explorer_without_a_console(self):
+        # Double-clicked, the windowed .exe has sys.stdout/stderr = None; loading the app and
+        # helix inside it used to crash on stdout.isatty()
+        with mock.patch.object(sys, "stdout", None), mock.patch.object(sys, "stderr", None):
+            s = importlib.util.spec_from_file_location("helix_boot_noconsole", ROOT / "windows" / "helix_boot.py")
+            mod = importlib.util.module_from_spec(s)
+            s.loader.exec_module(mod)
+            self.assertIsNotNone(sys.stdout)
+            print("printing works")
+        self.assertFalse(mod.cr.C.on)
+
     def test_cp1252_console_does_not_crash(self):
         raw = io.BytesIO()
         console = io.TextIOWrapper(raw, encoding="cp1252", write_through=True)

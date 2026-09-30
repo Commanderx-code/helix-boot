@@ -64,8 +64,14 @@ OLD_CATEGORIES = {"windows-pe": "live", "rescue": "live"}
 
 
 # ── Output ────────────────────────────────────────────────────────────────
+def _isatty(stream) -> bool:
+    """Is this a terminal? A windowed program started from Explorer (HelixBoot.exe) has no
+    console at all: its sys.stdout and sys.stderr are None."""
+    return bool(stream) and getattr(stream, "isatty", lambda: False)()
+
+
 class C:
-    on = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    on = _isatty(sys.stdout) and not os.environ.get("NO_COLOR")
     G, Y, R, B, D, X = (
         ("\033[32m", "\033[33m", "\033[31m", "\033[1m", "\033[2m", "\033[0m") if on else ("",) * 6
     )
@@ -299,7 +305,7 @@ class Progress:
 
     def __init__(self, total: int = 0):
         self.total, self.done = total, 0
-        self.tty = sys.stderr.isatty()
+        self.tty = _isatty(sys.stderr)
         self.start = self.last = time.monotonic()
         self.label, self.fsize, self.fdone, self.fstart = "", 0, 0, self.start
 
@@ -373,7 +379,7 @@ def download(url: str, dest: Path) -> None:
         total = resp.headers.get("Content-Length")
         total = int(total) + have if total else None
         done, last, start = have, 0.0, time.monotonic()
-        tty = sys.stderr.isatty()
+        tty = _isatty(sys.stderr)
         with open(part, "ab" if resumed else "wb") as f:
             while chunk := resp.read(1 << 20):
                 f.write(chunk)

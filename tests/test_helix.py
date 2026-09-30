@@ -16,6 +16,7 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+import sys
 import unittest
 import unittest.mock
 import zipfile
@@ -1403,6 +1404,16 @@ class TestDownloadRetry(unittest.TestCase):
 
 
 class TestPortability(unittest.TestCase):
+    def test_loads_without_a_console(self):
+        # HelixBoot.exe started from Explorer: a windowed program has sys.stdout/stderr = None
+        import importlib.machinery, importlib.util
+        with unittest.mock.patch.object(sys, "stdout", None), unittest.mock.patch.object(sys, "stderr", None):
+            loader = importlib.machinery.SourceFileLoader("helix_noconsole", str(ROOT / "helix"))
+            mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("helix_noconsole", loader))
+            loader.exec_module(mod)
+            self.assertFalse(mod.C.on)
+            self.assertFalse(mod.Progress(10).tty)
+
     def test_github_token_only_goes_to_github(self):
         # F6/F9: a scraped link to a look-alike host must not get the token
         with unittest.mock.patch.dict(os.environ, {"GITHUB_TOKEN": "secret"}), \

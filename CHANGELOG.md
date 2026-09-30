@@ -6,6 +6,11 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Fixed
+- `HelixBoot.exe` crashed on start when double-clicked ("'NoneType' object has no
+  attribute 'isatty'"): started from Explorer, a windowed program has no console.
+  CI now also starts the `.exe` that way.
+
 ## [0.5.2] - 2026-09-29
 
 ### Added

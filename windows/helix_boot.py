@@ -53,6 +53,12 @@ import xml.etree.ElementTree  # noqa: F401
 import zipfile  # noqa: F401
 import zlib  # noqa: F401
 
+# Started from Explorer, a windowed program has no console: sys.stdout and sys.stderr are
+# None, and anything that prints (or asks isatty) before the window takes over would crash.
+for _name in ("stdout", "stderr"):
+    if getattr(sys, _name) is None:
+        setattr(sys, _name, open(os.devnull, "w", encoding="utf-8"))
+
 APP = "Helix Boot"
 FROZEN = getattr(sys, "frozen", False)
 USB_BUSES = {"USB", "SD", "MMC"}
