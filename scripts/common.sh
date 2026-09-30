@@ -7,6 +7,39 @@ else
   G='' Y='' R='' B='' D='' X=''
 fi
 
+# The Helix Boot logo: ANSI Shadow letters, purple to cyan like the Helix Neon theme. Plain
+# text instead on a terminal that can't show it (not UTF-8, or under 76 columns).
+banner() {  # banner <what this run does>
+  local what=$1 cols ver='' r i
+  cols=$(tput cols 2>/dev/null) || cols=80
+  if [[ -n ${HELIX:-} ]]; then ver=$("$HELIX" --version 2>/dev/null) || ver=''; fi
+  local charset=${LC_ALL:-${LC_CTYPE:-${LANG:-}}}
+  if [[ $charset != *[Uu][Tt][Ff]* ]] || ((cols < 76)); then
+    printf '\n%sHELIX BOOT%s  %s%s%s  %s\n\n' "$B" "$X" "$D" "$what" "$X" "$ver"
+    return
+  fi
+  local -a rows=(
+    '██╗  ██╗███████╗██╗     ██╗██╗  ██╗  ██████╗  ██████╗  ██████╗ ████████╗'
+    '██║  ██║██╔════╝██║     ██║╚██╗██╔╝  ██╔══██╗██╔═══██╗██╔═══██╗╚══██╔══╝'
+    '███████║█████╗  ██║     ██║ ╚███╔╝   ██████╔╝██║   ██║██║   ██║   ██║   '
+    '██╔══██║██╔══╝  ██║     ██║ ██╔██╗   ██╔══██╗██║   ██║██║   ██║   ██║   '
+    '██║  ██║███████╗███████╗██║██╔╝ ██╗  ██████╔╝╚██████╔╝╚██████╔╝   ██║   '
+    '╚═╝  ╚═╝╚══════╝╚══════╝╚═╝╚═╝  ╚═╝  ╚═════╝  ╚═════╝  ╚═════╝    ╚═╝   '
+  )
+  local -a at=(0 8 16 24 27 37 45 54 63) wide=(8 8 8 3 10 8 9 9 9)   # each letter (X takes the gap)
+  local -a shade=(99 135 141 147 111 75 81 45 51)
+  printf '\n'
+  for r in "${rows[@]}"; do
+    printf '  '
+    for i in "${!at[@]}"; do
+      if [[ -n $X ]]; then printf '\e[38;5;%sm%s' "${shade[$i]}" "${r:${at[$i]}:${wide[$i]}}"
+      else printf '%s' "${r:${at[$i]}:${wide[$i]}}"; fi
+    done
+    printf '%s\n' "$X"
+  done
+  printf '  %s        RECOVERY  •  DIAGNOSTICS  •  REPAIR        %s%s%s\n\n' "$D" "$X" "$B" "$what${ver:+  ·  $ver}$X"
+}
+
 ok()   { printf '%s✓%s %s\n' "$G" "$X" "$*"; }
 warn() { printf '%s!%s %s\n' "$Y" "$X" "$*"; }
 info() { printf '%s•%s %s\n' "$D" "$X" "$*"; }

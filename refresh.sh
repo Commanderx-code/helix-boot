@@ -46,6 +46,7 @@ while (($#)); do
   shift
 done
 
+banner "refresh"
 [[ $EUID -ne 0 ]] || die "run this as your normal user"
 check_python
 [[ -n $from ]] || from=$(bundled_pack "$HERE")

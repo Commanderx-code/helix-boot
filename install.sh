@@ -56,6 +56,7 @@ while (($#)); do
   shift
 done
 
+((list_only)) || banner "install"
 check_python
 [[ -n $from ]] || from=$(bundled_pack "$HERE")
 need lsblk util-linux
