@@ -949,6 +949,18 @@ def _label_of(mount: Path) -> str | None:
         return None
 
 
+def _png_size(path: Path) -> tuple[int, int] | None:
+    """(width, height) from a PNG's header, or None if it isn't one."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(24)
+    except OSError:
+        return None
+    if head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
+        return None
+    return struct.unpack(">II", head[16:24])
+
+
 def _icons(cfg: Config) -> set[str]:
     """Icon names available on the stick: the theme's own plus yours from byo/icons/."""
     theme = cfg.settings.get("theme")
@@ -1350,6 +1362,12 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
         mine = cfg.repo / "byo" / "icons"      # your own icons win over the theme's
         if mine.is_dir():
             files.update({f"icons/{f.name}": f for f in sorted(mine.glob("*.png"))})
+            big = [(f.name, *wh) for f in sorted(mine.glob("*.png")) if (wh := _png_size(f)) and max(wh) > 128]
+            if big:   # GRUB decodes each icon at full size: big ones use up its memory, later ones vanish
+                name, w, h = big[0]
+                warn(f"{len(big)} of your icons in byo/icons/ are much bigger than the 40x40 Ventoy shows "
+                     f"(e.g. {name}, {w}x{h}); at boot that can stop other icons appearing. "
+                     "Shrink them with: theme/build-theme.py --fit-icons")
         out += [(f"ventoy/theme/{rel}", f) for rel, f in files.items()]
     icons = _icons(cfg) if theme_src and theme_src.is_dir() else set()
     bare = [p["title"] for p in placed if icons and p["name"] not in icons]

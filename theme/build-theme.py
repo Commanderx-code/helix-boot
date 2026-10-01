@@ -323,13 +323,39 @@ def icons() -> None:
         pen.save(cls)
 
 
+def fit_icons() -> None:
+    """Shrink your own icons in byo/icons/ to ICON x ICON, the size Ventoy shows them. Large
+    ones also use up the boot loader's memory at boot, so the icons after them don't appear.
+    Each original is kept, once, in byo/icons/originals/ (which refresh doesn't copy)."""
+    mine = HERE.parent / "byo" / "icons"
+    keep = mine / "originals"
+    for f in sorted(mine.glob("*.png")):
+        with Image.open(f) as im:
+            if im.size == (ICON, ICON):
+                continue
+            size, im = im.size, im.convert("RGBA")
+        keep.mkdir(exist_ok=True)
+        if not (keep / f.name).exists():
+            shutil.copy2(f, keep / f.name)
+        im = ImageOps.contain(im, (ICON, ICON), Image.Resampling.LANCZOS)   # whole picture, centred
+        out = Image.new("RGBA", (ICON, ICON), (0, 0, 0, 0))
+        out.alpha_composite(im, ((ICON - im.width) // 2, (ICON - im.height) // 2))
+        out.save(f, optimize=True)
+        print(f"byo/icons/{f.name}: {size[0]}x{size[1]} -> {ICON}x{ICON} (original in byo/icons/originals/)")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--local", action="store_true", help="only generate missing local-tool badges")
+    ap.add_argument("--fit-icons", action="store_true",
+                    help=f"shrink your icons in byo/icons/ to {ICON}x{ICON}, keeping the originals")
     ap.add_argument("--skip-fonts", action="store_true", help="reuse the committed, unchanged GRUB fonts")
     args = ap.parse_args()
     if args.local:  # only your local.toml tools; the theme itself is untouched
         local_badges()
+        sys.exit(0)
+    if args.fit_icons:  # only byo/icons/; the theme itself is untouched
+        fit_icons()
         sys.exit(0)
     if not args.skip_fonts and not shutil.which("grub-mkfont"):
         sys.exit("grub-mkfont not found — install grub or use --skip-fonts to reuse committed fonts")

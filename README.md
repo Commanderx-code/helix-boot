@@ -367,9 +367,13 @@ The boot-menu theme lives in [`theme/`](theme/). Edit `theme.txt` for layout,
 or the colours and text in `theme/build-theme.py` and re-run it to regenerate
 the images, icons and fonts (`--skip-fonts` reuses the committed fonts).
 To show a tool's real logo instead of
-its letter badge, save a square PNG (ideally 40×40) as
-`byo/icons/<tool name>.png`; `byo/icons/cat-<category id>.png` replaces a
-category icon. For Ventoy's stock look, set `theme = ""` under `[settings]`.
+its letter badge, save a square PNG as `byo/icons/<tool name>.png`;
+`byo/icons/cat-<category id>.png` replaces a category icon, and Ventoy's own
+(`vtoyiso`, `vtoydir`, `vtoyret` for "back", …) can be replaced the same way.
+Ventoy shows icons at 40×40, and big ones use up its memory at boot so later
+icons don't appear: `theme/build-theme.py --fit-icons` shrinks yours to
+40×40, keeping the originals in `byo/icons/originals/`. Put icons there, not
+straight onto the stick: refresh rewrites the stick's theme folder. For Ventoy's stock look, set `theme = ""` under `[settings]`.
 
 <details>
 <summary><b>Layout on the stick</b></summary>

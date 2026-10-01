@@ -6,6 +6,11 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- `theme/build-theme.py --fit-icons` shrinks your icons in `byo/icons/` to the
+  40×40 Ventoy shows, keeping the originals; refresh warns about oversized ones,
+  which use up the boot loader's memory so later icons don't appear.
+
 ### Changed
 - The Lazarus launcher opens full screen, over the taskbar, which comes back
   when you switch to another program; `"fullscreen": false` in `launcher.json`

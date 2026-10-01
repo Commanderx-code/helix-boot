@@ -531,6 +531,31 @@ class TestFetchAndSync(Base):
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(), '{"mine": true}')
 
+    def test_oversized_icons_are_flagged(self):
+        import struct
+        def png(w, h):
+            return b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", w, h) + b"\x08\x06\0\0\0"
+        theme = self.repo / "theme"
+        (theme / "icons").mkdir(parents=True)
+        (theme / "theme.txt").write_text('desktop-image: "background.png"\n')
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
+        mine = self.repo / "byo" / "icons"
+        mine.mkdir(parents=True)
+        (mine / "systemrescue.png").write_bytes(png(40, 40))
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("systemrescue")
+        rc, out = self.sync()
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("--fit-icons", out)
+        (mine / "gparted.png").write_bytes(png(1254, 1254))
+        (mine / "originals").mkdir()
+        (mine / "originals" / "huge.png").write_bytes(png(4000, 4000))   # kept, never copied or flagged
+        rc, out = self.sync(init=False)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("1 of your icons in byo/icons/ are much bigger", out)
+        self.assertIn("gparted.png, 1254x1254", out)
+        self.assertFalse((self.stick / "ventoy/theme/icons/huge.png").exists())
+
     def test_theme_is_copied_and_wired_up(self):
         theme = self.repo / "theme"
         (theme / "fonts").mkdir(parents=True)
