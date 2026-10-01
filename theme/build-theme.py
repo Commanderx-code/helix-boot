@@ -66,6 +66,19 @@ PRESETS = {
         text=(244, 246, 250), muted=(160, 168, 182), select=(48, 56, 70, 220), scroll=(30, 34, 42, 255),
         sky=((7, 8, 11), (22, 25, 32))),
 }
+# Other people's GRUB themes, kept as presets with their own layout, boxes and fonts (see each
+# folder's NOTICE.md). Their files are committed as adapted; only the splash, in these colours
+# over the theme's own background, and preset.toml are made here.
+IMPORTED = {
+    "standby": dict(
+        title="Standby", description="Black cubes, a power symbol and white icons. By Llewelyn Trahaearn (GPL).",
+        text=(214, 214, 214), highlight=(255, 255, 255), accent=(136, 136, 136), muted=(187, 187, 187),
+        tip=("33%", "77%"), version=("84%", "96%")),
+    "poly-dark": dict(
+        title="Poly dark", description="Dark polygons and a plain list, in greys. By Andrei Shevchuk (MIT).",
+        text=(190, 190, 190), highlight=(235, 235, 235), accent=(119, 119, 119), muted=(119, 119, 119),
+        tip=("15%", "81%"), version=("72%", "96%")),
+}
 SKY = None                    # a preset's sky gradient (top, bottom); None: the artwork file
 OUT = None                    # where a preset is being written; None: the theme folder itself
 
@@ -261,6 +274,8 @@ def fonts() -> None:
         ("DejaVuSans.ttf", 16, "dejavu-16.pf2"),
         ("DejaVuSans.ttf", 22, "dejavu-22.pf2"),
         ("DejaVuSans-Bold.ttf", 22, "dejavu-bold-22.pf2"),
+        # Poly dark's own 16 px Unifont is too small to read at 1080p: its list in a larger mono font
+        ("DejaVuSansMono.ttf", 20, "../presets/poly-dark/dejavu-mono-20.pf2"),
     ):
         subprocess.run(["grub-mkfont", "-s", str(size), "-r", ranges, "-o", str(out / name), str(ttf(src))],
                        check=True)
@@ -476,10 +491,10 @@ def presets() -> None:
              "LINE", "DIM", "TITLE", "DESCRIPTION")
     default = {k: g[k] for k in names}
     theme_txt = (HERE / "theme.txt").read_text(encoding="utf-8")
-    shutil.rmtree(HERE / "presets", ignore_errors=True)
     try:
         for pid, p in PRESETS.items():
             out = HERE / "presets" / pid
+            shutil.rmtree(out, ignore_errors=True)
             out.mkdir(parents=True)
             g.update(OUT=out, SKY=p["sky"], PANEL=p["panel"], BORDER=p["border"], ACCENT=p["accent"],
                      CYAN=p["highlight"], TEXT=p["text"], MUTED=p["muted"], SELECT=p["select"],
@@ -494,6 +509,30 @@ def presets() -> None:
             for old, new in (("#f4f0ff", TEXT), ("#e6dff2", item), ("#b55eff", ACCENT), ("#baabd3", MUTED)):
                 text = text.replace(old, hexc(new))
             (out / "theme.txt").write_text(text, encoding="utf-8")
+    finally:
+        g.update(default)
+
+
+def imported() -> None:
+    """The splash and preset.toml of each imported theme (IMPORTED), in its own colours."""
+    g = globals()
+    names = ("OUT", "ARTWORK", "ACCENT", "CYAN", "TEXT", "MUTED", "DIM")
+    default = {k: g[k] for k in names}
+    try:
+        for pid, p in IMPORTED.items():
+            out = HERE / "presets" / pid
+            g.update(OUT=out, ARTWORK=out / "background.png", ACCENT=p["accent"], CYAN=p["highlight"],
+                     TEXT=p["text"], MUTED=p["muted"], DIM=(0, 0, 0))
+            splash()
+            (out / "preset.toml").write_text(
+                f'title = "{p["title"]}"\ndescription = "{p["description"]}"\n'
+                'standalone = true                 # its own layout, boxes and fonts: the theme\'s aren\'t laid under it\n'
+                'icons = "grey"                    # the tool icons in greyscale, unless you pick a pack\n'
+                f'muted = "{hexc(MUTED)}"                 # ventoy.json: the tip line and Ventoy\'s version text\n'
+                f'tip = ["{p["tip"][0]}", "{p["tip"][1]}"]             # … and where they go in this layout\n'
+                f'version = ["{p["version"][0]}", "{p["version"][1]}"]\n'
+                f'bar = ["{hexc(CYAN)}", "{hexc(ACCENT)}"]     # the splash\'s loading bar, left to right\n',
+                encoding="utf-8")
     finally:
         g.update(default)
 
@@ -552,6 +591,7 @@ if __name__ == "__main__":
         sys.exit("committed fonts are missing — run without --skip-fonts after installing grub")
     themed()
     presets()
+    imported()
     icon_packs()
     if not args.skip_fonts:
         fonts()

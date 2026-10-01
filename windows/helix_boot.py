@@ -646,8 +646,8 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     splashes = {"Automatic (yours from byo, else the theme's)": "auto", "The theme's": "theme",
                 "My picture": "custom", "None": "off"}
     look = report["look"]
-    theme = tk.StringVar(value=next(k for k, t in themes.items() if t["id"] == look["theme"]))
-    icons = tk.StringVar(value=next(k for k, p in packs.items() if p["id"] == look["icons"]))
+    theme = tk.StringVar(value=next((k for k, t in themes.items() if t["id"] == look["theme"]), next(iter(themes))))
+    icons = tk.StringVar(value=next((k for k, p in packs.items() if p["id"] == look["icons"]), next(iter(packs))))
     background = tk.StringVar(value=look["background"])
     splash = tk.StringVar(value=next(k for k, v in splashes.items() if v == look["splash"]))
     dim = tk.IntVar(value=40)
@@ -795,7 +795,7 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
 
     def reset():
         theme.set(next(k for k, t in themes.items() if t["id"] == "default"))
-        icons.set(next(k for k, p in packs.items() if p["id"] == "logos"))
+        icons.set(next(k for k, p in packs.items() if p["id"] == "auto"))
         background.set("theme")
         splash.set(next(k for k, v in splashes.items() if v == "auto"))
         chosen.clear()
@@ -880,7 +880,7 @@ def cli(argv: list[str]) -> int:
     ap.add_argument("--look", metavar="DRIVE", help="open the Look window for a stick (e.g. E:\\); with the "
                                                    "options below, change its look instead")
     ap.add_argument("--theme", metavar="ID", help="with --look: a preset theme, default, or off (Ventoy's own look)")
-    ap.add_argument("--icons", metavar="ID", help="with --look: an icon pack, logos, or off")
+    ap.add_argument("--icons", metavar="ID", help="with --look: auto, logos, grey, an icon pack, or off")
     ap.add_argument("--background", metavar="PICTURE", help="with --look: your own background, or theme")
     ap.add_argument("--dim", type=int, default=0, metavar="PERCENT", help="with --background: darken it (0-90)")
     ap.add_argument("--splash", metavar="PICTURE", help="with --look: your own splash; theme, auto, or off")

@@ -60,5 +60,29 @@ class ToolIcons(unittest.TestCase):
                 build.tool_icon({"name": "rescuezilla"}, {"rescuezilla": {"file": "missing.png"}}, Path(temp))
 
 
+class Presets(unittest.TestCase):
+    def test_every_preset_is_complete(self):
+        presets = sorted(p for p in (ROOT / "theme/presets").iterdir() if p.is_dir())
+        self.assertGreaterEqual(len(presets), 6)
+        for p in presets:
+            with self.subTest(preset=p.name):
+                meta = tomllib.loads((p / "preset.toml").read_text(encoding="utf-8"))
+                self.assertTrue(meta["title"] and meta["description"])
+                text = (p / "theme.txt").read_text(encoding="utf-8")
+                self.assertIn("@VTOY_HOTKEY_TIP@", text)                # Ventoy's hotkeys stay on screen
+                for key in ("icon_width", "icon_height", "item_icon_space"):   # "icons off" sets these to 0
+                    self.assertRegex(text, rf"(?m)^\s*{key}\s*=\s*\d+")
+                for name in ("background.png", "splash.png"):
+                    self.assertEqual((p / name).read_bytes()[:8], b"\x89PNG\r\n\x1a\n", name)
+                for font in set(__import__("re").findall(r'font\s*[:=]\s*"([^"]+)"', text)):
+                    have = [f.read_bytes() for f in list(p.glob("*.pf2")) +
+                            ([] if meta.get("standalone") else list((ROOT / "theme/fonts").glob("*.pf2")))]
+                    self.assertTrue(font.startswith("Unifont") or any(font.encode() in f for f in have),
+                                    f"{font}: no .pf2 for it")          # Unifont is Ventoy's own
+                if meta.get("standalone"):                              # someone else's theme: credit and licence
+                    self.assertTrue((p / "NOTICE.md").is_file())
+                    self.assertTrue((p / "LICENSE").is_file() or (p / "COPYING").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,120 @@
+# Standby - GRUB gfxmenu theme.
+# Designed for widescreen resolutions.
+# by Llewelyn Trahaearn
+# with resources by vinceliuice
+# Distributed under the GNU Public Licence.
+#
+# Adapted for Helix Boot / Ventoy (see NOTICE.md): no title, the power symbol always shown,
+# Ventoy's hotkeys and boot-mode indicators in place of GRUB's key help. The @VTOY_*@ labels
+# are Ventoy's status indicators and must stay.
+
+title-text: ""
+message-font: "NanumMyeongjo Regular 16"
+message-color: "#000"
+message-bg-color: "#FFF"
+terminal-box: "terminal_box_*.png"
+terminal-font: "Source Code Pro Regular 16"
+desktop-image: "background.png"
+desktop-image-scale-method: "stretch"
+
++ boot_menu {
+  left = 33%
+  width = 50%
+  top = 25%
+  height = 50%
+  menu_pixmap_style = "menu_pixmap_style_*.png"
+
+  item_font = "NanumMyeongjo Regular 18"
+  item_color = "#BBB"
+  item_height = 32
+  item_icon_space = 8
+  item_spacing = 2
+
+  selected_item_font = "NanumMyeongjo Regular 18"
+  selected_item_color= "#FFF"
+  selected_item_pixmap_style = "select_*.png"
+
+  icon_height = 32
+  icon_width = 32
+
+  scrollbar = true
+  scrollbar_width = 20
+  scrollbar_thumb = "scrollbar_thumb_*.png"
+  scrollbar_frame = "scrollbar_frame_*.png"
+}
+
+# The power symbol; with a menu timeout set, the ticks count down around it.
++ image {
+  left = 91
+  top = 96
+  file = "standby.png"
+}
+
+# Progresses from the start angle to the end angle in a clockwise direction. Angles are measured in parrots.
++ circular_progress
+{
+   id = "__timeout__"
+   left = 75
+   top = 80
+   height = 160
+   width = 160
+   num_ticks = 31
+   ticks_disappear = true
+   start_angle = -56
+   end_angle = 200
+   center_bitmap = "standby.png"
+   tick_bitmap = "tick.png"
+}
+
+# Hotkeys (F1 help, F2 browse, F3 tree view, …)
++ hbox {
+  left = 33%
+  top = 100%-70
+  width = 60%
+  height = 24
+  + label { text = "@VTOY_HOTKEY_TIP@" font = "NanumMyeongjo Regular 16" color = "#BBB" align = "left" }
+}
++ hbox {
+  left = 33%
+  top = 100%-44
+  width = 50%
+  height = 24
+  + label { text = "Enter  open      Esc  back" font = "NanumMyeongjo Regular 16" color = "#888" align = "left" }
+}
+
+# Boot-mode indicators, shown only when a mode is switched on
++ hbox {
+  left = 33%
+  top = 81%
+  width = 20%
+  height = 24
+  + label { text = "@VTOY_ISO_RAW@" font = "NanumMyeongjo Regular 16" color = "#FFF" align = "left" }
+}
++ hbox {
+  left = 33%
+  top = 81%+24
+  width = 20%
+  height = 24
+  + label { text = "@VTOY_MEM_DISK@" font = "NanumMyeongjo Regular 16" color = "#FFF" align = "left" }
+}
++ hbox {
+  left = 58%
+  top = 81%
+  width = 20%
+  height = 24
+  + label { text = "@VTOY_GRUB2_MODE@" font = "NanumMyeongjo Regular 16" color = "#FFF" align = "left" }
+}
++ hbox {
+  left = 58%
+  top = 81%+24
+  width = 20%
+  height = 24
+  + label { text = "@VTOY_WIMBOOT_MODE@" font = "NanumMyeongjo Regular 16" color = "#FFF" align = "left" }
+}
++ hbox {
+  left = 75%
+  top = 5%
+  width = 20%
+  height = 24
+  + label { text = "@VTOY_ISO_UEFI_DRV@" font = "NanumMyeongjo Regular 16" color = "#FFF" align = "left" }
+}

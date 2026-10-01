@@ -804,7 +804,7 @@ class TestFetchAndSync(Base):
         report = json.loads(out)
         self.assertEqual(report["look"], cr.LOOK_DEFAULT)
         self.assertEqual([t["id"] for t in report["themes"]], ["default", "night", "off"])
-        self.assertEqual([t["id"] for t in report["icon_packs"]], ["logos", "badges", "off"])
+        self.assertEqual([t["id"] for t in report["icon_packs"]], ["auto", "logos", "grey", "badges", "off"])
 
     def test_your_own_splash_and_icons_beat_a_preset(self):
         (self.repo / "byo/icons").mkdir(parents=True)
@@ -854,6 +854,47 @@ class TestFetchAndSync(Base):
             self.assertEqual(im.size, (960, 540))
         with self.assertRaisesRegex(cr.RescueError, "neither a picture file"):
             self.look(background=str(self.tmp / "missing.png"))
+
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "greyscale icons need Pillow")
+    def test_a_theme_with_its_own_layout_and_grey_icons(self):
+        from PIL import Image
+        built, menu = self.themed_repo()
+        theme = self.repo / "theme"
+        (theme / "fonts").mkdir()
+        (theme / "fonts/ours.pf2").write_bytes(b"PFF2")
+        Image.new("RGBA", (40, 40), (200, 40, 40, 255)).save(theme / "icons/systemrescue.png")   # a red logo
+        Image.new("RGBA", (40, 40), (0, 220, 235, 255)).save(theme / "icons/vtoydir.png")        # a flat cyan glyph
+        other = theme / "presets/other"
+        other.mkdir()
+        (other / "theme.txt").write_text('desktop-image: "background.png"\n# someone else\'s layout\n')
+        (other / "background.png").write_bytes(b"other background")
+        (other / "theirs.pf2").write_bytes(b"PFF2")
+        (other / "NOTICE.md").write_text("theirs")
+        (other / "preset.toml").write_text('title = "Other"\nstandalone = true\nicons = "grey"\nmuted = "#bbbbbb"\n'
+                                           'tip = ["33%", "77%"]\nversion = ["84%", "96%"]\n')
+        self.assertEqual(self.sync(init=False)[0], 0)
+        self.assertEqual(menu()["theme"]["fonts"], ["/ventoy/theme/fonts/ours.pf2"])   # not the preset's
+        red = lambda: Image.open(built / "icons/systemrescue.png").convert("RGBA").getpixel((5, 5))  # noqa: E731
+        self.assertEqual(red(), (200, 40, 40, 255))
+
+        rc, out = self.look(theme="other")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(sorted(f.name for f in built.iterdir() if f.is_file()),
+                         ["NOTICE.md", "background.png", "splash.png", "theirs.pf2", "theme.txt"])   # none of ours
+        self.assertEqual(menu()["theme"]["fonts"], ["/ventoy/theme/theirs.pf2"])
+        self.assertEqual((menu()["theme"]["ventoy_left"], menu()["theme"]["ventoy_top"]), ("84%", "96%"))
+        self.assertEqual((menu()["menu_tip"]["left"], menu()["menu_tip"]["top"], menu()["menu_tip"]["color"]),
+                         ("33%", "77%", "#bbbbbb"))
+        r, g, b, a = red()
+        self.assertTrue(r == g == b and a == 255, (r, g, b, a))                    # its icons in grey …
+        self.assertEqual(Image.open(built / "icons/vtoydir.png").convert("RGBA").getpixel((5, 5)),
+                         (255, 255, 255, 255))                                      # … a flat glyph white
+        self.look(icons="logos")                                                    # asked for in colour
+        self.assertEqual(red(), (200, 40, 40, 255))
+        self.look(theme="default", icons="grey")                                    # grey on any theme
+        self.assertTrue(red()[0] == red()[1] == red()[2])
+        self.look(icons="auto")
+        self.assertEqual(red(), (200, 40, 40, 255))
 
     def test_look_needs_a_stick_from_this_version(self):
         self.fetch("systemrescue")

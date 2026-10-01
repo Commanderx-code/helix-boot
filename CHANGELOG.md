@@ -6,6 +6,19 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- Two more themes for `theme.sh` and the Look window, both other people's GRUB
+  themes with their own layout, adapted for Ventoy: **Standby** (Llewelyn
+  Trahaearn, GPL) and **Poly dark** (Andrei Shevchuk, MIT), each with a splash
+  in its colours. A preset can now bring its own layout and fonts
+  (`standalone = true` in `preset.toml`).
+- Greyscale icons: `--icons grey` redraws every icon, yours included, in shades
+  of grey. Standby and Poly dark use it by themselves: the icon choice now
+  defaults to `auto`, the theme's own style, and `--icons logos` keeps colour.
+
+### Fixed
+- The look preview follows each theme's own layout, boxes and font sizes.
+
 ## [0.6.0] - 2026-10-01
 
 ### Added

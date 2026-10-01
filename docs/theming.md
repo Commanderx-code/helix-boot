@@ -41,11 +41,27 @@ pack you picked. The splash is yours (`--splash PICTURE`, else
 `byo/splash.png`) or else the theme's; `--splash theme` uses the theme's even
 when you have your own. With the theme off, only your own splash still shows.
 
+Icons can also be redrawn: `--icons grey` shows them all in shades of grey (a
+flat one-colour icon turns white), `--icons logos` keeps them in colour, and
+the default, `auto`, leaves it to the theme (Standby and Poly dark ask for
+grey). That needs Pillow; without it they stay in colour.
+
 A preset is a folder, `theme/presets/<id>/`, holding what differs from the
 theme: `theme.txt`, the background and splash, the box images, its recoloured
 icons, and `preset.toml` (title, description, the `muted` text colour for
 Ventoy's tips and version, and the loading bar's two colours). Add one to
-`PRESETS` in `theme/build-theme.py` and re-run it. An icon pack is a folder of
+`PRESETS` in `theme/build-theme.py` and re-run it.
+
+Someone else's GRUB theme can be a preset too, as Standby and Poly dark are:
+copy its files into `theme/presets/<id>/` with its licence and a `NOTICE.md`,
+and say `standalone = true` in `preset.toml`, so the Helix theme's boxes and
+fonts aren't laid under it. Its `theme.txt` needs `title-text: ""`, an
+`icon_width` / `icon_height` / `item_icon_space` in `boot_menu`, and Ventoy's
+`@VTOY_HOTKEY_TIP@` and boot-mode labels (copy those blocks from a preset
+here). `preset.toml` can also set `icons = "grey"`, and where Ventoy's tip line
+and version text go in that layout: `tip = ["33%", "77%"]`,
+`version = ["84%", "96%"]`. List it in `IMPORTED` in `theme/build-theme.py`
+for a splash in its colours. An icon pack is a folder of
 PNGs named after the tools (`theme/icon-packs/<id>/`, or your own in
 `byo/icon-packs/<id>/`), with an optional `pack.toml` (`title`, `description`).
 

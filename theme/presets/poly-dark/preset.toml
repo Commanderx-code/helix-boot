@@ -1,0 +1,8 @@
+title = "Poly dark"
+description = "Dark polygons and a plain list, in greys. By Andrei Shevchuk (MIT)."
+standalone = true                 # its own layout, boxes and fonts: the theme's aren't laid under it
+icons = "grey"                    # the tool icons in greyscale, unless you pick a pack
+muted = "#777777"                 # ventoy.json: the tip line and Ventoy's version text
+tip = ["15%", "81%"]             # … and where they go in this layout
+version = ["72%", "96%"]
+bar = ["#ebebeb", "#777777"]     # the splash's loading bar, left to right

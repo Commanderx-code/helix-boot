@@ -59,7 +59,7 @@ THEME_SRC = f"{STATE_DIR}/theme"              # the theme as synced: presets, ic
 BASE_JSON = f"{STATE_DIR}/ventoy.base.json"   # the boot menu before the look is applied
 LOOK_FILE = f"{STATE_DIR}/look.json"          # the choice
 LOOK_DIR = f"{STATE_DIR}/look"                # your own background.png / splash.png, set on the stick
-LOOK_DEFAULT = {"theme": "default", "icons": "logos", "background": "theme", "splash": "auto"}
+LOOK_DEFAULT = {"theme": "default", "icons": "auto", "background": "theme", "splash": "auto"}
 # Before the rename to Helix Boot: still written or read, so older sticks, launchers and
 # Lazarus PE builds keep working
 OLD_STATE_DIR = ".commander-rescue"
@@ -1030,8 +1030,8 @@ def build_ventoy_json(cfg: Config, placed: list[dict], icons: set[str] = frozens
             "ventoy_left": "78%",
             "ventoy_top": "94%",
             "ventoy_color": "#baabd3",
-            "fonts": [f"/ventoy/theme/{f.relative_to(theme_dir).as_posix()}"
-                      for f in sorted(theme_dir.rglob("*.pf2"))],
+            "fonts": [f"/ventoy/theme/{f.relative_to(theme_dir).as_posix()}"     # a preset may bring its own
+                      for f in sorted(theme_dir.rglob("*.pf2")) if f.relative_to(theme_dir).parts[0] != "presets"],
         }
     return doc
 
@@ -2106,9 +2106,38 @@ def _splash_key(splash: Path, bar: tuple[str, str]) -> str:
 # (mine/). ventoy/theme and ventoy/ventoy.json are built from that and the choice in look.json,
 # so `helix theme` changes the look from any PC, and a refresh keeps it.
 
+ICON_STYLES = ("grey",)       # ways the stick's icons can be redrawn (with Pillow); see _restyle_icons
+
+
+def _restyle_icons(folder: Path, style: str) -> None:
+    """Redraw every icon in a built theme's icons folder in a style. grey: shades of grey at
+    full contrast, which turns a one-colour icon white. Without Pillow they stay as they are."""
+    try:
+        from PIL import Image
+    except ImportError:
+        info(f"the icons stay in colour: {style} icons need Pillow (python-pillow / pip install pillow)")
+        return
+    for f in sorted(folder.glob("*.png")):
+        try:
+            with Image.open(f) as im:
+                im = im.convert("RGBA")
+        except OSError:
+            continue
+        alpha = im.getchannel("A")
+        grey = im.convert("RGB").convert("L")
+        seen = [v for v, n in enumerate(grey.histogram(alpha.point(lambda a: 255 if a > 40 else 0))) if n]
+        lo, hi = (seen[0], seen[-1]) if seen else (0, 255)
+        if hi - lo < 40:        # one flat colour: its shape is the picture
+            grey = grey.point(lambda v: 255)
+        else:
+            grey = grey.point(lambda v: 0 if v <= lo else 255 if v >= hi else round(255 * (v - lo) / (hi - lo)))
+        Image.merge("RGBA", (grey, grey, grey, alpha)).save(f, optimize=True)
+
+
 def _preset_meta(folder: Path) -> dict:
     """A theme folder's preset.toml: its title and the colours the menu and splash take from it."""
-    meta = {"title": folder.name, "description": "", "muted": "#baabd3", "bar": SPLASH_BAR}
+    meta = {"title": folder.name, "description": "", "muted": "#baabd3", "bar": SPLASH_BAR,
+            "standalone": False, "icons": "", "tip": None, "version": None}
     try:
         got = tomllib.loads((folder / "preset.toml").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -2122,6 +2151,13 @@ def _preset_meta(folder: Path) -> dict:
     bar = got.get("bar")
     if isinstance(bar, list) and len(bar) == 2 and all(isinstance(c, str) and colour.fullmatch(c) for c in bar):
         meta["bar"] = (bar[0], bar[1])
+    meta["standalone"] = got.get("standalone") is True      # its own layout: the theme isn't laid under it
+    if got.get("icons") in ICON_STYLES:                     # how its icons are drawn, unless a pack is picked
+        meta["icons"] = got["icons"]
+    for key in ("tip", "version"):                          # where the tip and Ventoy's version go: [left, top]
+        at = got.get(key)
+        if isinstance(at, list) and len(at) == 2 and all(isinstance(v, str) and re.fullmatch(r"\d{1,3}%", v) for v in at):
+            meta[key] = (at[0], at[1])
     return meta
 
 
@@ -2146,9 +2182,11 @@ def _look_choices(mnt: Path) -> tuple[dict[str, dict], dict[str, dict]]:
         if SAFE_NAME.fullmatch(d.name) and d.name not in ("default", "off") and (d / "theme.txt").is_file():
             themes[d.name] = _preset_meta(d)
     themes["off"] = {"title": "Off", "description": "Ventoy's own look: no theme, no icons."}
-    packs = {"logos": {"title": "Logos", "description": "The tools' own logos, and your icons from byo/icons/."}}
+    packs = {"auto": {"title": "Automatic", "description": "The theme's own style: logos in colour, or grey where it asks for that."},
+             "logos": {"title": "Logos", "description": "The tools' own logos in colour, and your icons from byo/icons/."},
+             "grey": {"title": "Greyscale", "description": "The same icons in shades of grey."}}
     for d in sorted((src / "icon-packs").glob("*/")):
-        if SAFE_NAME.fullmatch(d.name) and d.name not in ("logos", "off"):
+        if SAFE_NAME.fullmatch(d.name) and d.name not in packs and d.name != "off":
             try:
                 got = tomllib.loads((d / "pack.toml").read_text(encoding="utf-8"))
             except (OSError, ValueError):
@@ -2167,7 +2205,10 @@ def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = Tr
     theme = look["theme"] if look["theme"] in themes else "default"
     themed = theme != "off" and (src / "theme.txt").is_file()
     preset = src / "presets" / theme if themed and theme != "default" else None
-    icons = look["icons"] if look["icons"] in packs else "logos"
+    meta = _preset_meta(preset or src)
+    icons = look["icons"] if look["icons"] in packs else "auto"
+    style = "grey" if icons == "grey" else meta["icons"] if icons == "auto" else ""
+    pack = src / "icon-packs" / icons if icons not in ("auto", "logos", "grey", "off") else None
     shutil.rmtree(new, ignore_errors=True)
     new.mkdir(parents=True)
 
@@ -2180,7 +2221,7 @@ def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = Tr
 
     apart = ("presets", "icon-packs", "mine", "splash", "icons", "splash.png", "preset.toml", "pack.toml")
     if themed:
-        for layer in (src, preset):
+        for layer in (None if meta["standalone"] else src, preset):
             if layer:
                 lay(layer, new, skip=apart)
         if look["background"] == "custom" and (mnt / LOOK_DIR / "background.png").is_file():
@@ -2190,10 +2231,11 @@ def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = Tr
             text = re.sub(r"^(\s*(?:icon_width|icon_height|item_icon_space)\s*=\s*)\d+", r"\g<1>0", text, flags=re.M)
             (new / "theme.txt").write_text(text, encoding="utf-8")
         else:                   # later layers win: the theme's, the preset's, your own, the pack's
-            for layer in (src / "icons", preset / "icons" if preset else None, src / "mine" / "icons",
-                          src / "icon-packs" / icons if icons != "logos" else None):
+            for layer in (src / "icons", preset / "icons" if preset else None, src / "mine" / "icons", pack):
                 if layer and layer.is_dir():
                     lay(layer, new / "icons", skip=apart)
+            if style and (new / "icons").is_dir():
+                _restyle_icons(new / "icons", style)
     # the splash: your own (set on the stick, or byo/splash.png), else the theme's
     mine, custom = src / "mine" / "splash.png", mnt / LOOK_DIR / "splash.png"
     own = preset / "splash.png" if preset and (preset / "splash.png").is_file() else src / "splash.png"
@@ -2201,7 +2243,7 @@ def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = Tr
     pick = None if look["splash"] == "off" else own if look["splash"] == "theme" else yours or own
     if pick and pick.is_file() and (themed or pick != own):   # no theme: no splash of its either
         shutil.copy2(pick, new / "splash.png")
-        bar = _preset_meta(preset or src)["bar"] if pick == own else SPLASH_BAR
+        bar = meta["bar"] if pick == own else SPLASH_BAR
         key = _splash_key(pick, bar) if frames else ""
         ready = src / "splash" if frames else None
         if frames and not ((ready / "for.txt").is_file()
@@ -2216,10 +2258,14 @@ def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = Tr
         if "menu_tip" in doc:
             doc["menu_tip"].update(left="10%", top="80%", color="#7fb4ff")
     elif "theme" in doc:
-        muted = _preset_meta(preset or src)["muted"]
-        doc["theme"]["ventoy_color"] = muted
+        doc["theme"]["ventoy_color"] = meta["muted"]
+        doc["theme"]["fonts"] = [f"/ventoy/theme/{f.relative_to(new).as_posix()}" for f in sorted(new.rglob("*.pf2"))]
+        if meta["version"]:
+            doc["theme"]["ventoy_left"], doc["theme"]["ventoy_top"] = meta["version"]
         if "menu_tip" in doc:
-            doc["menu_tip"]["color"] = muted
+            doc["menu_tip"]["color"] = meta["muted"]
+            if meta["tip"]:
+                doc["menu_tip"]["left"], doc["menu_tip"]["top"] = meta["tip"]
     have = {f.stem for f in (new / "icons").glob("*.png")}
     if "menu_class" in doc:
         doc["menu_class"] = [c for c in doc["menu_class"] if c.get("class") in have]
@@ -2385,60 +2431,79 @@ def look_preview(cfg: Config, mnt: Path, look: dict, out: Path, pictures: dict[s
                    font=font(20), fill=(60, 110, 200), anchor="lm")
         else:
             text = (work / "theme.txt").read_text(encoding="utf-8")
-            menu = re.search(r"\+ boot_menu \{(.*?)\}", text, re.S)
-            props = {k: quoted or bare.strip() for k, quoted, bare in re.findall(     # "#rrggbb" isn't a comment
-                r'^\s*(\w+)\s*=\s*(?:"([^"\n]*)"|([^#\n]*))', menu.group(1) if menu else "", re.M)}
 
-            def px(key: str, full: int, default: str) -> int:
-                v = props.get(key, default).strip()
-                return round(float(v[:-1]) * full / 100) if v.endswith("%") else int(v)
+            def settings(block: str) -> dict:          # "#rrggbb" isn't a comment
+                return {k: quoted or bare.strip() for k, quoted, bare in
+                        re.findall(r'(\w+)\s*=\s*(?:"([^"\n]*)"|([^#\n}]*))', block)}
 
-            def box(prefix: str, x: int, y: int, w: int, h: int) -> None:   # GRUB's nine-slice boxes
-                parts = {}
-                for part in ("nw", "n", "ne", "w", "c", "e", "sw", "s", "se"):
-                    f = work / f"{prefix}_{part}.png"
-                    if not f.is_file():
-                        return
-                    parts[part] = Image.open(f).convert("RGBA")
-                (left, top), (right, bottom) = parts["nw"].size, parts["se"].size
+            def px(v: str, full: int) -> int:          # "5%", "40", "100%-70", "81%+24"
+                m = re.fullmatch(r"\s*(?:(\d+(?:\.\d+)?)%)?\s*([+-]?\d+)?\s*", v)
+                return round(float(m.group(1) or 0) * full / 100) + int(m.group(2) or 0) if m else 0
+
+            def box(pattern: str, x: int, y: int, w: int, h: int) -> None:   # GRUB's nine-slice boxes
+                prefix = pattern.split("*")[0]
+                parts = {part: Image.open(f).convert("RGBA") for part in ("nw", "n", "ne", "w", "c", "e", "sw", "s", "se")
+                         if (f := work / f"{prefix}{part}.png").is_file()}
+                if not prefix or "c" not in parts or w <= 0 or h <= 0:
+                    return
+                (left, top) = parts["nw"].size if "nw" in parts else (0, 0)
+                (right, bottom) = parts["se"].size if "se" in parts else (0, 0)
                 xs, ys = (x, x + left, x + w - right), (y, y + top, y + h - bottom)
                 ws, hs = (left, w - left - right, right), (top, h - top - bottom, bottom)
                 for r, names in enumerate((("nw", "n", "ne"), ("w", "c", "e"), ("sw", "s", "se"))):
                     for c, part in enumerate(names):
-                        if ws[c] > 0 and hs[r] > 0:
+                        if part in parts and ws[c] > 0 and hs[r] > 0:
                             img.alpha_composite(parts[part].resize((ws[c], hs[r])), (xs[c], ys[r]))
 
+            menu = re.search(r"\+ boot_menu \{(.*?)\}", text, re.S)
+            props = settings(menu.group(1) if menu else "")
             picture = (pictures or {}).get("background")
             with Image.open(picture or work / _desktop_image(work)) as im:
                 img = ImageOps.fit(im.convert("RGB"), (W, H), method=Image.Resampling.LANCZOS)
             if picture and dim:
                 img = Image.blend(img, Image.new("RGB", img.size, (0, 0, 0)), dim / 100)
             img = img.convert("RGBA")
-            x, y, w, h = px("left", W, "5%"), px("top", H, "20%"), px("width", W, "49%"), px("height", H, "60%")
-            box("menu", x, y, w, h)
-            pad, icon, gap = px("item_padding", W, "6"), px("icon_width", W, "40"), px("item_icon_space", W, "16")
-            row_h = px("item_height", H, "44")
-            step = row_h + px("item_spacing", H, "8")
+            x, y = px(props.get("left", "5%"), W), px(props.get("top", "20%"), H)
+            w, h = px(props.get("width", "49%"), W), px(props.get("height", "60%"), H)
+            box(props.get("menu_pixmap_style", ""), x, y, w, h)
+            pad, icon = px(props.get("item_padding", "0"), W), px(props.get("icon_width", "32"), W)
+            gap, row_h = px(props.get("item_icon_space", "4"), W), px(props.get("item_height", "40"), H)
+            step = row_h + px(props.get("item_spacing", "0"), H)
+            size_of = lambda name: int(m.group(1)) if (m := re.search(r"(\d+)\s*$", props.get(name, ""))) else 18  # noqa: E731
+            edge = 8 if props.get("menu_pixmap_style") else 0
             classes = {c["dir"]: c["class"] for c in doc.get("menu_class", []) if "dir" in c}
             d = ImageDraw.Draw(img)
-            for i, a in enumerate(rows[:max(1, (h - 16) // step)]):
-                ry = y + 8 + i * step
-                if i == 0:
-                    box("select", x + 8, ry, w - 24, row_h)
+            for i, a in enumerate(rows[:max(1, (h - 2 * edge) // step)]):
+                ry = y + edge + i * step
+                box(props.get("selected_item_pixmap_style" if i == 0 else "item_pixmap_style", ""),
+                    x + edge, ry, w - 2 * edge - (16 if props.get("scrollbar") == "true" else 0), row_h)
                 f = work / "icons" / f"{classes.get(a.get('dir'), '')}.png"
                 if icon and f.is_file():
                     with Image.open(f) as im:
-                        img.alpha_composite(im.convert("RGBA").resize((icon, icon)), (x + 8 + pad, ry + (row_h - icon) // 2))
-                d.text((x + 8 + pad + (icon + gap if icon else 0), ry + row_h // 2), a["alias"],
-                       font=font(22, i == 0), fill=props.get("selected_item_color" if i == 0 else "item_color", "#ffffff"),
-                       anchor="lm")
-            muted = doc["theme"].get("ventoy_color", "#baabd3")
+                        img.alpha_composite(im.convert("RGBA").resize((icon, icon), Image.Resampling.LANCZOS),
+                                            (x + edge + pad, ry + (row_h - icon) // 2))
+                d.text((x + edge + pad + (icon + gap if icon else 0), ry + row_h // 2), a["alias"],
+                       font=font(size_of("selected_item_font" if i == 0 and "selected_item_font" in props else "item_font"),
+                                 i == 0 and "Bold" in props.get("selected_item_font", "")),
+                       fill=props.get("selected_item_color" if i == 0 else "item_color", "#ffffff"), anchor="lm")
+            for block in re.findall(r"\+ image\s*\{(.*?)\}", text, re.S):          # e.g. Standby's power symbol
+                at = settings(block)
+                if (work / at.get("file", "")).is_file() and at.get("file"):
+                    with Image.open(work / at["file"]) as im:
+                        img.alpha_composite(im.convert("RGBA"), (px(at.get("left", "0"), W), px(at.get("top", "0"), H)))
+            for block in text.split("+ hbox")[1:]:                                # Ventoy's hotkeys, the key hint
+                at = settings(block)
+                shown = {"@VTOY_HOTKEY_TIP@": "L:Language  F1:Help  F2:Browse  F3:TreeView  F4:Localboot  F5:Tools  F6:ExMenu"
+                         }.get(at.get("text", ""), "" if at.get("text", "@").startswith("@") else at["text"])
+                if shown:
+                    d.text((px(at.get("left", "0"), W), px(at.get("top", "0"), H) + 10), shown, font=font(16),
+                           fill=at.get("color", "#ffffff"), anchor="lm")
+            muted, tip = doc["theme"].get("ventoy_color", "#baabd3"), doc.get("menu_tip") or {}
             if tips:
-                d.text((W * .05, H * .82 + 10), tips[0]["tip"], font=font(16), fill=muted, anchor="lm")
-            d.text((W * .05, H * .91 + 10), "L:Language  F1:Help  F2:Browse  F3:TreeView  F4:Localboot  F5:Tools  F6:ExMenu",
-                   font=font(16), fill=muted, anchor="lm")
-            d.text((W * .05, H * .94 + 10), "Enter  open      Esc  back", font=font(16), fill=muted, anchor="lm")
-            d.text((W * .78, H * .94 + 10), "1.1.x UEFI  www.ventoy.net", font=font(16), fill=muted, anchor="lm")
+                d.text((px(tip.get("left", "5%"), W), px(tip.get("top", "82%"), H) + 10), tips[0]["tip"], font=font(16),
+                       fill=tip.get("color", muted), anchor="lm")
+            d.text((px(doc["theme"].get("ventoy_left", "78%"), W), px(doc["theme"].get("ventoy_top", "94%"), H) + 10),
+                   "1.1.x UEFI  www.ventoy.net", font=font(16), fill=muted, anchor="lm")
         out.parent.mkdir(parents=True, exist_ok=True)
         img.convert("RGB").resize(size, Image.Resampling.LANCZOS).save(out)
     except OSError as e:
@@ -2458,7 +2523,7 @@ def _print_look(mnt: Path, report: dict, numbered: bool = False) -> None:
     head(f"The look of {mnt}")
     for n, (label, value) in enumerate((
             ("theme", themes.get(look["theme"], themes["default"])["title"]),
-            ("icons", "none (no theme)" if stock else packs.get(look["icons"], packs["logos"])["title"]),
+            ("icons", "none (no theme)" if stock else packs.get(look["icons"], packs["auto"])["title"]),
             ("background", "Ventoy's" if stock else "your picture" if look["background"] == "custom" else "the theme's"),
             ("splash", "none (no theme)" if stock and splash == "the theme's" else splash)), 1):
         print(f"  {str(n) + ')  ' if numbered else ''}{label:<11} {value}")
@@ -2666,7 +2731,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("theme", help="show or change a stick's look: theme, icons, background, splash")
     p.add_argument("stick", help="mount point of the Ventoy data partition")
     p.add_argument("--theme", metavar="ID", help="a preset theme, `default`, or `off` for Ventoy's own look")
-    p.add_argument("--icons", metavar="ID", help="an icon pack, `logos` (the default), or `off`")
+    p.add_argument("--icons", metavar="ID", help="`auto` (the theme's own style, the default), `logos`, `grey`, an icon pack, or `off`")
     p.add_argument("--background", metavar="PICTURE", help="your own background, or `theme` for the theme's")
     p.add_argument("--dim", type=int, default=0, metavar="PERCENT",
                    help="darken your background this much (0-90), so the menu stays readable")

@@ -385,8 +385,9 @@ undo it:
 ```sh
 ./theme.sh                                  # how it looks now, and what there is to choose
 ./theme.sh --theme midnight                 # a preset: midnight, ember, terminal, slate (default: Helix Neon)
+./theme.sh --theme standby                  # someone else's theme: standby, poly-dark (icons in grey)
 ./theme.sh --theme off                      # no theme at all: Ventoy's own look
-./theme.sh --icons off                      # no icons, just names (--icons badges: letter badges)
+./theme.sh --icons off                      # no icons, just names (--icons grey, --icons badges)
 ./theme.sh --background ~/pic.jpg --dim 40  # your own picture behind the menu, darkened 40 %
 ./theme.sh --splash ~/pic.png               # your own picture before the menu (--splash off: none)
 ./theme.sh --reset                          # back to the default look
@@ -399,8 +400,14 @@ same choices as numbered lists; `--preview out.png` draws how the menu would
 look without changing the stick. On Windows it is the app's **Look…** button,
 or `HelixBoot.exe --look E:\ --theme midnight`.
 
-The presets are the same menu in other colours, over artwork drawn by
-`theme/build-theme.py` (so all of it can be shared). Your own icons and
+![The Standby and Poly dark themes](docs/themes-imported.jpg)
+
+Midnight, Ember, Terminal and Slate are the same menu in other colours, over
+artwork drawn by `theme/build-theme.py` (so all of it can be shared). **Standby**
+(by Llewelyn Trahaearn, GPL) and **Poly dark** (by Andrei Shevchuk, MIT) are
+other people's GRUB themes with their own layout, adapted for Ventoy; they show
+every tool's icon in shades of grey, which `--icons grey` does on any theme and
+`--icons logos` undoes. Your own icons and
 `byo/splash.png` still win over a preset's. More icon packs go in
 `byo/icon-packs/<name>/` (PNGs named like the ones in `byo/icons/`). Your own
 pictures are resized to 1920×1080 with Pillow; without it, a PNG is used as it
@@ -465,4 +472,7 @@ author listed in [`tools.toml`](tools.toml). Icons from
 MediCat USB.
 
 This repo's scripts are [MIT](LICENSE) licensed. Each tool keeps its own
-license, and nothing here grants rights to software you bring yourself.
+license, and nothing here grants rights to software you bring yourself. Two of
+the boot-menu themes are other people's work under their own licences, credited
+in their folders: [Standby](theme/presets/standby/NOTICE.md) (GPL) and
+[Poly dark](theme/presets/poly-dark/NOTICE.md) (MIT).

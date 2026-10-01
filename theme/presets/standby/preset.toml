@@ -1,0 +1,8 @@
+title = "Standby"
+description = "Black cubes, a power symbol and white icons. By Llewelyn Trahaearn (GPL)."
+standalone = true                 # its own layout, boxes and fonts: the theme's aren't laid under it
+icons = "grey"                    # the tool icons in greyscale, unless you pick a pack
+muted = "#bbbbbb"                 # ventoy.json: the tip line and Ventoy's version text
+tip = ["33%", "77%"]             # … and where they go in this layout
+version = ["84%", "96%"]
+bar = ["#ffffff", "#888888"]     # the splash's loading bar, left to right
