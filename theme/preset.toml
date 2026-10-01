@@ -1,0 +1,4 @@
+title = "Helix Neon"
+description = "Purple and cyan over the helix artwork."
+muted = "#baabd3"                 # ventoy.json: the tip line and Ventoy's version text
+bar = ["#00dceb", "#b55eff"]     # the splash's loading bar, left to right

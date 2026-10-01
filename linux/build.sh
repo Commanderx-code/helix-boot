@@ -20,7 +20,7 @@ version=$("$REPO/helix" --version)
 version=${version##* }
 # What install.sh, refresh.sh and helix use on a stick: no build scripts, no docs, nothing untracked.
 mapfile -t files < <(git -C "$REPO" ls-files -- \
-  helix tools.toml install.sh refresh.sh scripts/common.sh LICENSE local.toml.example byo/README.md \
+  helix tools.toml install.sh refresh.sh theme.sh scripts/common.sh LICENSE local.toml.example byo/README.md \
   theme pe/launcher pe/lazarus portableapps/themes portableapps/settings | grep -v '\.py$')
 ((${#files[@]})) || die "no files to pack (run this from a git checkout)"
 

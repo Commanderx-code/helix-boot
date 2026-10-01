@@ -7,6 +7,12 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- **Change a stick's look**: `./theme.sh` (`helix theme`) switches a finished
+  stick between preset themes (Midnight, Ember, Terminal, Slate, beside the
+  default Helix Neon), icon packs (the logos, letter badges, your own in
+  `byo/icon-packs/`), your own background (`--dim` darkens it) and splash, or
+  turns the icons or the whole theme off for Ventoy's own look. The choice is
+  kept on the stick, so a refresh doesn't undo it, and packs carry the presets.
 - **A splash before the Ventoy menu**: the HELIXBOOT logo over the theme's
   artwork for about a second with a loading bar filling up, or your own
   `byo/splash.png`; `splash_seconds` sets how long. The bar's frames are made
@@ -18,6 +24,10 @@ tagged releases also publish the Windows app.
   which use up the boot loader's memory so later icons don't appear.
 
 ### Changed
+- The stick keeps the theme as synced in `.helix-boot/theme/` and builds
+  `ventoy/theme/` and `ventoy/ventoy.json` from it and the chosen look. The
+  default look is byte-for-byte what it was. A stick filled by an older version
+  needs one refresh before `theme.sh` works on it.
 - The Lazarus launcher opens full screen, over the taskbar, which comes back
   when you switch to another program; `"fullscreen": false` in `launcher.json`
   keeps it above the taskbar instead.

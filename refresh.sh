@@ -58,23 +58,7 @@ need lsblk util-linux
 need findmnt util-linux
 
 # ── Find the stick ───────────────────────────────────────────────────────
-part=''
-if [[ -d $target ]]; then
-  mnt=$target
-  part=$(findmnt -no SOURCE --target "$mnt" || true)
-else
-  if [[ -b $target ]]; then
-    part=$target
-  else
-    mapfile -t found < <(lsblk -lnpo NAME,LABEL | awk '$2=="Ventoy"{print $1}')
-    ((${#found[@]})) || die "no Ventoy stick found. Plug it in, or pass its partition / mount point."
-    ((${#found[@]} == 1)) || die "more than one Ventoy stick plugged in (${found[*]}) — pass the one you want"
-    part=${found[0]}
-  fi
-  mnt=$(mount_part "$part")
-fi
-[[ -n $mnt ]] || die "couldn't mount the stick"
-ok "Stick: ${part:-?} at $mnt"
+find_stick "$target"
 
 # ── Ventoy upgrade (optional) ────────────────────────────────────────────
 if ((upgrade)); then

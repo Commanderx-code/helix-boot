@@ -1,0 +1,4 @@
+title = "Terminal"
+description = "Black with phosphor green."
+muted = "#8cbe98"                 # ventoy.json: the tip line and Ventoy's version text
+bar = ["#aaff78", "#34d36a"]     # the splash's loading bar, left to right

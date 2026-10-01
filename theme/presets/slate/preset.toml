@@ -1,0 +1,4 @@
+title = "Slate"
+description = "Plain graphite and steel, the quietest of them."
+muted = "#a0a8b6"                 # ventoy.json: the tip line and Ventoy's version text
+bar = ["#e2e8f0", "#94a3b8"]     # the splash's loading bar, left to right

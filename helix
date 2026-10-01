@@ -54,6 +54,12 @@ HASH_BY_LEN = {32: "md5", 40: "sha1", 64: "sha256", 128: "sha512"}
 STRENGTH = {"md5": 1, "sha1": 2, "sha256": 3, "sha512": 4}
 STATE_DIR = ".helix-boot"
 TAG_FILE = "helix-boot.tag"
+# The stick's look (`helix theme`): ventoy/theme and ventoy/ventoy.json are built from these
+THEME_SRC = f"{STATE_DIR}/theme"              # the theme as synced: presets, icon packs, your own icons
+BASE_JSON = f"{STATE_DIR}/ventoy.base.json"   # the boot menu before the look is applied
+LOOK_FILE = f"{STATE_DIR}/look.json"          # the choice
+LOOK_DIR = f"{STATE_DIR}/look"                # your own background.png / splash.png, set on the stick
+LOOK_DEFAULT = {"theme": "default", "icons": "logos", "background": "theme", "splash": "auto"}
 # Before the rename to Helix Boot: still written or read, so older sticks, launchers and
 # Lazarus PE builds keep working
 OLD_STATE_DIR = ".commander-rescue"
@@ -968,6 +974,13 @@ def _icons(cfg: Config) -> set[str]:
     return {f.stem for d in dirs + [cfg.repo / "byo" / "icons"] if d.is_dir() for f in d.glob("*.png")}
 
 
+def _pack_icons(cfg: Config) -> set[str]:
+    """Icon names in any icon pack (theme/icon-packs/<id>/, byo/icon-packs/<id>/)."""
+    theme = cfg.settings.get("theme")
+    roots = ([cfg.assets / theme / "icon-packs"] if theme else []) + [cfg.repo / "byo" / "icon-packs"]
+    return {f.stem for r in roots if r.is_dir() for f in r.glob("*/*.png")}
+
+
 def build_ventoy_json(cfg: Config, placed: list[dict], icons: set[str] = frozenset()) -> dict:
     alias, tips, classes, keys = [], [], [], []
     used = {p["category"] for p in placed} | {cid for cid, c in cfg.categories.items() if c.get("user")}
@@ -1357,29 +1370,40 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
                 if f.is_file() and f.suffix.lower() != ".md"]
     theme_src = cfg.assets / cfg.settings["theme"] if cfg.settings.get("theme") else None
     if theme_src and theme_src.is_dir():
-        files = {f.relative_to(theme_src).as_posix(): f for f in sorted(theme_src.rglob("*"))
-                 if f.is_file() and f.suffix not in (".py", ".pyc") and "__pycache__" not in f.parts}
-        mine = cfg.repo / "byo" / "icons"      # your own icons win over the theme's
+        files: dict[str, Path | bytes] = {
+            f.relative_to(theme_src).as_posix(): f for f in sorted(theme_src.rglob("*"))
+            if f.is_file() and f.suffix not in (".py", ".pyc") and "__pycache__" not in f.parts}
+        mine = cfg.repo / "byo" / "icons"      # your own icons win over the theme's and a preset's
         if mine.is_dir():
-            files.update({f"icons/{f.name}": f for f in sorted(mine.glob("*.png"))})
+            files.update({f"mine/icons/{f.name}": f for f in sorted(mine.glob("*.png"))})
             big = [(f.name, *wh) for f in sorted(mine.glob("*.png")) if (wh := _png_size(f)) and max(wh) > 128]
             if big:   # GRUB decodes each icon at full size: big ones use up its memory, later ones vanish
                 name, w, h = big[0]
                 warn(f"{len(big)} of your icons in byo/icons/ are much bigger than the 40x40 Ventoy shows "
                      f"(e.g. {name}, {w}x{h}); at boot that can stop other icons appearing. "
                      "Shrink them with: theme/build-theme.py --fit-icons")
+        packs = cfg.repo / "byo" / "icon-packs"           # your own icon packs, beside the theme's
+        if packs.is_dir():
+            files.update({f"icon-packs/{f.relative_to(packs).as_posix()}": f for f in sorted(packs.glob("*/*"))
+                          if f.is_file() and f.suffix in (".png", ".toml")})
         if (cfg.repo / "byo" / "splash.png").is_file():   # your own picture before the menu
-            files["splash.png"] = cfg.repo / "byo" / "splash.png"
-        if "splash.png" in files:                         # with a loading bar filling up across it
-            files.update(_splash_frames(cfg, files["splash.png"]))
-        out += [(f"ventoy/theme/{rel}", f) for rel, f in files.items()]
+            files["mine/splash.png"] = cfg.repo / "byo" / "splash.png"
+        splash = files.get("mine/splash.png") or files.get("splash.png")
+        bar = SPLASH_BAR if "mine/splash.png" in files else _preset_meta(theme_src)["bar"]
+        frames = _splash_frames(cfg, splash, bar) if splash else None
+        if frames:   # its loading bar, ready-made: a PC without Pillow (a pack on Windows) still shows it
+            files.update({f"splash/{f.name}": f for f in sorted(frames.glob("*.jpg"))})
+            files["splash/for.txt"] = frames.name.encode()
+        out += [(f"{THEME_SRC}/{rel}", f) for rel, f in files.items()]
     icons = _icons(cfg) if theme_src and theme_src.is_dir() else set()
     bare = [p["title"] for p in placed if icons and p["name"] not in icons]
     if bare:
         info(f"no menu icon for {', '.join(bare)}: `theme/build-theme.py --local` makes letter badges")
     # Ventoy reads UTF-8 but not \u escapes, so write non-ASCII (→, ü …) as is
-    vjson = json.dumps(build_ventoy_json(cfg, placed, icons), indent=2, ensure_ascii=False) + "\n"
-    out.append(("ventoy/ventoy.json", vjson.encode("utf-8")))
+    # the menu with every icon the stick could show; _apply_look keeps those its look has
+    packs = _pack_icons(cfg) if icons else set()
+    vjson = json.dumps(build_ventoy_json(cfg, placed, icons | packs), indent=2, ensure_ascii=False) + "\n"
+    out.append((BASE_JSON, vjson.encode("utf-8")))
     return out
 
 
@@ -1416,8 +1440,8 @@ def _prune(mnt: Path, iso_root: str, stale: list[str], dry_run: bool) -> None:
                 d.rmdir()
 
 
-def _write_extras(mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]], fresh_theme: bool) -> Path:
-    """Write the launcher, theme and boot menu, keeping a copy of a ventoy.json someone edited."""
+def _keep_edited_json(mnt: Path, state: dict) -> Path:
+    """Back up a ventoy.json someone edited by hand, before it is rewritten; return its path."""
     vdir = mnt / "ventoy"
     vdir.mkdir(exist_ok=True)
     vjson = vdir / "ventoy.json"
@@ -1425,8 +1449,18 @@ def _write_extras(mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]]
         backup = vdir / f"ventoy.json.bak-{dt.date.today().isoformat()}"
         shutil.copy2(vjson, backup)
         warn(f"your existing ventoy.json was backed up to ventoy/{backup.name}")
+    return vjson
+
+
+def _write_extras(cfg: Config, mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]],
+                  fresh_theme: bool) -> Path:
+    """Write the launcher, theme and boot menu, keeping a copy of a ventoy.json someone edited."""
+    vjson = _keep_edited_json(mnt, state)
     if fresh_theme:
-        shutil.rmtree(vdir / "theme", ignore_errors=True)
+        shutil.rmtree(mnt / THEME_SRC, ignore_errors=True)
+        if any(rel.startswith("ventoy/theme/") for rel, _ in extras):   # a pack from before `helix theme`:
+            shutil.rmtree(mnt / "ventoy" / "theme", ignore_errors=True)  # its theme and menu are ready-made
+            (mnt / BASE_JSON).unlink(missing_ok=True)
     for rel, data in extras:
         dst = _inside(mnt, rel)
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -1434,6 +1468,7 @@ def _write_extras(mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]]
             dst.write_bytes(data)
         else:
             shutil.copy2(data, dst)
+    _apply_look(cfg, mnt)
     return vjson
 
 
@@ -1573,7 +1608,7 @@ def cmd_sync(cfg: Config, args) -> int:
 
     app_root.mkdir(exist_ok=True)
     theme_src = cfg.assets / cfg.settings["theme"] if cfg.settings.get("theme") else None
-    vjson = _write_extras(mnt, state, _stick_extras(cfg, placed, apps),
+    vjson = _write_extras(cfg, mnt, state, _stick_extras(cfg, placed, apps),
                           fresh_theme=bool(theme_src and theme_src.is_dir()))
     _finish(mnt, state_dir, want_files, app_state, vjson, {"images": images})
     ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
@@ -1588,7 +1623,7 @@ def cmd_sync(cfg: Config, args) -> int:
 PACK_META = "helix-boot-pack.json"
 OLD_PACK_META = "commander-rescue-pack.json"   # packs made before the rename
 PACK_FORMAT = 1
-BUNDLED = ["helix", "tools.toml", "install.sh", "refresh.sh", "scripts/common.sh", "LICENSE"]
+BUNDLED = ["helix", "tools.toml", "install.sh", "refresh.sh", "theme.sh", "scripts/common.sh", "LICENSE"]
 BUNDLED_MARK = "installer/.bundled"   # tells install.sh / refresh.sh to look for the pack beside them
 APP_REPO = "Commanderx-code/helix-boot"   # where HelixBoot.exe is released
 APP_EXE = "HelixBoot.exe"
@@ -1731,7 +1766,7 @@ def cmd_pack(cfg: Config, args) -> int:
                                    if win_ventoy else None),
                 "app": {"file": f"installer/{APP_EXE}", "version": app_exe[1]["version"]} if app_exe else None,
                 "trees": trees,
-                "fresh_theme": any(rel.startswith("ventoy/theme/") for rel, _ in extras),
+                "fresh_theme": any(rel.startswith(f"{THEME_SRC}/") for rel, _ in extras),
             }, indent=2), zipfile.ZIP_DEFLATED)
     except BaseException:
         part.unlink(missing_ok=True)
@@ -1926,7 +1961,7 @@ def cmd_unpack(cfg: Config, args) -> int:
         extras = [(m[len("stick/"):], zf.read(m)) for m in sorted(names)
                   if m.startswith("stick/") and not m.endswith("/") and m[len("stick/"):] not in want_files
                   and not m.startswith(app_dirs)]
-        vjson = _write_extras(mnt, state, extras, fresh_theme=meta.get("fresh_theme", False))
+        vjson = _write_extras(cfg, mnt, state, extras, fresh_theme=meta.get("fresh_theme", False))
     _finish(mnt, state_dir, want_files, app_state, vjson, {"pack": meta["created"]})
     ok(f"Stick is up to date from the pack: {len(meta['isos'])} boot image(s), {len(meta['apps'])} app(s).")
     return 0
@@ -2003,26 +2038,34 @@ def _splash_block(seconds: int) -> str:
             f"{SPLASH_END}\n\n")
 
 
-def _splash_frames(cfg: Config, splash: Path) -> dict[str, Path]:
+SPLASH_BAR = ("#00dceb", "#b55eff")   # the loading bar, left to right, unless a preset names its own
+
+
+def _rgb(color: str) -> tuple[int, int, int]:
+    return tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _splash_frames(cfg: Config, splash: Path, bar: tuple[str, str] = SPLASH_BAR) -> Path | None:
     """The splash with a loading bar filling up across it, as JPEG frames for the boot script
-    (GRUB draws a 1080p JPEG about three times as fast as a PNG). Made once per picture and
-    kept in the cache. Needs Pillow; without it the splash shows as a still picture."""
-    out = cfg.cache / "splash" / f"{file_hash(splash)[:16]}-1"     # -1: this bar; bump it to redraw
+    (GRUB draws a 1080p JPEG about three times as fast as a PNG): the folder holding them, named
+    after the picture and the bar's colours. Made once and kept in the cache. Needs Pillow;
+    without it (None) the splash shows as a still picture."""
+    out = cfg.cache / "splash" / _splash_key(splash, bar)
     names = [f"{k:02d}.jpg" for k in range(SPLASH_FRAMES + 1)]
     if not all((out / n).is_file() for n in names):
         try:
             from PIL import Image, ImageDraw, ImageFilter
         except ImportError:
             info("no loading bar on the splash: that needs Pillow (python-pillow / pip install pillow)")
-            return {}
+            return None
         try:
             with Image.open(splash) as im:
                 base = im.convert("RGB").resize((1920, 1080), Image.Resampling.LANCZOS).convert("RGBA")
         except OSError as e:
             warn(f"couldn't read {splash.name} for the loading bar: {e}")
-            return {}
+            return None
         bw, bh, x0, y0 = 560, 8, 680, 1000          # bottom centre, as on the theme's splash.png
-        cyan, purple = (0, 220, 235), (181, 94, 255)
+        left, right = _rgb(bar[0]), _rgb(bar[1])
         track = Image.new("RGBA", base.size)
         ImageDraw.Draw(track).rounded_rectangle((x0 - 2, y0 - 2, x0 + bw + 1, y0 + bh + 1), radius=6,
                                                 fill=(8, 6, 20, 200), outline=(186, 171, 211, 90))
@@ -2031,25 +2074,272 @@ def _splash_frames(cfg: Config, splash: Path) -> dict[str, Path]:
         gd = ImageDraw.Draw(grad)
         for x in range(bw):
             t = x / (bw - 1)
-            gd.line((x, 0, x, bh), fill=tuple(round(c + (d - c) * t) for c, d in zip(cyan, purple)))
+            gd.line((x, 0, x, bh), fill=tuple(round(c + (d - c) * t) for c, d in zip(left, right)))
         tmp = out.with_name(out.name + ".part")
         shutil.rmtree(tmp, ignore_errors=True)
         tmp.mkdir(parents=True)
         for k, name in enumerate(names):
             img, fill = base, round(bw * k / SPLASH_FRAMES)
             if fill:
-                bar = Image.new("RGBA", base.size)
+                glow = Image.new("RGBA", base.size)
                 mask = Image.new("L", (fill, bh))
                 ImageDraw.Draw(mask).rounded_rectangle((0, 0, fill - 1, bh - 1), radius=4, fill=255)
-                bar.paste(grad.crop((0, 0, fill, bh)), (x0, y0), mask)
-                img = Image.alpha_composite(Image.alpha_composite(img, bar.filter(ImageFilter.GaussianBlur(7))), bar)
+                glow.paste(grad.crop((0, 0, fill, bh)), (x0, y0), mask)
+                img = Image.alpha_composite(Image.alpha_composite(img, glow.filter(ImageFilter.GaussianBlur(7))), glow)
             img.convert("RGB").save(tmp / name, quality=90, optimize=True)
         shutil.rmtree(out, ignore_errors=True)
         os.replace(tmp, out)
-        for old in out.parent.iterdir():            # frames for an earlier picture
-            if old != out:
-                shutil.rmtree(old, ignore_errors=True)
-    return {f"splash/{n}": out / n for n in names}
+        kept = sorted((d for d in out.parent.iterdir() if d.is_dir()), key=lambda d: d.stat().st_mtime)
+        for old in kept[:-8]:                       # frames for pictures no longer in use
+            shutil.rmtree(old, ignore_errors=True)
+    return out
+
+
+def _splash_key(splash: Path, bar: tuple[str, str]) -> str:
+    """Names a splash's frames: the picture, the bar's colours, and -1 for this bar's drawing."""
+    return f"{file_hash(splash)[:16]}-{bar[0][1:]}{bar[1][1:]}-1"
+
+
+# ── The stick's look ─────────────────────────────────────────────────────────
+# Sync and unpack write the theme to .helix-boot/theme on the stick, as it is in the repo: the
+# default, its presets (presets/<id>/), icon packs (icon-packs/<id>/) and your own pictures
+# (mine/). ventoy/theme and ventoy/ventoy.json are built from that and the choice in look.json,
+# so `helix theme` changes the look from any PC, and a refresh keeps it.
+
+def _preset_meta(folder: Path) -> dict:
+    """A theme folder's preset.toml: its title and the colours the menu and splash take from it."""
+    meta = {"title": folder.name, "description": "", "muted": "#baabd3", "bar": SPLASH_BAR}
+    try:
+        got = tomllib.loads((folder / "preset.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return meta
+    colour = re.compile(r"#[0-9a-fA-F]{6}")
+    for key in ("title", "description"):
+        if isinstance(got.get(key), str):
+            meta[key] = got[key]
+    if isinstance(got.get("muted"), str) and colour.fullmatch(got["muted"]):
+        meta["muted"] = got["muted"]
+    bar = got.get("bar")
+    if isinstance(bar, list) and len(bar) == 2 and all(isinstance(c, str) and colour.fullmatch(c) for c in bar):
+        meta["bar"] = (bar[0], bar[1])
+    return meta
+
+
+def _look(mnt: Path) -> dict:
+    """The stick's chosen look; anything missing or unreadable falls back to the default."""
+    look = dict(LOOK_DEFAULT)
+    try:
+        got = json.loads((mnt / LOOK_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return look
+    if isinstance(got, dict):
+        look.update({k: v for k, v in got.items() if k in look and isinstance(v, str) and SAFE_NAME.fullmatch(v)})
+    return look
+
+
+def _look_choices(mnt: Path) -> tuple[dict[str, dict], dict[str, dict]]:
+    """The themes and icon packs this stick can switch between, by id."""
+    src = mnt / THEME_SRC
+    themes = {"default": _preset_meta(src)}
+    themes["default"]["title"] += " (default)" if (src / "preset.toml").is_file() else ""
+    for d in sorted((src / "presets").glob("*/")):
+        if SAFE_NAME.fullmatch(d.name) and d.name not in ("default", "off") and (d / "theme.txt").is_file():
+            themes[d.name] = _preset_meta(d)
+    themes["off"] = {"title": "Off", "description": "Ventoy's own look: no theme, no icons."}
+    packs = {"logos": {"title": "Logos", "description": "The tools' own logos, and your icons from byo/icons/."}}
+    for d in sorted((src / "icon-packs").glob("*/")):
+        if SAFE_NAME.fullmatch(d.name) and d.name not in ("logos", "off"):
+            try:
+                got = tomllib.loads((d / "pack.toml").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                got = {}
+            packs[d.name] = {"title": str(got.get("title") or d.name), "description": str(got.get("description") or "")}
+    packs["off"] = {"title": "Off", "description": "No icons: just the names."}
+    return themes, packs
+
+
+def _apply_look(cfg: Config, mnt: Path) -> None:
+    """Build ventoy/theme and ventoy/ventoy.json from the theme on the stick and its look."""
+    src, base = mnt / THEME_SRC, mnt / BASE_JSON
+    if not base.is_file():
+        return                     # filled by an older Helix Boot or pack: the menu is as it was written
+    doc = json.loads(base.read_text(encoding="utf-8"))
+    look = _look(mnt)
+    themes, packs = _look_choices(mnt)
+    theme = look["theme"] if look["theme"] in themes else "default"
+    themed = theme != "off" and (src / "theme.txt").is_file()
+    preset = src / "presets" / theme if themed and theme != "default" else None
+    icons = look["icons"] if look["icons"] in packs else "logos"
+    out = mnt / "ventoy" / "theme"
+    if (src / "theme.txt").is_file():
+        new = out.with_name("theme.helix-new")
+        shutil.rmtree(new, ignore_errors=True)
+        new.mkdir(parents=True)
+
+        def lay(folder: Path, dest: Path, skip: tuple[str, ...] = ()) -> None:
+            for f in sorted(folder.rglob("*")):
+                rel = f.relative_to(folder)
+                if f.is_file() and rel.parts[0] not in skip:
+                    (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(f, dest / rel)
+
+        apart = ("presets", "icon-packs", "mine", "splash", "icons", "splash.png", "preset.toml", "pack.toml")
+        if themed:
+            for layer in (src, preset):
+                if layer:
+                    lay(layer, new, skip=apart)
+            if look["background"] == "custom" and (mnt / LOOK_DIR / "background.png").is_file():
+                name = re.search(r'^desktop-image:\s*"([^"/\\]+)"', (new / "theme.txt").read_text(encoding="utf-8"), re.M)
+                shutil.copy2(mnt / LOOK_DIR / "background.png", new / (name.group(1) if name else "background.png"))
+            if icons == "off":      # no gap where the icons were
+                text = (new / "theme.txt").read_text(encoding="utf-8")
+                text = re.sub(r"^(\s*(?:icon_width|icon_height|item_icon_space)\s*=\s*)\d+", r"\g<1>0", text, flags=re.M)
+                (new / "theme.txt").write_text(text, encoding="utf-8")
+            else:                   # later layers win: the theme's, the preset's, your own, the pack's
+                for layer in (src / "icons", preset / "icons" if preset else None, src / "mine" / "icons",
+                              src / "icon-packs" / icons if icons != "logos" else None):
+                    if layer and layer.is_dir():
+                        lay(layer, new / "icons", skip=apart)
+        # the splash: your own (set on the stick, or byo/splash.png), else the theme's
+        mine, custom = src / "mine" / "splash.png", mnt / LOOK_DIR / "splash.png"
+        own = preset / "splash.png" if preset and (preset / "splash.png").is_file() else src / "splash.png"
+        yours = custom if look["splash"] == "custom" and custom.is_file() else mine if mine.is_file() else None
+        pick = None if look["splash"] == "off" else own if look["splash"] == "theme" else yours or own
+        if pick and pick.is_file() and (themed or pick != own):   # no theme: no splash of its either
+            shutil.copy2(pick, new / "splash.png")
+            bar = _preset_meta(preset or src)["bar"] if pick == own else SPLASH_BAR
+            key = _splash_key(pick, bar)
+            ready = src / "splash"
+            if not ((ready / "for.txt").is_file() and (ready / "for.txt").read_text(encoding="utf-8").strip() == key):
+                ready = _splash_frames(cfg, pick, bar)
+            if ready:
+                (new / "splash").mkdir()
+                for f in sorted(ready.glob("*.jpg")):
+                    shutil.copy2(f, new / "splash" / f.name)
+        shutil.rmtree(out, ignore_errors=True)
+        if any(new.iterdir()):
+            os.replace(new, out)
+        else:
+            new.rmdir()
+    if "theme" in doc and not themed:           # Ventoy's own look, and where its tips go there
+        del doc["theme"]
+        if "menu_tip" in doc:
+            doc["menu_tip"].update(left="10%", top="80%", color="#7fb4ff")
+    elif "theme" in doc:
+        muted = _preset_meta(preset or src)["muted"]
+        doc["theme"]["ventoy_color"] = muted
+        if "menu_tip" in doc:
+            doc["menu_tip"]["color"] = muted
+    have = {f.stem for f in (out / "icons").glob("*.png")} if themed and icons != "off" else set()
+    if "menu_class" in doc:
+        doc["menu_class"] = [c for c in doc["menu_class"] if c.get("class") in have]
+        if not doc["menu_class"]:
+            del doc["menu_class"]
+    (mnt / "ventoy").mkdir(exist_ok=True)
+    (mnt / "ventoy" / "ventoy.json").write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _own_picture(src: Path, dst: Path, dim: int = 0) -> None:
+    """Your picture as the stick's background or splash: 1920x1080 (cropped to fill), optionally
+    dimmed so the menu's text stays readable. Pillow does that; without it a PNG is taken as is."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        if dim or src.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+            raise RescueError("resizing, dimming or converting a picture needs Pillow "
+                              "(python-pillow / pip install pillow); a PNG can be used as it is") from None
+        shutil.copy2(src, dst)
+        return
+    try:
+        with Image.open(src) as im:
+            img = ImageOps.fit(im.convert("RGB"), (1920, 1080), method=Image.Resampling.LANCZOS)
+    except OSError as e:
+        raise RescueError(f"{src} isn't a picture this can read: {e}") from None
+    if dim:
+        img = Image.blend(img, Image.new("RGB", img.size, (0, 0, 0)), dim / 100)
+    tmp = dst.with_name(dst.name + ".part")
+    img.save(tmp, format="PNG", optimize=True)
+    os.replace(tmp, dst)
+
+
+def cmd_theme(cfg: Config, args) -> int:
+    """Show or change a stick's look: a preset theme (or none), an icon pack (or none), your own
+    background and splash. The choice is kept on the stick, so a refresh doesn't undo it."""
+    mnt = Path(args.stick).expanduser().resolve()
+    state_dir, state = _open_stick(mnt, init=False)
+    if not (mnt / BASE_JSON).is_file():
+        raise RescueError("this stick was filled by an older Helix Boot. Refresh it once with this "
+                          "version (./refresh.sh), then choose its look.")
+    themes, packs = _look_choices(mnt)
+    before = _look(mnt)
+    look = dict(LOOK_DEFAULT if args.reset else before)
+    if args.theme:
+        if args.theme not in themes:
+            raise RescueError(f"no theme called {args.theme!r} on this stick. There are: {', '.join(themes)}")
+        look["theme"] = args.theme
+    if args.icons:
+        if args.icons not in packs:
+            raise RescueError(f"no icon pack called {args.icons!r} on this stick. There are: {', '.join(packs)}")
+        look["icons"] = args.icons
+    if not 0 <= args.dim <= 90:
+        raise RescueError("--dim is a percentage from 0 to 90")
+    pictures = []
+    for what, value, kept in (("background", args.background, ("theme",)),
+                              ("splash", args.splash, ("auto", "theme", "off"))):
+        if value in kept:
+            look[what] = value
+        elif value:
+            picture = Path(value).expanduser()
+            if not picture.is_file():
+                raise RescueError(f"--{what}: {value} is neither a picture file nor one of: {', '.join(kept)}")
+            pictures.append((what, picture))
+            look[what] = "custom"
+    if args.dim and not any(what == "background" for what, _ in pictures):
+        raise RescueError("--dim goes with --background PICTURE")
+    changed = look != before or bool(pictures)
+    if changed:
+        for what, picture in pictures:
+            _own_picture(picture, mnt / LOOK_DIR / f"{what}.png", args.dim if what == "background" else 0)
+        vjson = _keep_edited_json(mnt, state)
+        (mnt / STATE_DIR).mkdir(exist_ok=True)
+        (mnt / LOOK_FILE).write_text(json.dumps(look, indent=2) + "\n", encoding="utf-8")
+        _apply_look(cfg, mnt)
+        if (state_dir / "state.json").is_file():       # the rewritten menu is ours, not a hand edit
+            state["ventoy_json_sha"] = file_hash(vjson)
+            (state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+        _flush_volume(mnt)
+    src = mnt / THEME_SRC
+    report = {
+        "look": look, "changed": changed,
+        "themes": [{"id": k, **{f: v[f] for f in ("title", "description")}} for k, v in themes.items()],
+        "icon_packs": [{"id": k, **v} for k, v in packs.items()],
+        "own_splash": (src / "mine" / "splash.png").is_file(),
+        "custom": {w: (mnt / LOOK_DIR / f"{w}.png").is_file() for w in ("background", "splash")},
+    }
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return 0
+    if changed:
+        ok(f"Look changed on {mnt}")
+    head(f"The look of {mnt}")
+    splash = {"auto": "your own (byo/splash.png)" if report["own_splash"] else "the theme's",
+              "theme": "the theme's", "custom": "your picture", "off": "none"}[look["splash"]]
+    stock = look["theme"] == "off"       # Ventoy's own look has no icons or background of ours
+    for label, value in (("theme", themes.get(look["theme"], themes["default"])["title"]),
+                         ("icons", "none (no theme)" if stock else packs.get(look["icons"], packs["logos"])["title"]),
+                         ("background", "Ventoy's" if stock else
+                          "your picture" if look["background"] == "custom" else "the theme's"),
+                         ("splash", "none (no theme)" if stock and splash == "the theme's" else splash)):
+        print(f"  {label:<11} {value}")
+    head("Themes  (--theme ID)")
+    for k, v in themes.items():
+        print(f"  {k:<11} {v['title']}" + (f": {v['description']}" if v["description"] else ""))
+    head("Icon packs  (--icons ID)")
+    for k, v in packs.items():
+        print(f"  {k:<11} {v['title']}" + (f": {v['description']}" if v["description"] else ""))
+    info("your own pictures: --background PICTURE [--dim 40], --splash PICTURE; --reset puts it all back")
+    return 0
 
 
 def cmd_splash(cfg: Config, args) -> int:
@@ -2148,6 +2438,19 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--remove", action="store_true", help="take the splash out again")
     p.add_argument("--dry-run", action="store_true", help="show what would change")
     p.set_defaults(fn=cmd_splash)
+
+    p = sub.add_parser("theme", help="show or change a stick's look: theme, icons, background, splash")
+    p.add_argument("stick", help="mount point of the Ventoy data partition")
+    p.add_argument("--theme", metavar="ID", help="a preset theme, `default`, or `off` for Ventoy's own look")
+    p.add_argument("--icons", metavar="ID", help="an icon pack, `logos` (the default), or `off`")
+    p.add_argument("--background", metavar="PICTURE", help="your own background, or `theme` for the theme's")
+    p.add_argument("--dim", type=int, default=0, metavar="PERCENT",
+                   help="darken your background this much (0-90), so the menu stays readable")
+    p.add_argument("--splash", metavar="PICTURE",
+                   help="your own splash; `theme` for the theme's, `auto` (yours from byo/, else the theme's), `off`")
+    p.add_argument("--reset", action="store_true", help="back to the default look")
+    p.add_argument("--json", action="store_true", help="print the look and the choices as JSON")
+    p.set_defaults(fn=cmd_theme)
 
     p = sub.add_parser("ventoy-path", help="print the extracted Ventoy folder")
     p.add_argument("--from", dest="from_pack", metavar="PACK", help="use the Ventoy inside a pack")

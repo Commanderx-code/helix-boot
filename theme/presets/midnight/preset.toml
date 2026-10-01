@@ -1,0 +1,4 @@
+title = "Midnight"
+description = "Deep navy with ice blue and cyan."
+muted = "#9eb2d2"                 # ventoy.json: the tip line and Ventoy's version text
+bar = ["#22d3ee", "#60a5fa"]     # the splash's loading bar, left to right

@@ -375,6 +375,29 @@ icons don't appear: `theme/build-theme.py --fit-icons` shrinks yours to
 40×40, keeping the originals in `byo/icons/originals/`. Put icons there, not
 straight onto the stick: refresh rewrites the stick's theme folder. For Ventoy's stock look, set `theme = ""` under `[settings]`.
 
+**Change the look.** `./theme.sh` changes a finished stick's look without
+rebuilding anything, and the choice is kept on the stick, so a refresh doesn't
+undo it:
+
+```sh
+./theme.sh                                  # how it looks now, and what there is to choose
+./theme.sh --theme midnight                 # a preset: midnight, ember, terminal, slate (default: Helix Neon)
+./theme.sh --theme off                      # no theme at all: Ventoy's own look
+./theme.sh --icons off                      # no icons, just names (--icons badges: letter badges)
+./theme.sh --background ~/pic.jpg --dim 40  # your own picture behind the menu, darkened 40 %
+./theme.sh --splash ~/pic.png               # your own picture before the menu (--splash off: none)
+./theme.sh --reset                          # back to the default look
+```
+
+![The Midnight, Ember, Terminal and Slate presets](docs/themes.jpg)
+
+The presets are the same menu in other colours, over artwork drawn by
+`theme/build-theme.py` (so all of it can be shared). Your own icons and
+`byo/splash.png` still win over a preset's. More icon packs go in
+`byo/icon-packs/<name>/` (PNGs named like the ones in `byo/icons/`). Your own
+pictures are resized to 1920×1080 with Pillow; without it, a PNG is used as it
+is. See [theme notes](docs/theming.md) for how the stick stores all this.
+
 **Splash.** When the stick boots, a splash (the HELIXBOOT logo over the theme's
 artwork, `theme/splash.png`) shows for about a second before the Ventoy menu,
 with a loading bar filling up along the bottom. Save your own picture as

@@ -1,0 +1,4 @@
+title = "Ember"
+description = "Charcoal with orange and amber."
+muted = "#d6b4a0"                 # ventoy.json: the tip line and Ventoy's version text
+bar = ["#ffc448", "#ff8030"]     # the splash's loading bar, left to right

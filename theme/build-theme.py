@@ -14,6 +14,7 @@ Tools you add in local.toml get their letter badges (into byo/icons/) with:
 import argparse
 import json
 import math
+import random
 import shutil
 import subprocess
 import sys
@@ -34,15 +35,46 @@ ACCENT = (181, 94, 255)
 CYAN = (0, 220, 235)
 TEXT = (244, 240, 255)
 MUTED = (186, 171, 211)
+SELECT = (71, 22, 119, 220)   # the selected row
+SCROLL = (35, 18, 55, 255)
+LINE = (70, 34, 102)          # the footer rule on the background
+DIM = (6, 3, 14)              # what the splash dims the artwork towards
+TITLE = "Helix Neon"
+DESCRIPTION = "Purple and cyan over the helix artwork."
+
+# Presets: the same theme in other colours (theme/presets/<id>/), over artwork drawn here, so
+# all of it is free to ship. `helix theme` switches a stick between them.
+PRESETS = {
+    "midnight": dict(
+        title="Midnight", description="Deep navy with ice blue and cyan.",
+        panel=(5, 9, 22, 228), border=(58, 110, 214, 255), accent=(96, 165, 250), highlight=(34, 211, 238),
+        text=(238, 245, 255), muted=(158, 178, 210), select=(20, 44, 104, 220), scroll=(16, 26, 54, 255),
+        sky=((2, 4, 12), (7, 15, 40))),
+    "ember": dict(
+        title="Ember", description="Charcoal with orange and amber.",
+        panel=(18, 8, 5, 228), border=(214, 96, 34, 255), accent=(255, 128, 48), highlight=(255, 196, 72),
+        text=(255, 244, 236), muted=(214, 180, 160), select=(104, 38, 12, 220), scroll=(52, 24, 14, 255),
+        sky=((10, 4, 3), (38, 13, 6))),
+    "terminal": dict(
+        title="Terminal", description="Black with phosphor green.",
+        panel=(3, 10, 5, 232), border=(34, 150, 72, 255), accent=(52, 211, 106), highlight=(170, 255, 120),
+        text=(226, 255, 232), muted=(140, 190, 152), select=(10, 66, 30, 220), scroll=(10, 36, 18, 255),
+        sky=((1, 4, 2), (4, 20, 10))),
+    "slate": dict(
+        title="Slate", description="Plain graphite and steel, the quietest of them.",
+        panel=(13, 15, 19, 232), border=(104, 116, 134, 255), accent=(148, 163, 184), highlight=(226, 232, 240),
+        text=(244, 246, 250), muted=(160, 168, 182), select=(48, 56, 70, 220), scroll=(30, 34, 42, 255),
+        sky=((7, 8, 11), (22, 25, 32))),
+}
+SKY = None                    # a preset's sky gradient (top, bottom); None: the artwork file
+OUT = None                    # where a preset is being written; None: the theme folder itself
 
 ICON = 40                     # keep in step with icon_width/icon_height in theme.txt
 SS = 8                        # draw icons this many times larger, then scale down (anti-aliasing)
 
-# Category tile colours, by [[category]] id in tools.toml
-CATEGORY_COLOURS = dict.fromkeys((
-    "antivirus", "imaging", "boot-repair", "diagnostics", "wipe", "live",
-    "partitioning", "password", "windows", "images",
-), CYAN)
+# The categories with an icon of their own, by [[category]] id in tools.toml
+CATEGORIES = ("antivirus", "imaging", "boot-repair", "diagnostics", "wipe", "live",
+              "partitioning", "password", "windows", "images")
 
 # Badge text for tools whose initials don't read well; the rest use their title's initials.
 # Drop a real logo in byo/icons/<name>.png to replace any of these on your stick.
@@ -58,6 +90,14 @@ BADGES = {
 FONT_DIRS = [Path("/usr/share/fonts/TTF"), Path("/usr/share/fonts/truetype/dejavu"), Path("/usr/share/fonts/dejavu")]
 
 
+def out_dir() -> Path:
+    return OUT or HERE
+
+
+def hexc(color) -> str:
+    return "#%02x%02x%02x" % tuple(color[:3])
+
+
 def ttf(name: str) -> Path:
     for d in FONT_DIRS:
         if (d / name).exists():
@@ -65,9 +105,69 @@ def ttf(name: str) -> Path:
     sys.exit(f"can't find {name} — install the DejaVu fonts")
 
 
+def helix_strands(d: ImageDraw.ImageDraw, cx: float, top: float, span: float, amp: float, turns: float,
+                  width: int, rungs: int) -> None:
+    """A DNA double helix running down from (cx, top): rungs first, then the two strands."""
+    for i in range(rungs + 1):
+        y = top + span * i / rungs
+        offset = amp * math.cos(i / rungs * turns * math.tau)
+        d.line((cx - offset, y, cx + offset, y), fill=(*MUTED, 150), width=max(2, width // 3))
+    for sign, color in ((1, CYAN), (-1, ACCENT)):
+        points = [(cx + sign * amp * math.cos(t / span * turns * math.tau), top + t) for t in range(int(span) + 1)]
+        d.line(points, fill=(*color, 255), width=width, joint="curve")
+
+
+def artwork(helix: bool = True) -> Image.Image:
+    """The picture behind everything: the artwork file, or for a preset one drawn in its colours
+    (a night sky, a grid floor and, unless the splash's logo goes there, a glowing helix on the
+    right). Nothing here is UI."""
+    if SKY is None:
+        return ImageOps.fit(Image.open(ARTWORK).convert("RGB"), (W, H), method=Image.LANCZOS)
+    top, bottom = SKY
+    img = Image.new("RGB", (1, H))
+    for y in range(H):
+        img.putpixel((0, y), tuple(round(a + (b - a) * y / (H - 1)) for a, b in zip(top, bottom)))
+    img = img.resize((W, H)).convert("RGBA")
+    q = 8                                    # the glows are soft: draw them small, scale up
+    glow = Image.new("RGBA", (W // q, H // q))
+    gd = ImageDraw.Draw(glow)
+    for (x, y, r), color, alpha in (((1420, 470, 430), ACCENT, 80), ((1120, 980, 520), CYAN, 34),
+                                    ((240, 1060, 420), ACCENT, 40)):
+        gd.ellipse(((x - r) // q, (y - r) // q, (x + r) // q, (y + r) // q), fill=(*color, alpha))
+    img = Image.alpha_composite(img, glow.filter(ImageFilter.GaussianBlur(28)).resize((W, H), Image.BICUBIC))
+    rng = random.Random(20261001)            # the same stars every build
+    stars = ImageDraw.Draw(img, "RGBA")
+    for _ in range(520):
+        x, y, a = rng.randrange(W), rng.randrange(int(H * .78)), rng.randrange(40, 200)
+        r = rng.choice((0, 0, 0, 1))
+        stars.ellipse((x - r, y - r, x + r, y + r), fill=(*TEXT, a))
+    floor = Image.new("RGBA", (W, H))        # a grid floor running to the horizon
+    fd = ImageDraw.Draw(floor)
+    horizon, vx = 830, W * .62
+    for i in range(1, 15):
+        y = horizon + (H - horizon) * (i / 14) ** 2.2
+        fd.line((0, y, W, y), fill=(*ACCENT, round(26 + 60 * i / 14)), width=1)
+    for i in range(-22, 23):
+        fd.line((vx + i * 46, horizon, vx + i * 330, H), fill=(*ACCENT, 46), width=1)
+    fd.line((0, horizon, W, horizon), fill=(*CYAN, 120), width=2)
+    img = Image.alpha_composite(img, floor.filter(ImageFilter.GaussianBlur(6)))
+    img = Image.alpha_composite(img, floor)
+    if not helix:
+        return img.convert("RGB")
+    n = 1500                                 # the helix, drawn upright then tilted
+    layer = Image.new("RGBA", (n, n))
+    helix_strands(ImageDraw.Draw(layer), n / 2, 60, n - 120, 150, 2.5, 20, 34)
+    layer = layer.rotate(-24, resample=Image.BICUBIC)
+    tilted = Image.new("RGBA", (W, H))
+    tilted.alpha_composite(layer, (1400 - n // 2, 430 - n // 2), (0, 0))
+    img = Image.alpha_composite(img, tilted.filter(ImageFilter.GaussianBlur(26)))
+    img = Image.alpha_composite(img, tilted.filter(ImageFilter.GaussianBlur(7)))
+    return Image.alpha_composite(img, tilted).convert("RGB")
+
+
 def background() -> None:
     # The art contains no UI. Menu rows, selection, timers and status are live GRUB components.
-    img = ImageOps.fit(Image.open(ARTWORK).convert("RGB"), (W, H), method=Image.LANCZOS)
+    img = artwork()
     d = ImageDraw.Draw(img)
     bold = ImageFont.truetype(str(ttf("DejaVuSans-Bold.ttf")), 66)
     small = ImageFont.truetype(str(ttf("DejaVuSans.ttf")), 23)
@@ -89,17 +189,16 @@ def background() -> None:
     x += d.textlength("HELIX", font=bold)
     d.text((x, y), "BOOT", font=bold, fill=CYAN)
     d.text((205, 142), "RECOVERY • DIAGNOSTICS • REPAIR", font=small, fill=MUTED)
-    d.line((96, 1041, 1824, 1041), fill=(70, 34, 102), width=1)
+    d.line((96, 1041, 1824, 1041), fill=LINE, width=1)
     d.text((96, 1051), "HELIXSTACK  /  HELIXBOOT", font=tiny, fill=MUTED)
     d.text((1824, 1051), "MULTIBOOT RECOVERY ENVIRONMENT", font=tiny, fill=MUTED, anchor="ra")
-    img.save(HERE / "background.png", optimize=True)
+    img.save(out_dir() / "background.png", optimize=True)
 
 
 def splash() -> None:
     """The picture Ventoy shows for a moment before its menu (splash.png): the same artwork,
     dimmed, with the DNA mark, wordmark and tagline centred. byo/splash.png replaces it."""
-    art = ImageOps.fit(Image.open(ARTWORK).convert("RGB"), (W, H), method=Image.LANCZOS)
-    img = Image.blend(art, Image.new("RGB", (W, H), (6, 3, 14)), 0.45).convert("RGBA")
+    img = Image.blend(artwork(helix=False), Image.new("RGB", (W, H), DIM), 0.45).convert("RGBA")
     cx, top = W // 2, 300
     mark = Image.new("RGBA", (W, H))
     md = ImageDraw.Draw(mark)
@@ -122,7 +221,7 @@ def splash() -> None:
     d.text((x + d.textlength("HELIX", font=big), y), "BOOT", font=big, fill=CYAN)
     d.text((cx, y + 180), "RECOVERY  •  DIAGNOSTICS  •  REPAIR", font=small, fill=MUTED, anchor="ma")
     d.text((cx, H - 120), "L O A D I N G", font=tiny, fill=(*MUTED,), anchor="ma")
-    img.save(HERE / "splash.png", optimize=True)
+    img.save(out_dir() / "splash.png", optimize=True)
 
 
 def nine_slice(prefix: str, fill, border=None, left_bar=None, size: int = 8) -> None:
@@ -141,13 +240,13 @@ def nine_slice(prefix: str, fill, border=None, left_bar=None, size: int = 8) -> 
             if "e" in part: d.line((w - 1, 0, w - 1, h), fill=border)
         if left_bar and part in ("nw", "w", "sw"):
             ImageDraw.Draw(im).rectangle((0, 0, 3, h), fill=left_bar)
-        im.save(HERE / f"{prefix}_{part}.png", optimize=True)
+        im.save(out_dir() / f"{prefix}_{part}.png", optimize=True)
 
 
 def slider() -> None:
     for part, h in (("n", 4), ("c", 1), ("s", 4)):
         im = Image.new("RGBA", (6, h), (*CYAN, 230))
-        im.save(HERE / f"slider_{part}.png", optimize=True)
+        im.save(out_dir() / f"slider_{part}.png", optimize=True)
 
 
 def fonts() -> None:
@@ -198,7 +297,7 @@ class Pen:
                        fill=fill)
 
     def save(self, name, out=None):
-        out = out or HERE / "icons"
+        out = out or out_dir() / "icons"
         out.mkdir(parents=True, exist_ok=True)
         self.im.resize((ICON, ICON), Image.LANCZOS).save(out / f"{name}.png", optimize=True)
 
@@ -263,9 +362,9 @@ def initials(title: str) -> str:
     return "".join(w[0] for w in words[:2]).upper() or "?"
 
 
-def badge(t: dict, out=None) -> None:
+def badge(t: dict, out=None, col=None) -> None:
     """A tool's letter badge, tinted by its category. `badge = "XX"` in the manifest wins."""
-    col = CATEGORY_COLOURS.get(t.get("category"), MUTED)
+    col = col or (CYAN if t.get("category") in CATEGORIES else MUTED)
     tile = tuple(round(c * .28 + b * .72) for c, b in zip(col, (20, 29, 44)))
     pen = Pen(bg=(*tile, 255))
     pen.d.rounded_rectangle((0, 0, pen.n - 1, pen.n - 1), radius=pen.n * .22,
@@ -313,7 +412,7 @@ def tool_icon(t: dict, sources: dict, out: Path | None = None) -> bool:
         ImageDraw.Draw(canvas).rounded_rectangle((1, 1, ICON - 2, ICON - 2), radius=6,
                                                 fill=entry["backplate"])
     canvas.alpha_composite(icon, ((ICON - icon.width) // 2, (ICON - icon.height) // 2))
-    dest = out or HERE / "icons"
+    dest = out or out_dir() / "icons"
     dest.mkdir(parents=True, exist_ok=True)
     canvas.save(dest / f"{t['name']}.png", optimize=True)
     return True
@@ -322,11 +421,11 @@ def tool_icon(t: dict, sources: dict, out: Path | None = None) -> bool:
 def icons() -> None:
     manifest = tomllib.loads((HERE.parent / "tools.toml").read_text(encoding="utf-8"))
     sources = json.loads((TOOL_ICON_DIR / "sources.json").read_text(encoding="utf-8"))
-    shutil.rmtree(HERE / "icons", ignore_errors=True)
+    shutil.rmtree(out_dir() / "icons", ignore_errors=True)
     white = (255, 255, 255, 255)
-    for cid, col in CATEGORY_COLOURS.items():
+    for cid in CATEGORIES:
         pen = Pen()
-        glyph(cid, pen, (*col, 255), PANEL)
+        glyph(cid, pen, (*CYAN, 255), PANEL)
         pen.save(f"cat-{cid}")
 
     for t in manifest.get("tool", []):
@@ -351,6 +450,65 @@ def icons() -> None:
     pen.d.ellipse(pen.xy(.46, .46, .54, .54), fill=(0, 0, 0, 0))
     for cls in ("vtoyiso", "vtoyimg", "vtoywim", "vtoyefi", "vtoyvhd", "vtoyvtoy"):
         pen.save(cls)
+
+
+def themed() -> None:
+    """Everything that follows the palette, written to the theme folder (or the preset's)."""
+    background()
+    splash()
+    nine_slice("menu", PANEL, border=BORDER)
+    nine_slice("select", SELECT, border=(*ACCENT, 255), left_bar=(*CYAN, 255), size=4)
+    nine_slice("terminal_box", (*PANEL[:3], 245), border=BORDER)
+    nine_slice("scrollbar", SCROLL, size=2)
+    slider()
+    icons()
+    (out_dir() / "preset.toml").write_text(
+        f'title = "{TITLE}"\ndescription = "{DESCRIPTION}"\n'
+        f'muted = "{hexc(MUTED)}"                 # ventoy.json: the tip line and Ventoy\'s version text\n'
+        f'bar = ["{hexc(CYAN)}", "{hexc(ACCENT)}"]     # the splash\'s loading bar, left to right\n',
+        encoding="utf-8")
+
+
+def presets() -> None:
+    """theme/presets/<id>/: what differs from the theme itself. `helix theme` lays one over it."""
+    g = globals()
+    names = ("OUT", "SKY", "PANEL", "BORDER", "ACCENT", "CYAN", "TEXT", "MUTED", "SELECT", "SCROLL",
+             "LINE", "DIM", "TITLE", "DESCRIPTION")
+    default = {k: g[k] for k in names}
+    theme_txt = (HERE / "theme.txt").read_text(encoding="utf-8")
+    shutil.rmtree(HERE / "presets", ignore_errors=True)
+    try:
+        for pid, p in PRESETS.items():
+            out = HERE / "presets" / pid
+            out.mkdir(parents=True)
+            g.update(OUT=out, SKY=p["sky"], PANEL=p["panel"], BORDER=p["border"], ACCENT=p["accent"],
+                     CYAN=p["highlight"], TEXT=p["text"], MUTED=p["muted"], SELECT=p["select"],
+                     SCROLL=p["scroll"], LINE=tuple(round(c * .45) for c in p["border"][:3]),
+                     DIM=p["sky"][0], TITLE=p["title"], DESCRIPTION=p["description"])
+            themed()
+            for icon in sorted((out / "icons").iterdir()):   # the logos don't change colour: keep one copy
+                if icon.read_bytes() == (HERE / "icons" / icon.name).read_bytes():
+                    icon.unlink()
+            item = tuple(round(a + (b - a) * .25) for a, b in zip(TEXT, MUTED))
+            text = theme_txt.replace(default["TITLE"], TITLE)
+            for old, new in (("#f4f0ff", TEXT), ("#e6dff2", item), ("#b55eff", ACCENT), ("#baabd3", MUTED)):
+                text = text.replace(old, hexc(new))
+            (out / "theme.txt").write_text(text, encoding="utf-8")
+    finally:
+        g.update(default)
+
+
+def icon_packs() -> None:
+    """theme/icon-packs/<id>/: other icons for the tools, laid over the theme's by `helix theme`."""
+    out = HERE / "icon-packs" / "badges"
+    shutil.rmtree(out, ignore_errors=True)
+    manifest = tomllib.loads((HERE.parent / "tools.toml").read_text(encoding="utf-8"))
+    for t in manifest.get("tool", []):
+        if t.get("kind") == "iso":
+            badge(t, out, col=(186, 171, 211))       # neutral, so it suits every preset
+    (out / "pack.toml").write_text('title = "Letter badges"\n'
+                                   'description = "Two-letter badges in place of the tools\' logos."\n',
+                                   encoding="utf-8")
 
 
 def fit_icons() -> None:
@@ -392,14 +550,9 @@ if __name__ == "__main__":
     if args.skip_fonts and not all((HERE / "fonts" / name).is_file() for name in
                                   ("dejavu-16.pf2", "dejavu-22.pf2", "dejavu-bold-22.pf2")):
         sys.exit("committed fonts are missing — run without --skip-fonts after installing grub")
-    background()
-    splash()
-    nine_slice("menu", PANEL, border=BORDER)
-    nine_slice("select", (71, 22, 119, 220), border=(*ACCENT, 255), left_bar=(*CYAN, 255), size=4)
-    nine_slice("terminal_box", (9, 5, 20, 245), border=BORDER)
-    nine_slice("scrollbar", (35, 18, 55, 255), size=2)
-    slider()
-    icons()
+    themed()
+    presets()
+    icon_packs()
     if not args.skip_fonts:
         fonts()
     print(f"theme written to {HERE}")

@@ -626,9 +626,9 @@ class TestFetchAndSync(Base):
         cached = list((self.cfg.cache / "splash").iterdir())
         Image.new("RGB", (64, 36), (40, 10, 20)).save(theme / "splash.png")    # a new picture
         self.assertEqual(self.sync(init=False)[0], 0)
-        now = list((self.cfg.cache / "splash").iterdir())
-        self.assertEqual(len(now), 1)
-        self.assertNotEqual(now, cached)                                 # redrawn, the old frames gone
+        now = set((self.cfg.cache / "splash").iterdir())
+        self.assertEqual(len(now - set(cached)), 1)                      # redrawn for the new picture
+        self.assertEqual((self.stick / cr.THEME_SRC / "splash/for.txt").read_text(), (now - set(cached)).pop().name)
 
     def test_oversized_icons_are_flagged(self):
         import struct
@@ -712,6 +712,151 @@ class TestFetchAndSync(Base):
         for c in keys:
             self.assertTrue(any(c["key"] in f.name and len(c["key"]) < len(f.name)
                                 for f in (self.stick / "ISO").rglob("*.iso")), c)
+
+    def look(self, **kw):
+        args = dict(stick=str(self.stick), theme=None, icons=None, background=None, dim=0, splash=None,
+                    reset=False, json=False)
+        args.update(kw)
+        return self.run_quiet(cr.cmd_theme, self.cfg, type("A", (), args)())
+
+    def themed_repo(self):
+        """A theme with one preset ("night") and one icon pack ("badges"), synced to the stick."""
+        theme = self.repo / "theme"
+        for d in ("icons", "presets/night/icons", "icon-packs/badges"):
+            (theme / d).mkdir(parents=True)
+        (theme / "theme.txt").write_text('desktop-image: "background.png"\n+ boot_menu {\n'
+                                         '  icon_width = 40    # icons\n  icon_height = 40\n  item_icon_space = 16\n}\n')
+        (theme / "background.png").write_bytes(b"default background")
+        (theme / "splash.png").write_bytes(b"default splash")
+        (theme / "preset.toml").write_text('title = "Neon"\nmuted = "#baabd3"\n')
+        for name in ("systemrescue", "vtoydir"):
+            (theme / f"icons/{name}.png").write_bytes(b"theme icon")
+        night = theme / "presets/night"
+        (night / "theme.txt").write_text('desktop-image: "background.png"\n# night\n')
+        (night / "background.png").write_bytes(b"night background")
+        (night / "splash.png").write_bytes(b"night splash")
+        (night / "preset.toml").write_text('title = "Night"\ndescription = "Dark."\nmuted = "#112233"\n'
+                                           'bar = ["#010203", "#040506"]\n')
+        (night / "icons/vtoydir.png").write_bytes(b"night icon")
+        (theme / "icon-packs/badges/systemrescue.png").write_bytes(b"badge")
+        (theme / "icon-packs/badges/pack.toml").write_text('title = "Letter badges"\n')
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("systemrescue")
+        rc, out = self.sync()
+        self.assertEqual(rc, 0, out)
+        return self.stick / "ventoy/theme", lambda: json.loads((self.stick / "ventoy/ventoy.json").read_text())
+
+    def test_theme_presets_icon_packs_and_off(self):
+        built, menu = self.themed_repo()
+        default = (self.stick / "ventoy/ventoy.json").read_bytes()
+        self.assertEqual(default, (self.stick / cr.BASE_JSON).read_bytes())   # the default look changes nothing
+        self.assertEqual((built / "background.png").read_bytes(), b"default background")
+        self.assertFalse((built / "presets").exists() or (built / "icon-packs").exists() or (built / "preset.toml").exists())
+
+        rc, out = self.look()                                            # just looking
+        self.assertEqual(rc, 0, out)
+        for text in ("Neon (default)", "night", "Night: Dark.", "badges", "Letter badges"):
+            self.assertIn(text, out)
+        self.assertFalse((self.stick / cr.LOOK_FILE).exists())
+
+        rc, out = self.look(theme="night")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((built / "background.png").read_bytes(), b"night background")
+        self.assertIn("# night", (built / "theme.txt").read_text())
+        self.assertEqual((built / "splash.png").read_bytes(), b"night splash")
+        self.assertEqual((built / "icons/vtoydir.png").read_bytes(), b"night icon")       # recoloured
+        self.assertEqual((built / "icons/systemrescue.png").read_bytes(), b"theme icon")  # logos stay
+        self.assertEqual((menu()["theme"]["ventoy_color"], menu()["menu_tip"]["color"]), ("#112233", "#112233"))
+        self.assertEqual(self.sync(init=False)[0], 0)                    # a refresh keeps the look …
+        self.assertEqual((built / "background.png").read_bytes(), b"night background")
+        self.assertEqual(list((self.stick / "ventoy").glob("ventoy.json.bak-*")), [])     # … and it isn't "edited"
+
+        self.look(icons="badges")
+        self.assertEqual((built / "icons/systemrescue.png").read_bytes(), b"badge")
+        self.assertFalse((built / "icons/pack.toml").exists())
+        self.look(icons="off")
+        self.assertFalse((built / "icons").exists())
+        self.assertNotIn("menu_class", menu())
+        self.look(theme="default")                                       # … and no gap where they were
+        self.assertIn("icon_width = 0    # icons\n  icon_height = 0\n  item_icon_space = 0\n", (built / "theme.txt").read_text())
+
+        rc, out = self.look(theme="off")
+        self.assertEqual(rc, 0, out)
+        self.assertFalse(built.exists())                                 # no theme, and no splash of its either
+        self.assertNotIn("theme", menu())
+        self.assertEqual((menu()["menu_tip"]["left"], menu()["menu_tip"]["color"]), ("10%", "#7fb4ff"))
+        self.assertEqual(self.sync(init=False)[0], 0)
+        self.assertNotIn("theme", menu())
+
+        rc, out = self.look(reset=True)
+        self.assertEqual((self.stick / "ventoy/ventoy.json").read_bytes(), default)
+        self.assertEqual((built / "background.png").read_bytes(), b"default background")
+        self.assertEqual((built / "icons/systemrescue.png").read_bytes(), b"theme icon")
+
+        with self.assertRaisesRegex(cr.RescueError, "no theme called 'nope'"):
+            self.look(theme="nope")
+        with self.assertRaisesRegex(cr.RescueError, "no icon pack called"):
+            self.look(icons="../x")
+        with self.assertRaisesRegex(cr.RescueError, "--dim goes with"):
+            self.look(dim=40)
+        rc, out = self.look(json=True)
+        report = json.loads(out)
+        self.assertEqual(report["look"], cr.LOOK_DEFAULT)
+        self.assertEqual([t["id"] for t in report["themes"]], ["default", "night", "off"])
+        self.assertEqual([t["id"] for t in report["icon_packs"]], ["logos", "badges", "off"])
+
+    def test_your_own_splash_and_icons_beat_a_preset(self):
+        (self.repo / "byo/icons").mkdir(parents=True)
+        (self.repo / "byo/icons/vtoydir.png").write_bytes(b"my folder icon")
+        (self.repo / "byo/splash.png").write_bytes(b"my splash")
+        built, menu = self.themed_repo()
+        self.look(theme="night")
+        self.assertEqual((built / "icons/vtoydir.png").read_bytes(), b"my folder icon")
+        self.assertEqual((built / "splash.png").read_bytes(), b"my splash")
+        self.look(splash="theme")
+        self.assertEqual((built / "splash.png").read_bytes(), b"night splash")
+        self.look(splash="off")
+        self.assertFalse((built / "splash.png").exists())
+        self.look(theme="off", splash="auto")                            # your own picture still shows
+        self.assertEqual(sorted(f.name for f in built.iterdir()), ["splash.png"])
+
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "resizing a picture needs Pillow")
+    def test_your_own_background(self):
+        from PIL import Image
+        built, menu = self.themed_repo()
+        picture = self.tmp / "holiday.jpg"
+        Image.new("RGB", (800, 600), (200, 100, 50)).save(picture)
+        rc, out = self.look(background=str(picture), dim=50)
+        self.assertEqual(rc, 0, out)
+        with Image.open(built / "background.png") as im:
+            self.assertEqual((im.format, im.size, im.getpixel((5, 5))), ("PNG", (1920, 1080), (100, 50, 25)))
+        self.assertEqual(self.sync(init=False)[0], 0)                    # kept on the stick, not in the repo
+        with Image.open(built / "background.png") as im:
+            self.assertEqual(im.size, (1920, 1080))
+        self.look(theme="night")                                         # … and over any preset
+        with Image.open(built / "background.png") as im:
+            self.assertEqual(im.size, (1920, 1080))
+        self.look(background="theme")
+        self.assertEqual((built / "background.png").read_bytes(), b"night background")
+        with self.assertRaisesRegex(cr.RescueError, "neither a picture file"):
+            self.look(background=str(self.tmp / "missing.png"))
+
+    def test_look_needs_a_stick_from_this_version(self):
+        self.fetch("systemrescue")
+        self.assertEqual(self.sync()[0], 0)
+        (self.stick / cr.BASE_JSON).unlink()                             # as an older Helix Boot left it
+        with self.assertRaisesRegex(cr.RescueError, "older Helix Boot"):
+            self.look(theme="off")
+        # a pack from before `helix theme` brings its theme and menu ready-made: they're used as they are
+        (self.stick / cr.THEME_SRC).mkdir(parents=True)
+        (self.stick / cr.THEME_SRC / "theme.txt").write_text("stale")
+        (self.stick / cr.BASE_JSON).write_text("{}")
+        cr._write_extras(self.cfg, self.stick, {}, [("ventoy/theme/theme.txt", b"from the pack"),
+                                                    ("ventoy/ventoy.json", b'{"pack": true}')], True)
+        self.assertFalse((self.stick / cr.THEME_SRC).exists())
+        self.assertEqual((self.stick / "ventoy/theme/theme.txt").read_bytes(), b"from the pack")
+        self.assertEqual((self.stick / "ventoy/ventoy.json").read_bytes(), b'{"pack": true}')
 
     def test_no_icons_without_theme(self):
         (self.repo / "byo/icons").mkdir(parents=True)
@@ -1141,7 +1286,7 @@ class TestPack(Base):
                     zf.extract(m, away)
                     os.chmod(away / m.filename, (m.external_attr >> 16) & 0o777 or 0o644)
         inst = away / "installer"
-        for f in ("helix", "install.sh", "refresh.sh"):
+        for f in ("helix", "install.sh", "refresh.sh", "theme.sh"):
             self.assertTrue(os.access(inst / f, os.X_OK), f)
         self.assertIn(pack.name, (inst / "README.txt").read_text())
         found = subprocess.run(["bash", "-c", f'source "{inst}/scripts/common.sh"; bundled_pack "{inst}"'],
@@ -1601,7 +1746,7 @@ class TestShellHelpers(unittest.TestCase):
             capture_output=True, text=True, check=True,
         ).stdout.split()
         used = set()  # commands the shell scripts pipe into
-        for f in ("install.sh", "refresh.sh", "scripts/common.sh", "pe/vm/build-vm.sh", "pe/fix-bootmgr.sh"):
+        for f in ("install.sh", "refresh.sh", "theme.sh", "scripts/common.sh", "pe/vm/build-vm.sh", "pe/fix-bootmgr.sh"):
             used |= set(re.findall(r"(?<!\|)\|(?!\|)\s*([a-z][\w.-]*)", (ROOT / f).read_text()))
         self.assertIn("head", used)
         self.assertEqual(sorted(used & set(names)), [], "helper functions hide commands the scripts use")
