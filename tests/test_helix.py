@@ -565,6 +565,7 @@ class TestFetchAndSync(Base):
         three = script.read_text(encoding="utf-8")
         self.assertEqual(three.count(cr.SPLASH_BEGIN), 1)
         self.assertIn("sleep --interruptible 3\n", three)
+        self.assertIn("for r in 1 2 3; do\n", three)          # each loading-bar frame drawn 3 times
 
         self.splash(efi, remove=True)
         self.assertEqual(script.read_text(encoding="utf-8"), original)     # taken out cleanly
@@ -604,6 +605,30 @@ class TestFetchAndSync(Base):
         (self.repo / "byo" / "splash.png").write_bytes(b"my splash")
         self.assertEqual(self.sync(init=False)[0], 0)
         self.assertEqual((self.stick / "ventoy/theme/splash.png").read_bytes(), b"my splash")
+
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "the loading bar needs Pillow")
+    def test_splash_loading_bar_frames(self):
+        from PIL import Image
+        theme = self.repo / "theme"
+        theme.mkdir()
+        (theme / "theme.txt").write_text('desktop-image: "background.png"\n')
+        Image.new("RGB", (64, 36), (20, 10, 40)).save(theme / "splash.png")
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("systemrescue")
+        self.assertEqual(self.sync()[0], 0)
+        frames = sorted((self.stick / "ventoy/theme/splash").iterdir())
+        self.assertEqual([f.name for f in frames], [f"{k:02d}.jpg" for k in range(cr.SPLASH_FRAMES + 1)])
+        with Image.open(frames[0]) as first, Image.open(frames[-1]) as last:
+            self.assertEqual((first.format, first.size), ("JPEG", (1920, 1080)))
+            self.assertLess(first.getpixel((700, 1004))[1], 100)    # empty bar …
+            self.assertGreater(last.getpixel((700, 1004))[1], 150)  # … full, cyan at the left
+        cached = list((self.cfg.cache / "splash").iterdir())
+        Image.new("RGB", (64, 36), (40, 10, 20)).save(theme / "splash.png")    # a new picture
+        self.assertEqual(self.sync(init=False)[0], 0)
+        now = list((self.cfg.cache / "splash").iterdir())
+        self.assertEqual(len(now), 1)
+        self.assertNotEqual(now, cached)                                 # redrawn, the old frames gone
 
     def test_oversized_icons_are_flagged(self):
         import struct

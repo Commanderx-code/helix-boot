@@ -267,7 +267,8 @@ class TestPackaging(unittest.TestCase):
                     mods.add(node.module)
             return mods - {"__future__"}
 
-        missing = imported(ROOT / "helix") - imported(ROOT / "windows" / "helix_boot.py")
+        optional = {"PIL"}   # the splash's loading bar; packs from Linux already carry its frames
+        missing = imported(ROOT / "helix") - imported(ROOT / "windows" / "helix_boot.py") - optional
         self.assertEqual(sorted(missing), [], "add these imports to windows/helix_boot.py")
 
 

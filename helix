@@ -1370,6 +1370,8 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
                      "Shrink them with: theme/build-theme.py --fit-icons")
         if (cfg.repo / "byo" / "splash.png").is_file():   # your own picture before the menu
             files["splash.png"] = cfg.repo / "byo" / "splash.png"
+        if "splash.png" in files:                         # with a loading bar filling up across it
+            files.update(_splash_frames(cfg, files["splash.png"]))
         out += [(f"ventoy/theme/{rel}", f) for rel, f in files.items()]
     icons = _icons(cfg) if theme_src and theme_src.is_dir() else set()
     bare = [p["title"] for p in placed if icons and p["name"] not in icons]
@@ -1970,17 +1972,84 @@ SPLASH_END = "#### helix-boot splash: end ####"
 SPLASH_ANCHOR = "#clear all input key before show main menu\n"   # in Ventoy's grub.cfg, just before its menu
 
 
+SPLASH_FRAMES = 20   # the loading bar's steps: ventoy/theme/splash/00.jpg (empty) … 20.jpg (full)
+
+
 def _splash_block(seconds: int) -> str:
+    # GRUB's only timer counts whole seconds, so the bar is paced by drawing: each frame takes
+    # about 1/20 s to load and show, and is drawn `seconds` times. A slow PC just takes longer.
+    frames = " ".join(f"{k:02d}" for k in range(SPLASH_FRAMES + 1)) + f" {SPLASH_FRAMES:02d}" * 2
     return (f"{SPLASH_BEGIN}\n"
-            "# Added by Helix Boot (helix splash): its picture for a moment before the menu.\n"
-            '# Any key skips it. ventoy/theme/splash.png on the stick; remove it and this does nothing.\n'
+            "# Added by Helix Boot (helix splash): its picture for a moment before the menu, with a\n"
+            "# loading bar when ventoy/theme/splash/ has the frames. ventoy/theme/splash.png on the\n"
+            "# stick; remove it and this does nothing.\n"
             'if [ "$vtoy_display_mode" != "CLI" -a -f "$vtoy_iso_part/ventoy/theme/splash.png" ]; then\n'
-            '    background_image -m stretch "$vtoy_iso_part/ventoy/theme/splash.png"\n'
-            "    clear\n"
-            f"    sleep --interruptible {seconds}\n"
+            '    set helix_splash="$vtoy_iso_part/ventoy/theme/splash"\n'
+            f'    if [ -f "$helix_splash/{SPLASH_FRAMES:02d}.jpg" ]; then\n'
+            f"        for f in {frames}; do\n"
+            f"            for r in {' '.join(str(i + 1) for i in range(seconds))}; do\n"
+            '                background_image -m stretch "$helix_splash/$f.jpg"\n'
+            "                clear\n"
+            "            done\n"
+            "        done\n"
+            "    else\n"
+            '        background_image -m stretch "$vtoy_iso_part/ventoy/theme/splash.png"\n'
+            "        clear\n"
+            f"        sleep --interruptible {seconds}\n"
+            "    fi\n"
             "    background_image\n"
+            "    unset helix_splash\n"
             "fi\n"
             f"{SPLASH_END}\n\n")
+
+
+def _splash_frames(cfg: Config, splash: Path) -> dict[str, Path]:
+    """The splash with a loading bar filling up across it, as JPEG frames for the boot script
+    (GRUB draws a 1080p JPEG about three times as fast as a PNG). Made once per picture and
+    kept in the cache. Needs Pillow; without it the splash shows as a still picture."""
+    out = cfg.cache / "splash" / f"{file_hash(splash)[:16]}-1"     # -1: this bar; bump it to redraw
+    names = [f"{k:02d}.jpg" for k in range(SPLASH_FRAMES + 1)]
+    if not all((out / n).is_file() for n in names):
+        try:
+            from PIL import Image, ImageDraw, ImageFilter
+        except ImportError:
+            info("no loading bar on the splash: that needs Pillow (python-pillow / pip install pillow)")
+            return {}
+        try:
+            with Image.open(splash) as im:
+                base = im.convert("RGB").resize((1920, 1080), Image.Resampling.LANCZOS).convert("RGBA")
+        except OSError as e:
+            warn(f"couldn't read {splash.name} for the loading bar: {e}")
+            return {}
+        bw, bh, x0, y0 = 560, 8, 680, 1000          # bottom centre, as on the theme's splash.png
+        cyan, purple = (0, 220, 235), (181, 94, 255)
+        track = Image.new("RGBA", base.size)
+        ImageDraw.Draw(track).rounded_rectangle((x0 - 2, y0 - 2, x0 + bw + 1, y0 + bh + 1), radius=6,
+                                                fill=(8, 6, 20, 200), outline=(186, 171, 211, 90))
+        base = Image.alpha_composite(base, track)
+        grad = Image.new("RGB", (bw, bh))
+        gd = ImageDraw.Draw(grad)
+        for x in range(bw):
+            t = x / (bw - 1)
+            gd.line((x, 0, x, bh), fill=tuple(round(c + (d - c) * t) for c, d in zip(cyan, purple)))
+        tmp = out.with_name(out.name + ".part")
+        shutil.rmtree(tmp, ignore_errors=True)
+        tmp.mkdir(parents=True)
+        for k, name in enumerate(names):
+            img, fill = base, round(bw * k / SPLASH_FRAMES)
+            if fill:
+                bar = Image.new("RGBA", base.size)
+                mask = Image.new("L", (fill, bh))
+                ImageDraw.Draw(mask).rounded_rectangle((0, 0, fill - 1, bh - 1), radius=4, fill=255)
+                bar.paste(grad.crop((0, 0, fill, bh)), (x0, y0), mask)
+                img = Image.alpha_composite(Image.alpha_composite(img, bar.filter(ImageFilter.GaussianBlur(7))), bar)
+            img.convert("RGB").save(tmp / name, quality=90, optimize=True)
+        shutil.rmtree(out, ignore_errors=True)
+        os.replace(tmp, out)
+        for old in out.parent.iterdir():            # frames for an earlier picture
+            if old != out:
+                shutil.rmtree(old, ignore_errors=True)
+    return {f"splash/{n}": out / n for n in names}
 
 
 def cmd_splash(cfg: Config, args) -> int:
