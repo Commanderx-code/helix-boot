@@ -117,6 +117,11 @@ else
   "$HELIX" sync "$mnt" "${sync_args[@]}"
 fi
 
+# The splash before the Ventoy menu (again after a Ventoy upgrade, which replaces it)
+if [[ -n $part && " ${sync_args[*]} " != *" --dry-run "* ]]; then
+  apply_splash "/dev/$(lsblk -no PKNAME "$part" | head -n1)"
+fi
+
 if ((eject)) && [[ -n $part ]]; then
   unmount_part "$part"
   ok "Unmounted — safe to unplug."

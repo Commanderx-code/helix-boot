@@ -7,6 +7,11 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- **A splash before the Ventoy menu**: the HELIXBOOT logo over the theme's
+  artwork for a second (any key skips it), or your own `byo/splash.png`;
+  `splash_seconds` sets how long. `helix splash` adds it to Ventoy's boot
+  script on the VTOYEFI partition; `install.sh` and `refresh.sh` run it, also
+  after a Ventoy upgrade, and a Ventoy laid out differently is left alone.
 - `theme/build-theme.py --fit-icons` shrinks your icons in `byo/icons/` to the
   40×40 Ventoy shows, keeping the originals; refresh warns about oversized ones,
   which use up the boot loader's memory so later icons don't appear.

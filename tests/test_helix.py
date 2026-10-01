@@ -531,6 +531,80 @@ class TestFetchAndSync(Base):
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(), '{"mine": true}')
 
+    def splash(self, efi, **kw):
+        args = dict(efi=str(efi), remove=False, dry_run=False)
+        args.update(kw)
+        return self.run_quiet(cr.cmd_splash, self.cfg, type("A", (), args)())
+
+    def test_splash_before_the_ventoy_menu(self):
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        efi = self.tmp / "VTOYEFI"
+        (efi / "grub").mkdir(parents=True)
+        original = ("#Main stuff\nterminal_output gfxterm\n\n# 中文 note\n"
+                    "#clear all input key before show main menu\nvt_clear_key\n\nvt_dynamic_menu 0 1\n")
+        script = efi / "grub" / "grub.cfg"
+        script.write_text(original, encoding="utf-8")
+
+        rc, out = self.splash(efi, dry_run=True)
+        self.assertEqual((rc, script.read_text(encoding="utf-8")), (0, original))
+        rc, out = self.splash(efi)
+        self.assertEqual(rc, 0, out)
+        once = script.read_text(encoding="utf-8")
+        self.assertEqual(once.count(cr.SPLASH_BEGIN), 1)
+        self.assertIn("sleep --interruptible 1\n", once)
+        self.assertLess(once.index(cr.SPLASH_END), once.index("#clear all input key"))   # before the menu
+        self.assertIn("# 中文 note", once)
+        rc, out = self.splash(efi)                                   # again: nothing changes
+        self.assertEqual(script.read_text(encoding="utf-8"), once)
+        self.assertIn("already", out)
+
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\nsplash_seconds = 3\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.splash(efi)
+        three = script.read_text(encoding="utf-8")
+        self.assertEqual(three.count(cr.SPLASH_BEGIN), 1)
+        self.assertIn("sleep --interruptible 3\n", three)
+
+        self.splash(efi, remove=True)
+        self.assertEqual(script.read_text(encoding="utf-8"), original)     # taken out cleanly
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\nsplash_seconds = 0\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.splash(efi)
+        self.assertEqual(script.read_text(encoding="utf-8"), original)
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\nsplash_seconds = 99\n')
+        self.cfg = cr.Config(repo=self.repo)
+        with self.assertRaisesRegex(cr.RescueError, "between 0"):
+            self.splash(efi)
+
+    def test_splash_leaves_an_unknown_ventoy_alone(self):
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        efi = self.tmp / "VTOYEFI"
+        (efi / "grub").mkdir(parents=True)
+        (efi / "grub" / "grub.cfg").write_text("vt_dynamic_menu 0 1\n")
+        rc, out = self.splash(efi)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("isn't laid out as expected", out)
+        self.assertEqual((efi / "grub" / "grub.cfg").read_text(), "vt_dynamic_menu 0 1\n")
+        with self.assertRaisesRegex(cr.RescueError, "isn't Ventoy's boot partition"):
+            self.splash(self.tmp)
+
+    def test_your_own_splash_picture(self):
+        theme = self.repo / "theme"
+        theme.mkdir()
+        (theme / "theme.txt").write_text('desktop-image: "background.png"\n')
+        (theme / "splash.png").write_bytes(b"theme splash")
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("systemrescue")
+        self.assertEqual(self.sync()[0], 0)
+        self.assertEqual((self.stick / "ventoy/theme/splash.png").read_bytes(), b"theme splash")
+        (self.repo / "byo").mkdir(exist_ok=True)
+        (self.repo / "byo" / "splash.png").write_bytes(b"my splash")
+        self.assertEqual(self.sync(init=False)[0], 0)
+        self.assertEqual((self.stick / "ventoy/theme/splash.png").read_bytes(), b"my splash")
+
     def test_oversized_icons_are_flagged(self):
         import struct
         def png(w, h):

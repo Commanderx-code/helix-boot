@@ -150,6 +150,7 @@ fi
 
 section "Finishing"
 unmount_part "$part"
+apply_splash "$dev"
 ok "Done. You can unplug the stick."
 ((secure)) && info "First boot on a Secure Boot PC: pick 'Enroll key' → ENROLL_THIS_KEY_IN_MOKMANAGER.cer, then reboot."
 info "Refresh it later with ./refresh.sh"

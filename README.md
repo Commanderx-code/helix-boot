@@ -375,6 +375,14 @@ icons don't appear: `theme/build-theme.py --fit-icons` shrinks yours to
 40×40, keeping the originals in `byo/icons/originals/`. Put icons there, not
 straight onto the stick: refresh rewrites the stick's theme folder. For Ventoy's stock look, set `theme = ""` under `[settings]`.
 
+**Splash.** When the stick boots, a splash (the HELIXBOOT logo over the theme's
+artwork, `theme/splash.png`) shows for a second before the Ventoy menu; any key
+skips it. Save your own picture as `byo/splash.png` (1920×1080 works best), set
+`splash_seconds` under `[settings]` in `local.toml` (0 turns it off), and
+refresh. Ventoy has no setting for this, so `install.sh` and `refresh.sh` add a
+few marked lines to Ventoy's own boot script on the stick's small VTOYEFI
+partition, and re-add them after a Ventoy upgrade.
+
 <details>
 <summary><b>Layout on the stick</b></summary>
 

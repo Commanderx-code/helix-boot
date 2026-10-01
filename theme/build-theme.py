@@ -95,6 +95,36 @@ def background() -> None:
     img.save(HERE / "background.png", optimize=True)
 
 
+def splash() -> None:
+    """The picture Ventoy shows for a moment before its menu (splash.png): the same artwork,
+    dimmed, with the DNA mark, wordmark and tagline centred. byo/splash.png replaces it."""
+    art = ImageOps.fit(Image.open(ARTWORK).convert("RGB"), (W, H), method=Image.LANCZOS)
+    img = Image.blend(art, Image.new("RGB", (W, H), (6, 3, 14)), 0.45).convert("RGBA")
+    cx, top = W // 2, 300
+    mark = Image.new("RGBA", (W, H))
+    md = ImageDraw.Draw(mark)
+    span, amp = 230, 70                     # the theme's DNA mark, about twice the size
+    for y in range(0, span + 1, 22):
+        offset = amp * math.cos(y / span * math.tau)
+        md.line((cx - offset, top + y, cx + offset, top + y), fill=(*MUTED, 255), width=5)
+    for sign, color in ((1, CYAN), (-1, ACCENT)):
+        points = [(cx + sign * amp * math.cos(t / span * math.tau), top + t) for t in range(span + 1)]
+        md.line(points, fill=(*color, 255), width=15, joint="curve")
+    img = Image.alpha_composite(img, mark.filter(ImageFilter.GaussianBlur(16)))
+    img = Image.alpha_composite(img, mark).convert("RGB")
+    d = ImageDraw.Draw(img)
+    big = ImageFont.truetype(str(ttf("DejaVuSans-Bold.ttf")), 132)
+    small = ImageFont.truetype(str(ttf("DejaVuSans.ttf")), 34)
+    tiny = ImageFont.truetype(str(ttf("DejaVuSans.ttf")), 21)
+    width = d.textlength("HELIX", font=big) + d.textlength("BOOT", font=big)
+    x, y = cx - width / 2, top + span + 60
+    d.text((x, y), "HELIX", font=big, fill=TEXT)
+    d.text((x + d.textlength("HELIX", font=big), y), "BOOT", font=big, fill=CYAN)
+    d.text((cx, y + 180), "RECOVERY  •  DIAGNOSTICS  •  REPAIR", font=small, fill=MUTED, anchor="ma")
+    d.text((cx, H - 120), "L O A D I N G", font=tiny, fill=(*MUTED,), anchor="ma")
+    img.save(HERE / "splash.png", optimize=True)
+
+
 def nine_slice(prefix: str, fill, border=None, left_bar=None, size: int = 8) -> None:
     """Write prefix_{nw,n,ne,w,c,e,sw,s,se}.png for GRUB's 9-slice styled boxes."""
     for part, (w, h) in {
@@ -363,6 +393,7 @@ if __name__ == "__main__":
                                   ("dejavu-16.pf2", "dejavu-22.pf2", "dejavu-bold-22.pf2")):
         sys.exit("committed fonts are missing — run without --skip-fonts after installing grub")
     background()
+    splash()
     nine_slice("menu", PANEL, border=BORDER)
     nine_slice("select", (71, 22, 119, 220), border=(*ACCENT, 255), left_bar=(*CYAN, 255), size=4)
     nine_slice("terminal_box", (9, 5, 20, 245), border=BORDER)

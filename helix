@@ -1368,6 +1368,8 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
                 warn(f"{len(big)} of your icons in byo/icons/ are much bigger than the 40x40 Ventoy shows "
                      f"(e.g. {name}, {w}x{h}); at boot that can stop other icons appearing. "
                      "Shrink them with: theme/build-theme.py --fit-icons")
+        if (cfg.repo / "byo" / "splash.png").is_file():   # your own picture before the menu
+            files["splash.png"] = cfg.repo / "byo" / "splash.png"
         out += [(f"ventoy/theme/{rel}", f) for rel, f in files.items()]
     icons = _icons(cfg) if theme_src and theme_src.is_dir() else set()
     bare = [p["title"] for p in placed if icons and p["name"] not in icons]
@@ -1963,6 +1965,60 @@ def _ventoy_from_pack(cfg: Config, pack: str, windows: bool | None = None) -> Pa
     return tops[0]
 
 
+SPLASH_BEGIN = "#### helix-boot splash: begin ####"
+SPLASH_END = "#### helix-boot splash: end ####"
+SPLASH_ANCHOR = "#clear all input key before show main menu\n"   # in Ventoy's grub.cfg, just before its menu
+
+
+def _splash_block(seconds: int) -> str:
+    return (f"{SPLASH_BEGIN}\n"
+            "# Added by Helix Boot (helix splash): its picture for a moment before the menu.\n"
+            '# Any key skips it. ventoy/theme/splash.png on the stick; remove it and this does nothing.\n'
+            'if [ "$vtoy_display_mode" != "CLI" -a -f "$vtoy_iso_part/ventoy/theme/splash.png" ]; then\n'
+            '    background_image -m stretch "$vtoy_iso_part/ventoy/theme/splash.png"\n'
+            "    clear\n"
+            f"    sleep --interruptible {seconds}\n"
+            "    background_image\n"
+            "fi\n"
+            f"{SPLASH_END}\n\n")
+
+
+def cmd_splash(cfg: Config, args) -> int:
+    """Show the theme's splash.png for a moment before the Ventoy menu. Ventoy has no setting
+    for that, so this adds a few lines to its own boot script on the VTOYEFI partition (marked,
+    and replaced or removed cleanly on the next run). A Ventoy install or upgrade rewrites that
+    script; install.sh and refresh.sh run this afterwards."""
+    efi = Path(args.efi).expanduser()
+    script = efi / "grub" / "grub.cfg"
+    if not script.is_file():
+        raise RescueError(f"{efi} isn't Ventoy's boot partition (VTOYEFI): it has no grub/grub.cfg")
+    before = script.read_bytes().decode("utf-8")
+    text = re.sub(rf"{re.escape(SPLASH_BEGIN)}.*?{re.escape(SPLASH_END)}\n\n?", "", before, flags=re.S)
+    try:
+        seconds = int(cfg.settings.get("splash_seconds", 1))
+    except (TypeError, ValueError):
+        raise RescueError("splash_seconds in local.toml must be a whole number of seconds") from None
+    if not 0 <= seconds <= 10:
+        raise RescueError("splash_seconds must be between 0 (no splash) and 10")
+    wanted = seconds > 0 and bool(cfg.settings.get("theme")) and not args.remove
+    if wanted:
+        if text.count(SPLASH_ANCHOR) != 1:   # a Ventoy this doesn't know: leave its boot script alone
+            warn("this Ventoy's boot script isn't laid out as expected, so no splash was added")
+            return 0
+        text = text.replace(SPLASH_ANCHOR, _splash_block(seconds) + SPLASH_ANCHOR)
+    if text == before:
+        ok(f"Splash: {'already ' + str(seconds) + ' s before the menu' if wanted else 'none'}")
+        return 0
+    if args.dry_run:
+        info(f"would {'set the splash to ' + str(seconds) + ' s' if wanted else 'remove the splash'}")
+        return 0
+    tmp = script.with_name("grub.cfg.helix-boot")
+    tmp.write_bytes(text.encode("utf-8"))
+    os.replace(tmp, script)
+    ok(f"Splash: {seconds} s before the Ventoy menu" if wanted else "Splash removed")
+    return 0
+
+
 def cmd_ventoy_path(cfg: Config, args) -> int:
     if getattr(args, "from_pack", None):
         print(_ventoy_from_pack(cfg, args.from_pack))
@@ -2017,6 +2073,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--verify", action="store_true", help="hash files on the stick (slow)")
     p.add_argument("--no-prune", action="store_true", help="keep old versions on the stick")
     p.set_defaults(fn=cmd_unpack)
+
+    p = sub.add_parser("splash", help="show the splash picture before the Ventoy menu (on its VTOYEFI partition)")
+    p.add_argument("efi", help="mount point of the stick's VTOYEFI partition")
+    p.add_argument("--remove", action="store_true", help="take the splash out again")
+    p.add_argument("--dry-run", action="store_true", help="show what would change")
+    p.set_defaults(fn=cmd_splash)
 
     p = sub.add_parser("ventoy-path", help="print the extracted Ventoy folder")
     p.add_argument("--from", dest="from_pack", metavar="PACK", help="use the Ventoy inside a pack")
