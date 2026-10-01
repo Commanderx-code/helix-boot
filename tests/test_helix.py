@@ -896,6 +896,26 @@ class TestFetchAndSync(Base):
         self.look(icons="auto")
         self.assertEqual(red(), (200, 40, 40, 255))
 
+    def test_a_plain_preset_stands_in_for_ventoys_own_look(self):
+        built, menu = self.themed_repo()
+        (self.stick / cr.LOOK_FILE).write_text('{"theme": "off"}')       # chosen before there was a plain one
+        plain = self.repo / "theme/presets/quiet"
+        plain.mkdir()
+        (plain / "theme.txt").write_text('desktop-image: "background.png"\n# quiet\n')
+        (plain / "background.png").write_bytes(b"quiet background")
+        (plain / "preset.toml").write_text('title = "Quiet"\nstandalone = true\nplain = true\n')
+        self.assertEqual(self.sync(init=False)[0], 0)
+        self.assertIn("# quiet", (built / "theme.txt").read_text())      # "off" is the plain theme now
+        self.assertIn("theme", menu())
+        report = json.loads(self.look(json=True)[1])
+        self.assertEqual([t["id"] for t in report["themes"]], ["default", "night", "quiet"])   # no "off" on offer
+        self.assertEqual(report["look"]["theme"], "quiet")
+        self.look(theme="night")
+        rc, out = self.look(theme="off")                                  # still accepted: the plain one
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(json.loads((self.stick / cr.LOOK_FILE).read_text())["theme"], "quiet")
+        self.assertEqual((built / "background.png").read_bytes(), b"quiet background")
+
     def test_look_needs_a_stick_from_this_version(self):
         self.fetch("systemrescue")
         self.assertEqual(self.sync()[0], 0)

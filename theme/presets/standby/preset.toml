@@ -1,6 +1,7 @@
 title = "Standby"
-description = "Black cubes, a power symbol and white icons. By Llewelyn Trahaearn (GPL)."
+description = "The plain one: black cubes, a power symbol, grey icons. By Llewelyn Trahaearn (GPL)."
 standalone = true                 # its own layout, boxes and fonts: the theme's aren't laid under it
+plain = true                      # the plain choice: `--theme off` gives this, not Ventoy's own look
 icons = "grey"                    # the tool icons in greyscale, unless you pick a pack
 muted = "#bbbbbb"                 # ventoy.json: the tip line and Ventoy's version text
 tip = ["33%", "77%"]             # … and where they go in this layout

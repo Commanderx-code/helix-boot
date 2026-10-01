@@ -879,7 +879,7 @@ def cli(argv: list[str]) -> int:
     ap.add_argument("--init", action="store_true")
     ap.add_argument("--look", metavar="DRIVE", help="open the Look window for a stick (e.g. E:\\); with the "
                                                    "options below, change its look instead")
-    ap.add_argument("--theme", metavar="ID", help="with --look: a preset theme, default, or off (Ventoy's own look)")
+    ap.add_argument("--theme", metavar="ID", help="with --look: a preset theme, or default (off: the plain one, Standby)")
     ap.add_argument("--icons", metavar="ID", help="with --look: auto, logos, grey, an icon pack, or off")
     ap.add_argument("--background", metavar="PICTURE", help="with --look: your own background, or theme")
     ap.add_argument("--dim", type=int, default=0, metavar="PERCENT", help="with --background: darken it (0-90)")

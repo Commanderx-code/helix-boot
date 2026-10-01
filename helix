@@ -2137,7 +2137,7 @@ def _restyle_icons(folder: Path, style: str) -> None:
 def _preset_meta(folder: Path) -> dict:
     """A theme folder's preset.toml: its title and the colours the menu and splash take from it."""
     meta = {"title": folder.name, "description": "", "muted": "#baabd3", "bar": SPLASH_BAR,
-            "standalone": False, "icons": "", "tip": None, "version": None}
+            "standalone": False, "plain": False, "icons": "", "tip": None, "version": None}
     try:
         got = tomllib.loads((folder / "preset.toml").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -2152,6 +2152,7 @@ def _preset_meta(folder: Path) -> dict:
     if isinstance(bar, list) and len(bar) == 2 and all(isinstance(c, str) and colour.fullmatch(c) for c in bar):
         meta["bar"] = (bar[0], bar[1])
     meta["standalone"] = got.get("standalone") is True      # its own layout: the theme isn't laid under it
+    meta["plain"] = got.get("plain") is True                # the plain choice, in place of Ventoy's own look
     if got.get("icons") in ICON_STYLES:                     # how its icons are drawn, unless a pack is picked
         meta["icons"] = got["icons"]
     for key in ("tip", "version"):                          # where the tip and Ventoy's version go: [left, top]
@@ -2181,7 +2182,8 @@ def _look_choices(mnt: Path) -> tuple[dict[str, dict], dict[str, dict]]:
     for d in sorted((src / "presets").glob("*/")):
         if SAFE_NAME.fullmatch(d.name) and d.name not in ("default", "off") and (d / "theme.txt").is_file():
             themes[d.name] = _preset_meta(d)
-    themes["off"] = {"title": "Off", "description": "Ventoy's own look: no theme, no icons."}
+    if not any(t["plain"] for t in themes.values()):   # a plain preset stands in for Ventoy's own look
+        themes["off"] = {"title": "Off", "description": "Ventoy's own look: no theme, no icons.", "plain": False}
     packs = {"auto": {"title": "Automatic", "description": "The theme's own style: logos in colour, or grey where it asks for that."},
              "logos": {"title": "Logos", "description": "The tools' own logos in colour, and your icons from byo/icons/."},
              "grey": {"title": "Greyscale", "description": "The same icons in shades of grey."}}
@@ -2196,13 +2198,21 @@ def _look_choices(mnt: Path) -> tuple[dict[str, dict], dict[str, dict]]:
     return themes, packs
 
 
+def _theme_id(themes: dict[str, dict], wanted: str) -> str:
+    """The theme a name stands for: itself; `off` is the plain preset where the theme has one
+    (so "no theme" is a quiet theme rather than Ventoy's white one); anything unknown, the default."""
+    if wanted in themes:
+        return wanted
+    return next((k for k, t in themes.items() if t["plain"]), "default") if wanted == "off" else "default"
+
+
 def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = True) -> dict:
     """Build the theme folder for a look into `new` (emptied first), from the theme on the stick;
     return the boot menu (ventoy.json) that goes with it."""
     src = mnt / THEME_SRC
     doc = json.loads((mnt / BASE_JSON).read_text(encoding="utf-8"))
     themes, packs = _look_choices(mnt)
-    theme = look["theme"] if look["theme"] in themes else "default"
+    theme = _theme_id(themes, look["theme"])
     themed = theme != "off" and (src / "theme.txt").is_file()
     preset = src / "presets" / theme if themed and theme != "default" else None
     meta = _preset_meta(preset or src)
@@ -2324,8 +2334,10 @@ def _own_picture(src: Path, dst: Path, dim: int = 0) -> None:
 def look_report(mnt: Path, look: dict | None = None) -> dict:
     """A stick's look and what it can be changed to, for `helix theme --json` and the apps."""
     themes, packs = _look_choices(mnt)
+    look = dict(look or _look(mnt))
+    look["theme"] = _theme_id(themes, look["theme"])
     return {
-        "look": look or _look(mnt),
+        "look": look,
         "themes": [{"id": k, **{f: v[f] for f in ("title", "description")}} for k, v in themes.items()],
         "icon_packs": [{"id": k, **v} for k, v in packs.items()],
         "own_splash": (mnt / THEME_SRC / "mine" / "splash.png").is_file(),
@@ -2342,9 +2354,9 @@ def look_changes(mnt: Path, theme=None, icons=None, background=None, splash=None
     themes, packs = _look_choices(mnt)
     look = dict(LOOK_DEFAULT if reset else _look(mnt))
     if theme:
-        if theme not in themes:
+        if theme not in themes and theme != "off":
             raise RescueError(f"no theme called {theme!r} on this stick. There are: {', '.join(themes)}")
-        look["theme"] = theme
+        look["theme"] = _theme_id(themes, theme)
     if icons:
         if icons not in packs:
             raise RescueError(f"no icon pack called {icons!r} on this stick. There are: {', '.join(packs)}")
@@ -2730,7 +2742,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("theme", help="show or change a stick's look: theme, icons, background, splash")
     p.add_argument("stick", help="mount point of the Ventoy data partition")
-    p.add_argument("--theme", metavar="ID", help="a preset theme, `default`, or `off` for Ventoy's own look")
+    p.add_argument("--theme", metavar="ID", help="a preset theme, or `default`; `off` is the plain one (Standby)")
     p.add_argument("--icons", metavar="ID", help="`auto` (the theme's own style, the default), `logos`, `grey`, an icon pack, or `off`")
     p.add_argument("--background", metavar="PICTURE", help="your own background, or `theme` for the theme's")
     p.add_argument("--dim", type=int, default=0, metavar="PERCENT",

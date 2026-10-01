@@ -16,6 +16,11 @@ tagged releases also publish the Windows app.
   of grey. Standby and Poly dark use it by themselves: the icon choice now
   defaults to `auto`, the theme's own style, and `--icons logos` keeps colour.
 
+### Changed
+- Standby is the plain choice, in place of Ventoy's own white look: "Off" is no
+  longer on the theme list, and `--theme off` (or a stick that had it) gives
+  Standby. `theme = ""` in `local.toml` still gives Ventoy's own look.
+
 ### Fixed
 - The look preview follows each theme's own layout, boxes and font sizes.
 

@@ -17,7 +17,8 @@ To keep Ventoy's stock appearance, set `theme = ""` in `[settings]` in
 ## Change a stick's look
 
 `./theme.sh` (or `helix theme <mount point>`) switches a finished stick between
-the presets, icon packs, your own background and splash, or no theme at all;
+the presets, icon packs, your own background and splash. The plain choice is
+Standby (`--theme off` gives it too), not Ventoy's own white look;
 `./theme.sh --help` lists the options, `./theme.sh --menu` asks instead, and the
 Windows app has a **Look…** window with the same choices. It works on the stick
 alone, so it needs no downloads and no rebuild. The preview (`--preview FILE`,
@@ -39,7 +40,7 @@ Icons are layered, later ones winning: the theme's, the preset's (its
 recoloured category and folder icons), yours from `byo/icons/`, then the icon
 pack you picked. The splash is yours (`--splash PICTURE`, else
 `byo/splash.png`) or else the theme's; `--splash theme` uses the theme's even
-when you have your own. With the theme off, only your own splash still shows.
+when you have your own.
 
 Icons can also be redrawn: `--icons grey` shows them all in shades of grey (a
 flat one-colour icon turns white), `--icons logos` keeps them in colour, and
@@ -60,7 +61,8 @@ fonts aren't laid under it. Its `theme.txt` needs `title-text: ""`, an
 `@VTOY_HOTKEY_TIP@` and boot-mode labels (copy those blocks from a preset
 here). `preset.toml` can also set `icons = "grey"`, and where Ventoy's tip line
 and version text go in that layout: `tip = ["33%", "77%"]`,
-`version = ["84%", "96%"]`. List it in `IMPORTED` in `theme/build-theme.py`
+`version = ["84%", "96%"]`. `plain = true` makes it the plain choice: `off` is
+then no longer offered, and means this preset. List it in `IMPORTED` in `theme/build-theme.py`
 for a splash in its colours. An icon pack is a folder of
 PNGs named after the tools (`theme/icon-packs/<id>/`, or your own in
 `byo/icon-packs/<id>/`), with an optional `pack.toml` (`title`, `description`).

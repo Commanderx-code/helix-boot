@@ -71,9 +71,9 @@ PRESETS = {
 # over the theme's own background, and preset.toml are made here.
 IMPORTED = {
     "standby": dict(
-        title="Standby", description="Black cubes, a power symbol and white icons. By Llewelyn Trahaearn (GPL).",
+        title="Standby", description="The plain one: black cubes, a power symbol, grey icons. By Llewelyn Trahaearn (GPL).",
         text=(214, 214, 214), highlight=(255, 255, 255), accent=(136, 136, 136), muted=(187, 187, 187),
-        tip=("33%", "77%"), version=("84%", "96%")),
+        tip=("33%", "77%"), version=("84%", "96%"), plain=True),
     "poly-dark": dict(
         title="Poly dark", description="Dark polygons and a plain list, in greys. By Andrei Shevchuk (MIT).",
         text=(190, 190, 190), highlight=(235, 235, 235), accent=(119, 119, 119), muted=(119, 119, 119),
@@ -527,6 +527,8 @@ def imported() -> None:
             (out / "preset.toml").write_text(
                 f'title = "{p["title"]}"\ndescription = "{p["description"]}"\n'
                 'standalone = true                 # its own layout, boxes and fonts: the theme\'s aren\'t laid under it\n'
+                + ('plain = true                      # the plain choice: `--theme off` gives this, not Ventoy\'s own look\n'
+                   if p.get("plain") else "") +
                 'icons = "grey"                    # the tool icons in greyscale, unless you pick a pack\n'
                 f'muted = "{hexc(MUTED)}"                 # ventoy.json: the tip line and Ventoy\'s version text\n'
                 f'tip = ["{p["tip"][0]}", "{p["tip"][1]}"]             # … and where they go in this layout\n'

@@ -75,8 +75,9 @@ jobs:
           Run "--look $env:RUNNER_TEMP\stick --theme ember --preview $env:RUNNER_TEMP\preview.png"
           if ((Get-Item "$env:RUNNER_TEMP\preview.png").Length -lt 20000) { throw "the preview wasn't drawn" }
           Run "--look $env:RUNNER_TEMP\stick --selftest-look"   # opens the Look window, closes it
-          Run "--look $env:RUNNER_TEMP\stick --theme off"
-          if (Test-Path "$env:RUNNER_TEMP\stick\ventoy\theme\theme.txt") { throw "the theme is still on the stick" }
+          Run "--look $env:RUNNER_TEMP\stick --theme off"       # the plain one: Standby, its icons in grey
+          if ((Get-Content -Raw "$env:RUNNER_TEMP\stick\ventoy\theme\theme.txt") -notmatch "Standby") { throw "off isn't Standby" }
+          if (-not (Test-Path "$env:RUNNER_TEMP\stick\ventoy\theme\NanumMyeongjo-Regular18.pf2")) { throw "Standby's font is missing" }
           Run "--look $env:RUNNER_TEMP\stick --reset-look"
 
           # A pack made from that cache, used by the real .exe: fills a stick offline, Ventoy included

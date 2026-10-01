@@ -3,7 +3,7 @@
 # The choice is kept on the stick, so a refresh doesn't undo it.
 #   ./theme.sh                         how it looks now, and what there is to choose from
 #   ./theme.sh --menu                  choose from numbered lists, with a preview
-#   ./theme.sh --theme midnight        a preset theme (`off`: Ventoy's own look, no theme at all)
+#   ./theme.sh --theme midnight        a preset theme (`off`: the plain one, Standby)
 #   ./theme.sh --icons off             no icons (or `grey`, or an icon pack such as `badges`)
 #   ./theme.sh --background pic.jpg --dim 40     your own picture behind the menu, darkened
 #   ./theme.sh --splash pic.png        your own picture before the menu (`off`: none)
@@ -22,7 +22,7 @@ Usage: ./theme.sh [options]
 With no options: shows the stick's look and the themes and icon packs to choose from.
 
 Options:
-  --theme ID            a preset theme, "default", or "off" for Ventoy's own look
+  --theme ID            a preset theme, or "default" ("off": the plain one, Standby)
   --icons ID            "auto" (the theme's own style, the default), "logos", "grey", an icon
                         pack such as "badges", or "off" for none
   --background PICTURE  your own picture behind the menu ("theme": the theme's again)

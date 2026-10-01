@@ -236,7 +236,7 @@ to the disk.
 2. **Install** erases the stick (you type its disk number to confirm), installs
    Ventoy and copies everything on. **Update** refreshes a stick you already
    have and keeps your files.
-3. **Look…** changes the selected stick's look: a preset theme or none, the
+3. **Look…** changes the selected stick's look: a preset theme, the
    icons, your own background (with a slider to darken it) and splash, with a
    preview of the boot menu. Nothing changes until **Apply to the stick**.
 
@@ -385,8 +385,7 @@ undo it:
 ```sh
 ./theme.sh                                  # how it looks now, and what there is to choose
 ./theme.sh --theme midnight                 # a preset: midnight, ember, terminal, slate (default: Helix Neon)
-./theme.sh --theme standby                  # someone else's theme: standby, poly-dark (icons in grey)
-./theme.sh --theme off                      # no theme at all: Ventoy's own look
+./theme.sh --theme standby                  # the plain one (also --theme off); poly-dark is another
 ./theme.sh --icons off                      # no icons, just names (--icons grey, --icons badges)
 ./theme.sh --background ~/pic.jpg --dim 40  # your own picture behind the menu, darkened 40 %
 ./theme.sh --splash ~/pic.png               # your own picture before the menu (--splash off: none)
@@ -407,7 +406,8 @@ artwork drawn by `theme/build-theme.py` (so all of it can be shared). **Standby*
 (by Llewelyn Trahaearn, GPL) and **Poly dark** (by Andrei Shevchuk, MIT) are
 other people's GRUB themes with their own layout, adapted for Ventoy; they show
 every tool's icon in shades of grey, which `--icons grey` does on any theme and
-`--icons logos` undoes. Your own icons and
+`--icons logos` undoes. Standby is the plain choice: it takes the place of
+Ventoy's own white look, which `theme = ""` in `local.toml` still gives. Your own icons and
 `byo/splash.png` still win over a preset's. More icon packs go in
 `byo/icon-packs/<name>/` (PNGs named like the ones in `byo/icons/`). Your own
 pictures are resized to 1920×1080 with Pillow; without it, a PNG is used as it
