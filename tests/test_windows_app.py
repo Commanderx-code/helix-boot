@@ -196,6 +196,22 @@ class TestFlows(unittest.TestCase):
             self.assertEqual(app.cli(["--install", "2"]), 1)
         self.assertIn("--yes", out.getvalue())
 
+    def test_cli_look_goes_to_the_engine(self):
+        seen = {}
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(out), mock.patch.object(app, "open_log", lambda p: None), \
+                mock.patch.object(sys, "__stdout__", out), \
+                mock.patch.object(app.cr, "cmd_theme", lambda cfg, a: seen.update(vars(a)) or 0), \
+                mock.patch.object(app, "look_window", lambda mnt, **kw: seen.update(window=str(mnt))):
+            self.assertEqual(app.cli(["--look", "E:\\", "--theme", "midnight", "--icons", "off"]), 0)
+            self.assertEqual((seen["stick"], seen["theme"], seen["icons"], seen["reset"]), ("E:\\", "midnight", "off", False))
+            self.assertNotIn("window", seen)
+            self.assertEqual(app.cli(["--look", "E:\\"]), 0)           # no options: the Look window
+            self.assertEqual(seen["window"], "E:\\")
+        # every option `helix theme` takes is passed, so the engine never misses one
+        self.assertEqual(set(seen) - {"window"}, {"stick", "theme", "icons", "background", "dim", "splash", "reset",
+                                                  "preview", "menu", "json"})
+
 
 class TestFindPack(unittest.TestCase):
     def make(self, path: Path, meta: str | None = "helix-boot-pack.json") -> Path:

@@ -62,7 +62,7 @@ Keep it current later:
 **Linux, one file.** Or skip the clone: download **`HelixBoot.sh`** from
 [Releases](https://github.com/Commanderx-code/helix-boot/releases), put it in a
 folder of its own, then `chmod +x HelixBoot.sh && ./HelixBoot.sh`. A menu offers
-Install, Update and Check; `./HelixBoot.sh --help` lists the rest. Your
+Install, Update, Change a stick's look and Check; `./HelixBoot.sh --help` lists the rest. Your
 `local.toml` and `byo/` folder live next to it, and a pack beside it is used
 with no downloads.
 
@@ -236,6 +236,9 @@ to the disk.
 2. **Install** erases the stick (you type its disk number to confirm), installs
    Ventoy and copies everything on. **Update** refreshes a stick you already
    have and keeps your files.
+3. **Look…** changes the selected stick's look: a preset theme or none, the
+   icons, your own background (with a slider to darken it) and splash, with a
+   preview of the boot menu. Nothing changes until **Apply to the stick**.
 
 It uses the same engine as the Linux scripts: the same tool list, checksums,
 theme and menu. Your `local.toml` and `byo/` folder live next to the `.exe`, and
@@ -390,6 +393,11 @@ undo it:
 ```
 
 ![The Midnight, Ember, Terminal and Slate presets](docs/themes.jpg)
+
+`./theme.sh --menu` (also **Change a stick's look** in `HelixBoot.sh`) offers the
+same choices as numbered lists; `--preview out.png` draws how the menu would
+look without changing the stick. On Windows it is the app's **Look…** button,
+or `HelixBoot.exe --look E:\ --theme midnight`.
 
 The presets are the same menu in other colours, over artwork drawn by
 `theme/build-theme.py` (so all of it can be shared). Your own icons and

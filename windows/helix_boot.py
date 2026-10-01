@@ -54,6 +54,15 @@ import xml.etree.ElementTree  # noqa: F401
 import zipfile  # noqa: F401
 import zlib  # noqa: F401
 
+try:  # optional there: previews, resizing your pictures, the splash's loading bar
+    import PIL.Image  # noqa: F401
+    import PIL.ImageDraw  # noqa: F401
+    import PIL.ImageFilter  # noqa: F401
+    import PIL.ImageFont  # noqa: F401
+    import PIL.ImageOps  # noqa: F401
+except ImportError:
+    pass
+
 class _NoConsole(io.TextIOBase):
     """Where output goes before the window takes over, when there's no console. (Not
     os.devnull: on Windows NUL counts as a terminal, which would turn helix's colours on.)"""
@@ -459,9 +468,10 @@ def gui(selftest: bool = False) -> int:
     btns.pack(fill="x")
     b_refresh = ttk.Button(btns, text="Refresh list")
     b_folder = ttk.Button(btns, text="My tools folder (byo)")
+    b_look = ttk.Button(btns, text="Look…")
     b_install = ttk.Button(btns, text="Install  (erases the stick)", style="Accent.TButton")
     b_update = ttk.Button(btns, text="Update stick")
-    for b in (b_refresh, b_folder):
+    for b in (b_refresh, b_folder, b_look):
         b.pack(side="left", padx=(0, 6))
     show_pack()
     for b in (b_update, b_install):
@@ -502,7 +512,7 @@ def gui(selftest: bool = False) -> int:
 
     def set_busy(on):
         busy["on"] = on
-        for b in (b_refresh, b_install, b_update, b_pack):
+        for b in (b_refresh, b_install, b_update, b_pack, b_look):
             b.state(["disabled"] if on else ["!disabled"])
 
     def work(fn, *a, **kw):
@@ -550,6 +560,18 @@ def gui(selftest: bool = False) -> int:
         if d and pack is not False:
             work(update, d["Number"], upgrade_ventoy=upv.get(), secure_boot=secure.get(), pack=pack)
 
+    def do_look():
+        d = selected()
+        if not d:
+            return
+        if not d.get("Ventoy"):
+            messagebox.showinfo(APP, "That disk has no Helix Boot stick on it yet. Install first, then choose its look.")
+            return
+        try:
+            look_window(Path(f"{d['Ventoy']}:\\"), parent=root)
+        except cr.RescueError as e:
+            messagebox.showerror(APP, str(e))
+
     def open_folder():
         path = user_dir() / "byo"
         path.mkdir(exist_ok=True)
@@ -589,6 +611,7 @@ def gui(selftest: bool = False) -> int:
 
     b_refresh.config(command=refresh)
     b_folder.config(command=open_folder)
+    b_look.config(command=do_look)
     b_install.config(command=do_install)
     b_update.config(command=do_update)
     b_pack.config(command=choose_pack)
@@ -600,6 +623,246 @@ def gui(selftest: bool = False) -> int:
         root.after(2500, root.destroy)
     root.mainloop()
     return 0
+
+
+# ── The Look window ────────────────────────────────────────────────────────
+def look_window(mnt: Path, parent=None, selftest: bool = False):
+    """A stick's look: its theme, icons, background and splash, with a preview of the boot menu.
+    Works on the stick alone, so it needs no downloads. Raises RescueError for a stick that
+    an older Helix Boot filled."""
+    import tkinter as tk
+    from tkinter import filedialog, ttk
+
+    cfg = config()
+    report = cr.look_report(mnt)
+    cr.look_changes(mnt)                       # an older stick is refused here, before a window opens
+    win = tk.Toplevel(parent) if parent else tk.Tk()
+    win.title(f"{APP}: the look of {mnt}")
+    win.minsize(700, 640)
+    frm = ttk.Frame(win, padding=14)
+    frm.pack(fill="both", expand=True)
+    themes = {t["title"]: t for t in report["themes"]}
+    packs = {p["title"]: p for p in report["icon_packs"]}
+    splashes = {"Automatic (yours from byo, else the theme's)": "auto", "The theme's": "theme",
+                "My picture": "custom", "None": "off"}
+    look = report["look"]
+    theme = tk.StringVar(value=next(k for k, t in themes.items() if t["id"] == look["theme"]))
+    icons = tk.StringVar(value=next(k for k, p in packs.items() if p["id"] == look["icons"]))
+    background = tk.StringVar(value=look["background"])
+    splash = tk.StringVar(value=next(k for k, v in splashes.items() if v == look["splash"]))
+    dim = tk.IntVar(value=40)
+    chosen: dict[str, str] = {}                # pictures picked here, not on the stick yet
+    on_stick = dict(report["custom"])
+
+    preview = ttk.Label(frm, anchor="center", text="Drawing the preview…")
+    preview.grid(row=0, column=0, columnspan=4, pady=(0, 12))
+    ttk.Label(frm, text="Theme").grid(row=1, column=0, sticky="w", pady=4)
+    c_theme = ttk.Combobox(frm, textvariable=theme, values=list(themes), state="readonly", width=26)
+    c_theme.grid(row=1, column=1, sticky="w")
+    about = ttk.Label(frm, foreground="#555")
+    about.grid(row=1, column=2, columnspan=2, sticky="w", padx=(10, 0))
+    ttk.Label(frm, text="Icons").grid(row=2, column=0, sticky="w", pady=4)
+    c_icons = ttk.Combobox(frm, textvariable=icons, values=list(packs), state="readonly", width=26)
+    c_icons.grid(row=2, column=1, sticky="w")
+    about_icons = ttk.Label(frm, foreground="#555")
+    about_icons.grid(row=2, column=2, columnspan=2, sticky="w", padx=(10, 0))
+
+    ttk.Label(frm, text="Background").grid(row=3, column=0, sticky="w", pady=4)
+    bg = ttk.Frame(frm)
+    bg.grid(row=3, column=1, columnspan=3, sticky="w")
+    ttk.Radiobutton(bg, text="The theme's", variable=background, value="theme").pack(side="left")
+    ttk.Radiobutton(bg, text="My picture", variable=background, value="custom").pack(side="left", padx=(12, 4))
+    b_bg = ttk.Button(bg, text="Choose…")
+    b_bg.pack(side="left")
+    bg_name = ttk.Label(bg, foreground="#555")
+    bg_name.pack(side="left", padx=(8, 0))
+    dimmer = ttk.Frame(frm)
+    dimmer.grid(row=4, column=1, columnspan=3, sticky="w")
+    ttk.Label(dimmer, text="Darken it").pack(side="left")
+    scale = ttk.Scale(dimmer, from_=0, to=90, variable=dim, length=220)
+    scale.pack(side="left", padx=8)
+    dim_text = ttk.Label(dimmer, width=24)
+    dim_text.pack(side="left")
+
+    ttk.Label(frm, text="Splash").grid(row=5, column=0, sticky="w", pady=4)
+    sp = ttk.Frame(frm)
+    sp.grid(row=5, column=1, columnspan=3, sticky="w")
+    c_splash = ttk.Combobox(sp, textvariable=splash, values=list(splashes), state="readonly", width=42)
+    c_splash.pack(side="left")
+    b_sp = ttk.Button(sp, text="Choose…")
+    b_sp.pack(side="left", padx=(8, 0))
+    sp_name = ttk.Label(sp, foreground="#555")
+    sp_name.pack(side="left", padx=(8, 0))
+
+    status = ttk.Label(frm, text="The preview is a sketch from the theme's files; nothing changes until Apply.",
+                       foreground="#555")
+    status.grid(row=6, column=0, columnspan=4, sticky="w", pady=(12, 6))
+    btns = ttk.Frame(frm)
+    btns.grid(row=7, column=0, columnspan=4, sticky="ew")
+    b_reset = ttk.Button(btns, text="Default look")
+    b_reset.pack(side="left")
+    b_close = ttk.Button(btns, text="Close", command=win.destroy)
+    b_close.pack(side="right")
+    b_apply = ttk.Button(btns, text="Apply to the stick")
+    b_apply.pack(side="right", padx=(0, 6))
+    frm.columnconfigure(0, pad=14)
+    frm.columnconfigure(3, weight=1)
+
+    q: queue.Queue = queue.Queue()             # results from the worker threads
+    wanted: queue.Queue = queue.Queue()        # previews asked for; only the newest is drawn
+    shown = {"image": None, "timer": None}
+
+    def options() -> dict:
+        """What the window asks for, as look_changes takes it."""
+        want_bg = chosen.get("background") or "custom" if background.get() == "custom" else "theme"
+        want_sp = splashes[splash.get()]
+        if want_sp == "custom" and chosen.get("splash"):
+            want_sp = chosen["splash"]
+        return dict(theme=themes[theme.get()]["id"], icons=packs[icons.get()]["id"], background=want_bg,
+                    splash=want_sp, dim=round(dim.get()) if chosen.get("background") and want_bg != "theme" else 0)
+
+    def changes():
+        opts = options()
+        for what in ("background", "splash"):  # "my picture" with none yet: ask for one
+            if opts[what] == "custom" and not on_stick[what]:
+                return None
+        return cr.look_changes(mnt, **opts), opts["dim"]
+
+    def draw_previews():                       # worker: one at a time, skipping to the newest
+        while True:
+            job = wanted.get()
+            while not wanted.empty():
+                job = wanted.get()
+            if job is None:
+                return
+            (new_look, pictures), darken = job
+            try:
+                png = cr.look_preview(cfg, mnt, new_look, cfg.cache / "look-window.png", pictures, darken, (672, 378))
+                q.put(("preview", str(png)))
+            except Exception as e:  # noqa: BLE001 — shown in the window
+                q.put(("nopreview", str(e)))
+
+    def refresh(*_):
+        stock = themes[theme.get()]["id"] == "off"
+        about.config(text=themes[theme.get()]["description"])
+        about_icons.config(text="Ventoy's own look has none" if stock else packs[icons.get()]["description"])
+        c_icons.state(["disabled"] if stock else ["!disabled"])
+        for w in bg.winfo_children():
+            w.state(["disabled"] if stock else ["!disabled"])
+        bg_name.config(text=Path(chosen["background"]).name if chosen.get("background")
+                       else "the one on the stick" if on_stick["background"] else "")
+        sp_name.config(text=Path(chosen["splash"]).name if chosen.get("splash")
+                       else "the one on the stick" if on_stick["splash"] and splashes[splash.get()] == "custom" else "")
+        fresh = bool(chosen.get("background")) and background.get() == "custom" and not stock
+        scale.state(["!disabled"] if fresh else ["disabled"])
+        dim_text.config(text=f"{round(dim.get())} %" if fresh else "(for a newly chosen picture)")
+        if shown["timer"]:
+            win.after_cancel(shown["timer"])
+        shown["timer"] = win.after(250, ask_preview)
+
+    def ask_preview():
+        shown["timer"] = None
+        try:
+            job = changes()
+        except cr.RescueError as e:
+            status.config(text=str(e))
+            return
+        if job:
+            wanted.put(job)
+
+    def choose(what: str):
+        f = filedialog.askopenfilename(parent=win, title=f"Choose a picture for the {what}",
+                                       filetypes=[("Pictures", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")])
+        if not f:
+            return
+        chosen[what] = f
+        if what == "background":
+            background.set("custom")
+        else:
+            splash.set("My picture")
+        refresh()
+
+    def need_picture(*_):                      # "my picture" picked with none to use: ask for one
+        if background.get() == "custom" and not on_stick["background"] and not chosen.get("background"):
+            choose("background")
+            if not chosen.get("background"):
+                background.set("theme")
+        if splashes[splash.get()] == "custom" and not on_stick["splash"] and not chosen.get("splash"):
+            choose("splash")
+            if not chosen.get("splash"):
+                splash.set(next(k for k, v in splashes.items() if v == "auto"))
+        refresh()
+
+    def reset():
+        theme.set(next(k for k, t in themes.items() if t["id"] == "default"))
+        icons.set(next(k for k, p in packs.items() if p["id"] == "logos"))
+        background.set("theme")
+        splash.set(next(k for k, v in splashes.items() if v == "auto"))
+        chosen.clear()
+        refresh()
+
+    def apply():
+        try:
+            job = changes()
+        except cr.RescueError as e:
+            status.config(text=str(e))
+            return
+        if not job:
+            return
+        for b in (b_apply, b_reset):
+            b.state(["disabled"])
+        status.config(text="Changing the stick's look…")
+
+        def work():
+            try:
+                (new_look, pictures), darken = job
+                changed = cr.set_look(cfg, mnt, new_look, pictures, darken)
+                q.put(("applied", "The stick's look is changed." if changed else "The stick already looks like this."))
+            except Exception as e:  # noqa: BLE001
+                q.put(("failed", str(e)))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def pump():
+        try:
+            while True:
+                kind, text = q.get_nowait()
+                if kind == "preview":
+                    shown["image"] = tk.PhotoImage(master=win, file=text)   # kept: Tk drops unreferenced images
+                    preview.config(image=shown["image"], text="")
+                elif kind == "nopreview":
+                    preview.config(image="", text=f"No preview: {text}")
+                else:
+                    if kind == "applied":      # the pictures chosen here are on the stick now
+                        for what in chosen:
+                            on_stick[what] = True
+                        chosen.clear()
+                        refresh()
+                    status.config(text=text if kind == "applied" else f"✗ {text}")
+                    for b in (b_apply, b_reset):
+                        b.state(["!disabled"])
+        except queue.Empty:
+            pass
+        win.after(100, pump)
+
+    b_bg.config(command=lambda: choose("background"))
+    b_sp.config(command=lambda: choose("splash"))
+    b_reset.config(command=reset)
+    b_apply.config(command=apply)
+    scale.config(command=refresh)
+    c_theme.bind("<<ComboboxSelected>>", refresh)
+    c_icons.bind("<<ComboboxSelected>>", refresh)
+    c_splash.bind("<<ComboboxSelected>>", need_picture)
+    background.trace_add("write", need_picture)
+    win.bind("<Destroy>", lambda e: wanted.put(None) if e.widget is win else None)
+    threading.Thread(target=draw_previews, daemon=True).start()
+    refresh()
+    win.after(100, pump)
+    if selftest:
+        win.after(6000, win.destroy)
+    if not parent:
+        win.mainloop()
+    return win
 
 
 # ── Command line ───────────────────────────────────────────────────────────
@@ -614,6 +877,16 @@ def cli(argv: list[str]) -> int:
     ap.add_argument("--pack", metavar="ZIP", help="with --install / --update / --unpack-to: use this pack, offline")
     ap.add_argument("--unpack-to", metavar="DIR", help="fill a folder from --pack (with --init for a new one)")
     ap.add_argument("--init", action="store_true")
+    ap.add_argument("--look", metavar="DRIVE", help="open the Look window for a stick (e.g. E:\\); with the "
+                                                   "options below, change its look instead")
+    ap.add_argument("--theme", metavar="ID", help="with --look: a preset theme, default, or off (Ventoy's own look)")
+    ap.add_argument("--icons", metavar="ID", help="with --look: an icon pack, logos, or off")
+    ap.add_argument("--background", metavar="PICTURE", help="with --look: your own background, or theme")
+    ap.add_argument("--dim", type=int, default=0, metavar="PERCENT", help="with --background: darken it (0-90)")
+    ap.add_argument("--splash", metavar="PICTURE", help="with --look: your own splash; theme, auto, or off")
+    ap.add_argument("--reset-look", action="store_true", help="with --look: back to the default look")
+    ap.add_argument("--preview", metavar="FILE", help="with --look: only write a picture of how it would look")
+    ap.add_argument("--selftest-look", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--yes", action="store_true", help="confirm --install")
     ap.add_argument("--mbr", action="store_true", help="MBR instead of GPT")
     ap.add_argument("--no-secure-boot", action="store_true")
@@ -628,6 +901,14 @@ def cli(argv: list[str]) -> int:
     try:
         if a.selftest_gui:
             return gui(selftest=True)
+        if a.look:
+            asked = a.theme or a.icons or a.background or a.splash or a.reset_look or a.preview
+            if not asked:
+                look_window(Path(a.look), selftest=a.selftest_look)
+                return 0
+            return cr.cmd_theme(config(), ns(stick=a.look, theme=a.theme, icons=a.icons, background=a.background,
+                                             dim=a.dim, splash=a.splash, reset=a.reset_look, preview=a.preview,
+                                             menu=False, json=False))
         if a.list:
             disks = all_disks() if a.all else usb_disks()
             print(json.dumps(disks, indent=2))

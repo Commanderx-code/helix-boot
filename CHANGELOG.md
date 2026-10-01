@@ -13,6 +13,10 @@ tagged releases also publish the Windows app.
   `byo/icon-packs/`), your own background (`--dim` darkens it) and splash, or
   turns the icons or the whole theme off for Ventoy's own look. The choice is
   kept on the stick, so a refresh doesn't undo it, and packs carry the presets.
+  `./theme.sh --menu` (and `HelixBoot.sh`'s menu) asks with numbered lists, the
+  Windows app has a **Look…** window with a live preview (`HelixBoot.exe --look`
+  from the command line), and `--preview FILE` draws the menu without changing
+  the stick. `HelixBoot.exe` now includes Pillow for that.
 - **A splash before the Ventoy menu**: the HELIXBOOT logo over the theme's
   artwork for about a second with a loading bar filling up, or your own
   `byo/splash.png`; `splash_seconds` sets how long. The bar's frames are made

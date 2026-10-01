@@ -715,7 +715,7 @@ class TestFetchAndSync(Base):
 
     def look(self, **kw):
         args = dict(stick=str(self.stick), theme=None, icons=None, background=None, dim=0, splash=None,
-                    reset=False, json=False)
+                    reset=False, json=False, menu=False, preview=None)
         args.update(kw)
         return self.run_quiet(cr.cmd_theme, self.cfg, type("A", (), args)())
 
@@ -839,6 +839,19 @@ class TestFetchAndSync(Base):
             self.assertEqual(im.size, (1920, 1080))
         self.look(background="theme")
         self.assertEqual((built / "background.png").read_bytes(), b"night background")
+        self.look(background="custom")                                   # the one already on the stick again
+        with Image.open(built / "background.png") as im:
+            self.assertEqual(im.size, (1920, 1080))
+        with self.assertRaisesRegex(cr.RescueError, "no splash picture of yours"):
+            self.look(splash="custom")
+        preview = self.tmp / "preview.png"
+        before = (self.stick / cr.LOOK_FILE).read_text()
+        rc, out = self.look(theme="off", preview=str(preview))           # a picture only: the stick is untouched
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((self.stick / cr.LOOK_FILE).read_text(), before)
+        self.look(theme="night", preview=str(preview))
+        with Image.open(preview) as im:
+            self.assertEqual(im.size, (960, 540))
         with self.assertRaisesRegex(cr.RescueError, "neither a picture file"):
             self.look(background=str(self.tmp / "missing.png"))
 

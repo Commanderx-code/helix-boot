@@ -32,7 +32,7 @@ jobs:
 
       - name: Build HelixBoot.exe
         run: |
-          pip install --disable-pip-version-check pyinstaller
+          pip install --disable-pip-version-check pyinstaller pillow   # Pillow: the Look window's previews
           pyinstaller --noconfirm windows/HelixBoot.spec
 
       - name: Smoke test the real .exe
@@ -66,6 +66,19 @@ jobs:
           }
           Get-ChildItem -Recurse "$env:RUNNER_TEMP\stick\ISO" | Select-Object FullName, Length
 
+          # The stick's look: a preset with the icons off, a preview drawn by the bundled Pillow, the window
+          Run "--look $env:RUNNER_TEMP\stick --theme midnight --icons off"
+          $theme = Get-Content -Raw "$env:RUNNER_TEMP\stick\ventoy\theme\theme.txt"
+          if ($theme -notmatch "Midnight" -or $theme -notmatch "icon_width = 0") { throw "the look wasn't applied" }
+          if (Test-Path "$env:RUNNER_TEMP\stick\ventoy\theme\icons") { throw "icons are still on the stick" }
+          if (-not (Test-Path "$env:RUNNER_TEMP\stick\ventoy\theme\splash\20.jpg")) { throw "no loading bar: Pillow isn't in the .exe" }
+          Run "--look $env:RUNNER_TEMP\stick --theme ember --preview $env:RUNNER_TEMP\preview.png"
+          if ((Get-Item "$env:RUNNER_TEMP\preview.png").Length -lt 20000) { throw "the preview wasn't drawn" }
+          Run "--look $env:RUNNER_TEMP\stick --selftest-look"   # opens the Look window, closes it
+          Run "--look $env:RUNNER_TEMP\stick --theme off"
+          if (Test-Path "$env:RUNNER_TEMP\stick\ventoy\theme\theme.txt") { throw "the theme is still on the stick" }
+          Run "--look $env:RUNNER_TEMP\stick --reset-look"
+
           # A pack made from that cache, used by the real .exe: fills a stick offline, Ventoy included
           $env:HELIX_CACHE = "$env:LOCALAPPDATA\HelixBoot\cache"
           $env:PYTHONIOENCODING = "utf-8"
@@ -93,6 +106,14 @@ jobs:
           if (-not (Select-String -Quiet -Path "$dir\helix-boot.log" -Pattern "Pack found beside the app")) {
             throw "the window didn't pick up the pack beside it"
           }
+
+      - name: A picture of the Look preview
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: look-preview
+          path: ${{ runner.temp }}/preview.png
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:

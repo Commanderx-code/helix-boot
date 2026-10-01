@@ -18,8 +18,11 @@ To keep Ventoy's stock appearance, set `theme = ""` in `[settings]` in
 
 `./theme.sh` (or `helix theme <mount point>`) switches a finished stick between
 the presets, icon packs, your own background and splash, or no theme at all;
-`./theme.sh --help` lists the options. It works on the stick alone, so it needs
-no downloads and no rebuild:
+`./theme.sh --help` lists the options, `./theme.sh --menu` asks instead, and the
+Windows app has a **Look…** window with the same choices. It works on the stick
+alone, so it needs no downloads and no rebuild. The preview (`--preview FILE`,
+`p` in the menu, the picture in the Look window) is drawn with Pillow from the
+same files the stick would get; it is a close sketch, not a boot capture.
 
 | On the stick | What it is |
 |---|---|

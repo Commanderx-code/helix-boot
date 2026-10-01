@@ -43,7 +43,8 @@ class TestLinuxInstaller(unittest.TestCase):
         apps = list((self.home / "data/helix-boot/app").iterdir())
         self.assertEqual(len(apps), 1)
         self.assertTrue(apps[0].name.startswith(f"{version}-"))
-        for f in ("helix", "install.sh", "refresh.sh", "scripts/common.sh", "tools.toml", "theme/theme.txt",
+        for f in ("helix", "install.sh", "refresh.sh", "theme.sh", "scripts/common.sh", "tools.toml", "theme/theme.txt",
+                  "theme/presets/midnight/theme.txt", "theme/icon-packs/badges/pack.toml",
                   "pe/launcher/HelixApps.cmd", "pe/launcher/FindStick.ps1", "pe/lazarus/LazarusLauncher.ps1"):
             self.assertTrue((apps[0] / f).is_file(), f)
         self.assertTrue(os.access(apps[0] / "install.sh", os.X_OK))
@@ -61,6 +62,9 @@ class TestLinuxInstaller(unittest.TestCase):
         r = self.run_it("install", "--help")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("Usage: ./install.sh", r.stdout)
+        r = self.run_it("theme", "--help")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Usage: ./theme.sh", r.stdout)
         r = self.run_it("bogus")
         self.assertEqual(r.returncode, 1)
         self.assertIn("unknown command", r.stderr)
@@ -70,7 +74,8 @@ class TestLinuxInstaller(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue("HELIX BOOT" in r.stdout or "██╗" in r.stdout, r.stdout)   # logo, or its plain form
         self.assertEqual(r.stdout.count("RECOVERY") + r.stdout.count("HELIX BOOT"), 1, "the banner, once")
-        for line in ("Install on a new USB stick", "Update a Helix Boot stick", "Check for tool updates"):
+        for line in ("Install on a new USB stick", "Update a Helix Boot stick", "Change a stick's look",
+                     "Check for tool updates"):
             self.assertIn(line, r.stdout)
 
     def test_a_changed_file_is_refused(self):

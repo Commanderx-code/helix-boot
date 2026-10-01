@@ -2158,69 +2158,59 @@ def _look_choices(mnt: Path) -> tuple[dict[str, dict], dict[str, dict]]:
     return themes, packs
 
 
-def _apply_look(cfg: Config, mnt: Path) -> None:
-    """Build ventoy/theme and ventoy/ventoy.json from the theme on the stick and its look."""
-    src, base = mnt / THEME_SRC, mnt / BASE_JSON
-    if not base.is_file():
-        return                     # filled by an older Helix Boot or pack: the menu is as it was written
-    doc = json.loads(base.read_text(encoding="utf-8"))
-    look = _look(mnt)
+def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = True) -> dict:
+    """Build the theme folder for a look into `new` (emptied first), from the theme on the stick;
+    return the boot menu (ventoy.json) that goes with it."""
+    src = mnt / THEME_SRC
+    doc = json.loads((mnt / BASE_JSON).read_text(encoding="utf-8"))
     themes, packs = _look_choices(mnt)
     theme = look["theme"] if look["theme"] in themes else "default"
     themed = theme != "off" and (src / "theme.txt").is_file()
     preset = src / "presets" / theme if themed and theme != "default" else None
     icons = look["icons"] if look["icons"] in packs else "logos"
-    out = mnt / "ventoy" / "theme"
-    if (src / "theme.txt").is_file():
-        new = out.with_name("theme.helix-new")
-        shutil.rmtree(new, ignore_errors=True)
-        new.mkdir(parents=True)
+    shutil.rmtree(new, ignore_errors=True)
+    new.mkdir(parents=True)
 
-        def lay(folder: Path, dest: Path, skip: tuple[str, ...] = ()) -> None:
-            for f in sorted(folder.rglob("*")):
-                rel = f.relative_to(folder)
-                if f.is_file() and rel.parts[0] not in skip:
-                    (dest / rel).parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(f, dest / rel)
+    def lay(folder: Path, dest: Path, skip: tuple[str, ...] = ()) -> None:
+        for f in sorted(folder.rglob("*")):
+            rel = f.relative_to(folder)
+            if f.is_file() and rel.parts[0] not in skip:
+                (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, dest / rel)
 
-        apart = ("presets", "icon-packs", "mine", "splash", "icons", "splash.png", "preset.toml", "pack.toml")
-        if themed:
-            for layer in (src, preset):
-                if layer:
-                    lay(layer, new, skip=apart)
-            if look["background"] == "custom" and (mnt / LOOK_DIR / "background.png").is_file():
-                name = re.search(r'^desktop-image:\s*"([^"/\\]+)"', (new / "theme.txt").read_text(encoding="utf-8"), re.M)
-                shutil.copy2(mnt / LOOK_DIR / "background.png", new / (name.group(1) if name else "background.png"))
-            if icons == "off":      # no gap where the icons were
-                text = (new / "theme.txt").read_text(encoding="utf-8")
-                text = re.sub(r"^(\s*(?:icon_width|icon_height|item_icon_space)\s*=\s*)\d+", r"\g<1>0", text, flags=re.M)
-                (new / "theme.txt").write_text(text, encoding="utf-8")
-            else:                   # later layers win: the theme's, the preset's, your own, the pack's
-                for layer in (src / "icons", preset / "icons" if preset else None, src / "mine" / "icons",
-                              src / "icon-packs" / icons if icons != "logos" else None):
-                    if layer and layer.is_dir():
-                        lay(layer, new / "icons", skip=apart)
-        # the splash: your own (set on the stick, or byo/splash.png), else the theme's
-        mine, custom = src / "mine" / "splash.png", mnt / LOOK_DIR / "splash.png"
-        own = preset / "splash.png" if preset and (preset / "splash.png").is_file() else src / "splash.png"
-        yours = custom if look["splash"] == "custom" and custom.is_file() else mine if mine.is_file() else None
-        pick = None if look["splash"] == "off" else own if look["splash"] == "theme" else yours or own
-        if pick and pick.is_file() and (themed or pick != own):   # no theme: no splash of its either
-            shutil.copy2(pick, new / "splash.png")
-            bar = _preset_meta(preset or src)["bar"] if pick == own else SPLASH_BAR
-            key = _splash_key(pick, bar)
-            ready = src / "splash"
-            if not ((ready / "for.txt").is_file() and (ready / "for.txt").read_text(encoding="utf-8").strip() == key):
-                ready = _splash_frames(cfg, pick, bar)
-            if ready:
-                (new / "splash").mkdir()
-                for f in sorted(ready.glob("*.jpg")):
-                    shutil.copy2(f, new / "splash" / f.name)
-        shutil.rmtree(out, ignore_errors=True)
-        if any(new.iterdir()):
-            os.replace(new, out)
-        else:
-            new.rmdir()
+    apart = ("presets", "icon-packs", "mine", "splash", "icons", "splash.png", "preset.toml", "pack.toml")
+    if themed:
+        for layer in (src, preset):
+            if layer:
+                lay(layer, new, skip=apart)
+        if look["background"] == "custom" and (mnt / LOOK_DIR / "background.png").is_file():
+            shutil.copy2(mnt / LOOK_DIR / "background.png", new / _desktop_image(new))
+        if icons == "off":      # no gap where the icons were
+            text = (new / "theme.txt").read_text(encoding="utf-8")
+            text = re.sub(r"^(\s*(?:icon_width|icon_height|item_icon_space)\s*=\s*)\d+", r"\g<1>0", text, flags=re.M)
+            (new / "theme.txt").write_text(text, encoding="utf-8")
+        else:                   # later layers win: the theme's, the preset's, your own, the pack's
+            for layer in (src / "icons", preset / "icons" if preset else None, src / "mine" / "icons",
+                          src / "icon-packs" / icons if icons != "logos" else None):
+                if layer and layer.is_dir():
+                    lay(layer, new / "icons", skip=apart)
+    # the splash: your own (set on the stick, or byo/splash.png), else the theme's
+    mine, custom = src / "mine" / "splash.png", mnt / LOOK_DIR / "splash.png"
+    own = preset / "splash.png" if preset and (preset / "splash.png").is_file() else src / "splash.png"
+    yours = custom if look["splash"] == "custom" and custom.is_file() else mine if mine.is_file() else None
+    pick = None if look["splash"] == "off" else own if look["splash"] == "theme" else yours or own
+    if pick and pick.is_file() and (themed or pick != own):   # no theme: no splash of its either
+        shutil.copy2(pick, new / "splash.png")
+        bar = _preset_meta(preset or src)["bar"] if pick == own else SPLASH_BAR
+        key = _splash_key(pick, bar) if frames else ""
+        ready = src / "splash" if frames else None
+        if frames and not ((ready / "for.txt").is_file()
+                           and (ready / "for.txt").read_text(encoding="utf-8").strip() == key):
+            ready = _splash_frames(cfg, pick, bar)
+        if ready:
+            (new / "splash").mkdir()
+            for f in sorted(ready.glob("*.jpg")):
+                shutil.copy2(f, new / "splash" / f.name)
     if "theme" in doc and not themed:           # Ventoy's own look, and where its tips go there
         del doc["theme"]
         if "menu_tip" in doc:
@@ -2230,12 +2220,34 @@ def _apply_look(cfg: Config, mnt: Path) -> None:
         doc["theme"]["ventoy_color"] = muted
         if "menu_tip" in doc:
             doc["menu_tip"]["color"] = muted
-    have = {f.stem for f in (out / "icons").glob("*.png")} if themed and icons != "off" else set()
+    have = {f.stem for f in (new / "icons").glob("*.png")}
     if "menu_class" in doc:
         doc["menu_class"] = [c for c in doc["menu_class"] if c.get("class") in have]
         if not doc["menu_class"]:
             del doc["menu_class"]
+    return doc
+
+
+def _desktop_image(theme: Path) -> str:
+    """The background's file name in a theme folder, from its theme.txt."""
+    name = re.search(r'^desktop-image:\s*"([^"/\\]+)"', (theme / "theme.txt").read_text(encoding="utf-8"), re.M)
+    return name.group(1) if name else "background.png"
+
+
+def _apply_look(cfg: Config, mnt: Path) -> None:
+    """Build ventoy/theme and ventoy/ventoy.json from the theme on the stick and its look."""
+    if not (mnt / BASE_JSON).is_file():
+        return                     # filled by an older Helix Boot or pack: the menu is as it was written
+    out = mnt / "ventoy" / "theme"
     (mnt / "ventoy").mkdir(exist_ok=True)
+    new = out.with_name("theme.helix-new")
+    doc = _build_look(cfg, mnt, _look(mnt), new)
+    if any(new.iterdir()) or (mnt / THEME_SRC / "theme.txt").is_file():
+        shutil.rmtree(out, ignore_errors=True)
+    if any(new.iterdir()):
+        os.replace(new, out)
+    else:                          # no theme on the stick, or it and the splash are off
+        new.rmdir()
     (mnt / "ventoy" / "ventoy.json").write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
@@ -2263,81 +2275,293 @@ def _own_picture(src: Path, dst: Path, dim: int = 0) -> None:
     os.replace(tmp, dst)
 
 
-def cmd_theme(cfg: Config, args) -> int:
-    """Show or change a stick's look: a preset theme (or none), an icon pack (or none), your own
-    background and splash. The choice is kept on the stick, so a refresh doesn't undo it."""
-    mnt = Path(args.stick).expanduser().resolve()
-    state_dir, state = _open_stick(mnt, init=False)
+def look_report(mnt: Path, look: dict | None = None) -> dict:
+    """A stick's look and what it can be changed to, for `helix theme --json` and the apps."""
+    themes, packs = _look_choices(mnt)
+    return {
+        "look": look or _look(mnt),
+        "themes": [{"id": k, **{f: v[f] for f in ("title", "description")}} for k, v in themes.items()],
+        "icon_packs": [{"id": k, **v} for k, v in packs.items()],
+        "own_splash": (mnt / THEME_SRC / "mine" / "splash.png").is_file(),
+        "custom": {w: (mnt / LOOK_DIR / f"{w}.png").is_file() for w in ("background", "splash")},
+    }
+
+
+def look_changes(mnt: Path, theme=None, icons=None, background=None, splash=None, dim: int = 0,
+                 reset: bool = False) -> tuple[dict, dict[str, Path]]:
+    """What the options ask for: the new look, and the pictures (background / splash) to take in."""
     if not (mnt / BASE_JSON).is_file():
         raise RescueError("this stick was filled by an older Helix Boot. Refresh it once with this "
                           "version (./refresh.sh), then choose its look.")
     themes, packs = _look_choices(mnt)
-    before = _look(mnt)
-    look = dict(LOOK_DEFAULT if args.reset else before)
-    if args.theme:
-        if args.theme not in themes:
-            raise RescueError(f"no theme called {args.theme!r} on this stick. There are: {', '.join(themes)}")
-        look["theme"] = args.theme
-    if args.icons:
-        if args.icons not in packs:
-            raise RescueError(f"no icon pack called {args.icons!r} on this stick. There are: {', '.join(packs)}")
-        look["icons"] = args.icons
-    if not 0 <= args.dim <= 90:
+    look = dict(LOOK_DEFAULT if reset else _look(mnt))
+    if theme:
+        if theme not in themes:
+            raise RescueError(f"no theme called {theme!r} on this stick. There are: {', '.join(themes)}")
+        look["theme"] = theme
+    if icons:
+        if icons not in packs:
+            raise RescueError(f"no icon pack called {icons!r} on this stick. There are: {', '.join(packs)}")
+        look["icons"] = icons
+    if not 0 <= dim <= 90:
         raise RescueError("--dim is a percentage from 0 to 90")
-    pictures = []
-    for what, value, kept in (("background", args.background, ("theme",)),
-                              ("splash", args.splash, ("auto", "theme", "off"))):
+    pictures: dict[str, Path] = {}
+    for what, value, kept in (("background", background, ("theme",)), ("splash", splash, ("auto", "theme", "off"))):
         if value in kept:
             look[what] = value
+        elif value == "custom":         # the picture of yours already on the stick
+            if not (mnt / LOOK_DIR / f"{what}.png").is_file():
+                raise RescueError(f"--{what} custom: the stick has no {what} picture of yours yet; give a file")
+            look[what] = "custom"
         elif value:
             picture = Path(value).expanduser()
             if not picture.is_file():
                 raise RescueError(f"--{what}: {value} is neither a picture file nor one of: {', '.join(kept)}")
-            pictures.append((what, picture))
+            pictures[what] = picture
             look[what] = "custom"
-    if args.dim and not any(what == "background" for what, _ in pictures):
+    if dim and "background" not in pictures:
         raise RescueError("--dim goes with --background PICTURE")
-    changed = look != before or bool(pictures)
-    if changed:
-        for what, picture in pictures:
-            _own_picture(picture, mnt / LOOK_DIR / f"{what}.png", args.dim if what == "background" else 0)
-        vjson = _keep_edited_json(mnt, state)
-        (mnt / STATE_DIR).mkdir(exist_ok=True)
-        (mnt / LOOK_FILE).write_text(json.dumps(look, indent=2) + "\n", encoding="utf-8")
-        _apply_look(cfg, mnt)
-        if (state_dir / "state.json").is_file():       # the rewritten menu is ours, not a hand edit
-            state["ventoy_json_sha"] = file_hash(vjson)
-            (state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-        _flush_volume(mnt)
-    src = mnt / THEME_SRC
-    report = {
-        "look": look, "changed": changed,
-        "themes": [{"id": k, **{f: v[f] for f in ("title", "description")}} for k, v in themes.items()],
-        "icon_packs": [{"id": k, **v} for k, v in packs.items()],
-        "own_splash": (src / "mine" / "splash.png").is_file(),
-        "custom": {w: (mnt / LOOK_DIR / f"{w}.png").is_file() for w in ("background", "splash")},
-    }
+    return look, pictures
+
+
+def set_look(cfg: Config, mnt: Path, look: dict, pictures: dict[str, Path] | None = None, dim: int = 0) -> bool:
+    """Put a look on the stick (False: it already has it). The choice is kept there."""
+    pictures = pictures or {}
+    state_dir, state = _open_stick(mnt, init=False)
+    if look == _look(mnt) and not pictures:
+        return False
+    for what, picture in pictures.items():
+        _own_picture(picture, mnt / LOOK_DIR / f"{what}.png", dim if what == "background" else 0)
+    vjson = _keep_edited_json(mnt, state)
+    (mnt / STATE_DIR).mkdir(exist_ok=True)
+    (mnt / LOOK_FILE).write_text(json.dumps(look, indent=2) + "\n", encoding="utf-8")
+    _apply_look(cfg, mnt)
+    if (state_dir / "state.json").is_file():       # the rewritten menu is ours, not a hand edit
+        state["ventoy_json_sha"] = file_hash(vjson)
+        (state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    _flush_volume(mnt)
+    return True
+
+
+def look_preview(cfg: Config, mnt: Path, look: dict, out: Path, pictures: dict[str, Path] | None = None,
+                 dim: int = 0, size: tuple[int, int] = (960, 540)) -> Path:
+    """Draw how the boot menu would look with `look` (and a background picture not yet taken in),
+    without touching the stick's menu. A close sketch from the real theme files, not a boot
+    capture: Ventoy draws the real thing. Needs Pillow."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont, ImageOps
+    except ImportError:
+        raise RescueError("a preview needs Pillow (python-pillow / pip install pillow)") from None
+    W, H = 1920, 1080
+
+    def font(px: int, bold: bool = False):
+        for name in (("DejaVuSans-Bold.ttf", "segoeuib.ttf", "arialbd.ttf") if bold
+                     else ("DejaVuSans.ttf", "segoeui.ttf", "arial.ttf")):
+            try:
+                return ImageFont.truetype(name, px)
+            except OSError:
+                continue
+        try:
+            return ImageFont.load_default(px)
+        except TypeError:           # an older Pillow: its one small built-in font
+            return ImageFont.load_default()
+
+    work = cfg.cache / "look-preview"
+    doc = _build_look(cfg, mnt, look, work, frames=False)
+    rows = [a for a in doc.get("menu_alias", []) if "dir" in a] or doc.get("menu_alias", [])
+    tips = (doc.get("menu_tip") or {}).get("tips") or []
+    try:
+        if "theme" not in doc:      # Ventoy's own look: light sky, grey box, plain text
+            img = Image.new("RGB", (W, H), (236, 238, 242)).convert("RGBA")
+            d = ImageDraw.Draw(img)
+            d.text((W // 2, 150), "Ventoy", font=font(190, True), fill=(88, 166, 255), anchor="mm")
+            d.rectangle((192, 440, 1728, 940), fill=(122, 126, 132))
+            d.rectangle((250, 468, 1670, 500), fill=(84, 142, 196))
+            for i, a in enumerate(rows[:14]):
+                d.text((310, 484 + i * 30), a["alias"], font=font(22), fill=(232, 236, 240), anchor="lm")
+            if tips:
+                d.text((192, 864 + 90), tips[0]["tip"], font=font(20), fill=(127, 180, 255), anchor="lm")
+            d.text((96, 1036), "1.1.x UEFI   www.ventoy.net   L:Language  F1:Help  F2:Browse  F3:TreeView",
+                   font=font(20), fill=(60, 110, 200), anchor="lm")
+        else:
+            text = (work / "theme.txt").read_text(encoding="utf-8")
+            menu = re.search(r"\+ boot_menu \{(.*?)\}", text, re.S)
+            props = {k: quoted or bare.strip() for k, quoted, bare in re.findall(     # "#rrggbb" isn't a comment
+                r'^\s*(\w+)\s*=\s*(?:"([^"\n]*)"|([^#\n]*))', menu.group(1) if menu else "", re.M)}
+
+            def px(key: str, full: int, default: str) -> int:
+                v = props.get(key, default).strip()
+                return round(float(v[:-1]) * full / 100) if v.endswith("%") else int(v)
+
+            def box(prefix: str, x: int, y: int, w: int, h: int) -> None:   # GRUB's nine-slice boxes
+                parts = {}
+                for part in ("nw", "n", "ne", "w", "c", "e", "sw", "s", "se"):
+                    f = work / f"{prefix}_{part}.png"
+                    if not f.is_file():
+                        return
+                    parts[part] = Image.open(f).convert("RGBA")
+                (left, top), (right, bottom) = parts["nw"].size, parts["se"].size
+                xs, ys = (x, x + left, x + w - right), (y, y + top, y + h - bottom)
+                ws, hs = (left, w - left - right, right), (top, h - top - bottom, bottom)
+                for r, names in enumerate((("nw", "n", "ne"), ("w", "c", "e"), ("sw", "s", "se"))):
+                    for c, part in enumerate(names):
+                        if ws[c] > 0 and hs[r] > 0:
+                            img.alpha_composite(parts[part].resize((ws[c], hs[r])), (xs[c], ys[r]))
+
+            picture = (pictures or {}).get("background")
+            with Image.open(picture or work / _desktop_image(work)) as im:
+                img = ImageOps.fit(im.convert("RGB"), (W, H), method=Image.Resampling.LANCZOS)
+            if picture and dim:
+                img = Image.blend(img, Image.new("RGB", img.size, (0, 0, 0)), dim / 100)
+            img = img.convert("RGBA")
+            x, y, w, h = px("left", W, "5%"), px("top", H, "20%"), px("width", W, "49%"), px("height", H, "60%")
+            box("menu", x, y, w, h)
+            pad, icon, gap = px("item_padding", W, "6"), px("icon_width", W, "40"), px("item_icon_space", W, "16")
+            row_h = px("item_height", H, "44")
+            step = row_h + px("item_spacing", H, "8")
+            classes = {c["dir"]: c["class"] for c in doc.get("menu_class", []) if "dir" in c}
+            d = ImageDraw.Draw(img)
+            for i, a in enumerate(rows[:max(1, (h - 16) // step)]):
+                ry = y + 8 + i * step
+                if i == 0:
+                    box("select", x + 8, ry, w - 24, row_h)
+                f = work / "icons" / f"{classes.get(a.get('dir'), '')}.png"
+                if icon and f.is_file():
+                    with Image.open(f) as im:
+                        img.alpha_composite(im.convert("RGBA").resize((icon, icon)), (x + 8 + pad, ry + (row_h - icon) // 2))
+                d.text((x + 8 + pad + (icon + gap if icon else 0), ry + row_h // 2), a["alias"],
+                       font=font(22, i == 0), fill=props.get("selected_item_color" if i == 0 else "item_color", "#ffffff"),
+                       anchor="lm")
+            muted = doc["theme"].get("ventoy_color", "#baabd3")
+            if tips:
+                d.text((W * .05, H * .82 + 10), tips[0]["tip"], font=font(16), fill=muted, anchor="lm")
+            d.text((W * .05, H * .91 + 10), "L:Language  F1:Help  F2:Browse  F3:TreeView  F4:Localboot  F5:Tools  F6:ExMenu",
+                   font=font(16), fill=muted, anchor="lm")
+            d.text((W * .05, H * .94 + 10), "Enter  open      Esc  back", font=font(16), fill=muted, anchor="lm")
+            d.text((W * .78, H * .94 + 10), "1.1.x UEFI  www.ventoy.net", font=font(16), fill=muted, anchor="lm")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        img.convert("RGB").resize(size, Image.Resampling.LANCZOS).save(out)
+    except OSError as e:
+        raise RescueError(f"couldn't draw the preview: {e}") from None
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return out
+
+
+def _print_look(mnt: Path, report: dict, numbered: bool = False) -> None:
+    look = report["look"]
+    themes = {t["id"]: t for t in report["themes"]}
+    packs = {p["id"]: p for p in report["icon_packs"]}
+    stock = look["theme"] == "off"       # Ventoy's own look has no icons or background of ours
+    splash = {"auto": "your own (byo/splash.png)" if report["own_splash"] else "the theme's",
+              "theme": "the theme's", "custom": "your picture", "off": "none"}[look["splash"]]
+    head(f"The look of {mnt}")
+    for n, (label, value) in enumerate((
+            ("theme", themes.get(look["theme"], themes["default"])["title"]),
+            ("icons", "none (no theme)" if stock else packs.get(look["icons"], packs["logos"])["title"]),
+            ("background", "Ventoy's" if stock else "your picture" if look["background"] == "custom" else "the theme's"),
+            ("splash", "none (no theme)" if stock and splash == "the theme's" else splash)), 1):
+        print(f"  {str(n) + ')  ' if numbered else ''}{label:<11} {value}")
+
+
+def _look_menu(cfg: Config, mnt: Path) -> int:
+    """Change the look by picking from numbered lists, until done."""
+    def ask(prompt: str) -> str:
+        try:
+            return input(f"  {prompt} ").strip()
+        except EOFError:
+            return "q"
+
+    def choose(title: str, options: list[tuple[str, str]]) -> str | None:
+        head(title)
+        for n, (_, text) in enumerate(options, 1):
+            print(f"  {n})  {text}")
+        got = ask("Which one? (Enter: leave it)")
+        return options[int(got) - 1][0] if got.isdigit() and 0 < int(got) <= len(options) else None
+
+    def picture(what: str) -> str | None:
+        got = ask(f"The picture to use as the {what} (a file's path; Enter: leave it):").strip("'\"")
+        if got and not Path(got).expanduser().is_file():
+            warn(f"{got} isn't a file")
+            return None
+        return got or None
+
+    while True:
+        report = look_report(mnt)
+        _print_look(mnt, report, numbered=True)
+        print("  p)  preview it        r)  back to the default look        q)  done")
+        pick = ask("Change which?").lower()
+        change: dict = {}
+        if pick in ("q", ""):
+            return 0
+        if pick == "1":
+            change["theme"] = choose("Themes", [(t["id"], f"{t['title']}" + (f": {t['description']}" if t["description"] else ""))
+                                                for t in report["themes"]])
+        elif pick == "2":
+            change["icons"] = choose("Icon packs", [(p["id"], f"{p['title']}: {p['description']}") for p in report["icon_packs"]])
+        elif pick == "3":
+            got = choose("Background", [("theme", "The theme's"), ("picture", "Your own picture…")])
+            change["background"] = picture("background") if got == "picture" else got
+            if got == "picture" and change["background"]:
+                dim = ask("Darken it by how much, 0-90 %? (Enter: 40, so the menu stays readable)") or "40"
+                change["dim"] = int(dim) if dim.isdigit() else 40
+        elif pick == "4":
+            got = choose("Splash, the picture before the menu", [
+                ("auto", "Yours from byo/splash.png, else the theme's"), ("theme", "The theme's"),
+                ("picture", "Your own picture…"), ("off", "None")])
+            change["splash"] = picture("splash") if got == "picture" else got
+        elif pick == "r":
+            change["reset"] = True
+        elif pick == "p":
+            try:
+                shown = look_preview(cfg, mnt, report["look"], cfg.cache / "look-preview.png")
+            except RescueError as e:
+                warn(str(e))
+                continue
+            ok(f"Preview: {shown}")
+            opener = shutil.which("xdg-open") or shutil.which("open")
+            if hasattr(os, "startfile"):
+                os.startfile(shown)  # noqa: S606
+            elif opener:
+                subprocess.Popen([opener, str(shown)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            continue
+        change = {k: v for k, v in change.items() if v and (k != "dim" or change.get("background"))}
+        if not change:
+            continue
+        try:
+            look, pictures = look_changes(mnt, **change)
+            if set_look(cfg, mnt, look, pictures, change.get("dim", 0)):
+                ok("Look changed")
+        except RescueError as e:
+            warn(str(e))
+
+
+def cmd_theme(cfg: Config, args) -> int:
+    """Show or change a stick's look: a preset theme (or none), an icon pack (or none), your own
+    background and splash. The choice is kept on the stick, so a refresh doesn't undo it."""
+    mnt = Path(args.stick).expanduser().resolve()
+    _open_stick(mnt, init=False)
+    look, pictures = look_changes(mnt, args.theme, args.icons, args.background, args.splash, args.dim, args.reset)
+    if args.menu:
+        return _look_menu(cfg, mnt)
+    if args.preview:                    # a picture of it; the stick stays as it is
+        shown = look_preview(cfg, mnt, look, Path(args.preview).expanduser(), pictures, args.dim)
+        ok(f"Preview written: {shown}")
+        return 0
+    changed = set_look(cfg, mnt, look, pictures, args.dim)
+    report = {**look_report(mnt, look), "changed": changed}
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
     if changed:
         ok(f"Look changed on {mnt}")
-    head(f"The look of {mnt}")
-    splash = {"auto": "your own (byo/splash.png)" if report["own_splash"] else "the theme's",
-              "theme": "the theme's", "custom": "your picture", "off": "none"}[look["splash"]]
-    stock = look["theme"] == "off"       # Ventoy's own look has no icons or background of ours
-    for label, value in (("theme", themes.get(look["theme"], themes["default"])["title"]),
-                         ("icons", "none (no theme)" if stock else packs.get(look["icons"], packs["logos"])["title"]),
-                         ("background", "Ventoy's" if stock else
-                          "your picture" if look["background"] == "custom" else "the theme's"),
-                         ("splash", "none (no theme)" if stock and splash == "the theme's" else splash)):
-        print(f"  {label:<11} {value}")
+    _print_look(mnt, report)
     head("Themes  (--theme ID)")
-    for k, v in themes.items():
-        print(f"  {k:<11} {v['title']}" + (f": {v['description']}" if v["description"] else ""))
+    for t in report["themes"]:
+        print(f"  {t['id']:<11} {t['title']}" + (f": {t['description']}" if t["description"] else ""))
     head("Icon packs  (--icons ID)")
-    for k, v in packs.items():
-        print(f"  {k:<11} {v['title']}" + (f": {v['description']}" if v["description"] else ""))
+    for t in report["icon_packs"]:
+        print(f"  {t['id']:<11} {t['title']}" + (f": {t['description']}" if t["description"] else ""))
     info("your own pictures: --background PICTURE [--dim 40], --splash PICTURE; --reset puts it all back")
     return 0
 
@@ -2449,6 +2673,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--splash", metavar="PICTURE",
                    help="your own splash; `theme` for the theme's, `auto` (yours from byo/, else the theme's), `off`")
     p.add_argument("--reset", action="store_true", help="back to the default look")
+    p.add_argument("--menu", action="store_true", help="choose from numbered lists instead")
+    p.add_argument("--preview", metavar="FILE",
+                   help="don't change the stick: write a picture of how the menu would look")
     p.add_argument("--json", action="store_true", help="print the look and the choices as JSON")
     p.set_defaults(fn=cmd_theme)
 
