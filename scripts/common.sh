@@ -130,7 +130,8 @@ apply_splash() {  # apply_splash <disk>
 }
 
 # Find the Ventoy stick: the one plugged in, or the partition / mount point given. Sets $part
-# and $mnt (mounting it if it isn't).
+# and $mnt (mounting it if it isn't). A stick is known by Ventoy's own small partition, always
+# labelled VTOYEFI: the data partition before it may have been renamed.
 find_stick() {  # find_stick [/dev/sdX1 | /mount/point]
   local target=${1:-} found
   part=''
@@ -141,7 +142,8 @@ find_stick() {  # find_stick [/dev/sdX1 | /mount/point]
     if [[ -b $target ]]; then
       part=$target
     else
-      mapfile -t found < <(lsblk -lnpo NAME,LABEL | awk '$2=="Ventoy"{print $1}')
+      mapfile -t found < <(lsblk -lnpo PKNAME,LABEL | awk '$2=="VTOYEFI"{print $1}' | sort -u |
+                           while read -r disk; do first_partition "$disk"; done)
       ((${#found[@]})) || die "no Ventoy stick found. Plug it in, or pass its partition / mount point."
       ((${#found[@]} == 1)) || die "more than one Ventoy stick plugged in (${found[*]}) — pass the one you want"
       part=${found[0]}

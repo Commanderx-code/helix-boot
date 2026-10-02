@@ -6,6 +6,12 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Fixed
+- A stick whose data partition was renamed (to anything but `Ventoy`) wasn't
+  recognised: the Windows app showed it as not having Ventoy, so **Look…** and
+  **Update** refused it, and `refresh.sh` / `theme.sh` didn't find it. A stick
+  is now known by Ventoy's own `VTOYEFI` partition, whatever the other is called.
+
 ## [0.6.1] - 2026-10-02
 
 ### Added

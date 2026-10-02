@@ -132,10 +132,16 @@ def ns(**kw):
 
 
 # ── Disks (PowerShell storage cmdlets) ─────────────────────────────────────
+# A Ventoy stick is known by Ventoy's own small partition, always labelled VTOYEFI. The data
+# partition is the one labelled Ventoy or, since people rename it, the biggest other one.
 DISKS_PS = r"""
 Get-Disk | ForEach-Object {
   $v = @(Get-Partition -DiskNumber $_.Number -ErrorAction SilentlyContinue |
          Get-Volume -ErrorAction SilentlyContinue)
+  $data = @($v | Where-Object { $_.DriveLetter -and $_.FileSystemLabel -eq 'Ventoy' })
+  if (-not $data -and ($v | Where-Object FileSystemLabel -eq 'VTOYEFI')) {
+    $data = @($v | Where-Object { $_.DriveLetter -and $_.FileSystemLabel -ne 'VTOYEFI' } | Sort-Object Size -Descending)
+  }
   [pscustomobject]@{
     Number  = [int]$_.Number
     Name    = "$($_.FriendlyName)"
@@ -144,7 +150,7 @@ Get-Disk | ForEach-Object {
     System  = [bool]($_.IsSystem -or $_.IsBoot)
     Labels  = @($v | ForEach-Object { "$($_.FileSystemLabel)" })
     Letters = @($v | Where-Object DriveLetter | ForEach-Object { "$($_.DriveLetter)" })
-    Ventoy  = "$(($v | Where-Object FileSystemLabel -eq 'Ventoy' | Select-Object -First 1).DriveLetter)"
+    Ventoy  = "$(($data | Select-Object -First 1).DriveLetter)"
   }
 } | ConvertTo-Json -Compress -Depth 3
 """
@@ -169,7 +175,7 @@ def all_disks(run=powershell) -> list[dict]:
     disks = data if isinstance(data, list) else [data]
     for d in disks:
         d["Labels"] = [x for x in (d.get("Labels") or []) if x]
-        d["IsVentoy"] = "Ventoy" in d["Labels"] and "VTOYEFI" in d["Labels"]
+        d["IsVentoy"] = "VTOYEFI" in d["Labels"]        # whatever the data partition has been renamed to
     return sorted(disks, key=lambda d: d["Number"])
 
 
@@ -565,7 +571,8 @@ def gui(selftest: bool = False) -> int:
         if not d:
             return
         if not d.get("Ventoy"):
-            messagebox.showinfo(APP, "That disk has no Helix Boot stick on it yet. Install first, then choose its look.")
+            messagebox.showinfo(APP, "That disk has no Helix Boot stick on it yet, or Windows gave it no drive "
+                                     "letter. Install first, then choose its look.")
             return
         try:
             look_window(Path(f"{d['Ventoy']}:\\"), parent=root)

@@ -24,6 +24,7 @@ USB_HDD = {"Number": 1, "Name": "WD Elements", "Size": 2_000_398_934_016, "Bus":
 STICK = {"Number": 2, "Name": "SanDisk Ultra", "Size": 32_010_928_128, "Bus": "USB", "System": False,
          "Labels": ["STICK"], "Letters": ["E"], "Ventoy": ""}
 VENTOY = {**STICK, "Labels": ["Ventoy", "VTOYEFI"], "Letters": ["E"], "Ventoy": "E"}
+RENAMED = {**STICK, "Labels": ["HelixBoot", "VTOYEFI"], "Letters": ["E", "F"], "Ventoy": "E"}   # renamed in Explorer
 
 
 def ps(*disks):
@@ -42,6 +43,13 @@ class TestDisks(unittest.TestCase):
 
     def test_ventoy_detected(self):
         self.assertTrue(app.usb_disks(ps(VENTOY))[0]["IsVentoy"])
+
+    def test_a_renamed_stick_is_still_a_ventoy_stick(self):
+        d = app.usb_disks(ps(RENAMED))[0]                    # known by VTOYEFI, not by the data partition's name
+        self.assertTrue(d["IsVentoy"])
+        self.assertEqual(d["Ventoy"], "E")
+        self.assertIn("-eq 'VTOYEFI'", app.DISKS_PS)         # the script falls back to it …
+        self.assertIn("Sort-Object Size -Descending", app.DISKS_PS)   # … and takes the biggest other volume
 
     def test_pick_refuses_system_and_non_usb(self):
         run = ps(SYSTEM, USB_HDD, STICK)
