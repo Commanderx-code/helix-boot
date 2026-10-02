@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-02
+
 ### Added
 - **Tools for a Mac**, in a `Mac` folder on the stick with a `README.txt`: 18
   free utilities to run on a working Mac (EtreCheck, OnyX, Malwarebytes, the
@@ -306,7 +308,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.1...v0.5.2
