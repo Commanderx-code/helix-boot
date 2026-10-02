@@ -547,6 +547,7 @@ ventoy/theme/       the look in use, built from .helix-boot (rebuilt on every re
 - [x] Updates that keep another PC's tools; a renamed stick is still recognised (0.6.2)
 - [x] New default icons (0.6.3)
 - [x] Helix Boot on the stick itself, an update summary, and a boot test of every theme in CI (0.6.4)
+- [x] A review of everything since 0.5.3, and its fixes (0.6.5)
 
 ## Contributing
 

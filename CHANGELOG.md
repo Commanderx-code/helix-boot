@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-10-02
+
 ### Fixed
 From a review of everything since 0.5.3:
 - A stick's own icons and splash could be lost for good if an update from
@@ -408,7 +410,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.1...v0.6.2
