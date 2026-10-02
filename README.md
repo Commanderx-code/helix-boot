@@ -250,7 +250,7 @@ to the disk.
    running from.
 2. **Install** erases the stick (you type its disk number to confirm), installs
    Ventoy and copies everything on. **Update** refreshes a stick you already
-   have and keeps your files.
+   have and keeps your files, including tools this PC has no copy of.
 3. **Look…** changes the selected stick's look: a preset theme, the
    icons, your own background (with a slider to darken it) and splash, with a
    preview of the boot menu. Nothing changes until **Apply to the stick**.
@@ -359,6 +359,13 @@ checksum = [{ url = "https://cdimage.kali.org/current/SHA256SUMS" }]
 ```
 
 ISOs you copy onto the stick by hand (e.g. into `ISO/Custom/`) are never touched.
+
+**Updating from more than one PC.** An update removes a tool from the stick only
+when it brings a newer copy of that tool, or the tool is switched off
+(`enabled = false`). Tools this PC has no copy of stay where they are, with
+their names and icons in the menu: your paid tools when you update from the
+Windows app on another PC, or a tool whose download just failed. The run lists
+what it kept; `./refresh.sh --prune-unknown` removes them.
 
 **Theme.** The default Ventoy theme is **Helix Neon**: purple/cyan DNA artwork,
 the HELIXBOOT wordmark, cyan category icons and a purple selection with a cyan

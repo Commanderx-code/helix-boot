@@ -6,7 +6,21 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Changed
+- **An update no longer strips a stick of tools the updating PC doesn't have.**
+  Updating from a second PC (the Windows app without your `byo` files, say)
+  used to remove every paid or bring-your-own tool, and a tool whose download
+  had just failed. Now a managed file is removed only when the same tool was
+  brought again (a newer version) or the tool is switched off; the rest stay,
+  keep their names, tips and icons in the boot menu, and the run says which
+  were kept. `--prune-unknown` (`helix sync`, `helix unpack`, `refresh.sh`)
+  removes them as before. The stick records which tool each image belongs to;
+  a pack says which tools were switched off where it was made.
+
 ### Fixed
+- `HelixBoot.exe` failed to download from some sites with
+  `CERTIFICATE_VERIFY_FAILED` (Hiren's, OnyX): Windows hadn't fetched their
+  root certificate yet. It now also trusts the certifi bundle.
 - A stick whose data partition was renamed (to anything but `Ventoy`) wasn't
   recognised: the Windows app showed it as not having Ventoy, so **Look…** and
   **Update** refused it, and `refresh.sh` / `theme.sh` didn't find it. A stick

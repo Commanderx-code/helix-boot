@@ -32,7 +32,8 @@ jobs:
 
       - name: Build HelixBoot.exe
         run: |
-          pip install --disable-pip-version-check pyinstaller pillow   # Pillow: the Look window's previews
+          # Pillow: the Look window's previews. certifi: HTTPS to sites whose root Windows hasn't fetched yet
+          pip install --disable-pip-version-check pyinstaller pillow certifi
           pyinstaller --noconfirm windows/HelixBoot.spec
 
       - name: Smoke test the real .exe

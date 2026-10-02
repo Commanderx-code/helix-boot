@@ -17,13 +17,16 @@ usage() {
 Usage: ./refresh.sh [options] [/dev/sdX1 | /mount/point]
 
 Checks upstream for new releases, downloads + verifies them, and swaps them
-onto your Ventoy stick. Files you added yourself are left alone.
+onto your Ventoy stick. Files you added yourself are left alone, and so are
+tools another PC put there that this one has no copy of.
 
 Options:
   --upgrade-ventoy   also upgrade Ventoy on the stick (non-destructive, needs sudo)
   --skip-fetch       only sync what's already cached
   --from PACK        update from a pack made by "helix pack" instead of downloading
   --verify           re-hash every file on the stick after copying (slow)
+  --prune-unknown    also remove tools on the stick that this PC has no copy of
+                     (by default they stay: another PC may have put them there)
   --dry-run          show what would change
   --eject            unmount when finished
   -h, --help         this help
@@ -37,6 +40,7 @@ while (($#)); do
     --skip-fetch) skip_fetch=1 ;;
     --from) from=${2:?--from needs a pack .zip}; shift ;;
     --verify) sync_args+=(--verify) ;;
+    --prune-unknown) sync_args+=(--prune-unknown) ;;
     --dry-run) sync_args+=(--dry-run) ;;
     --eject) eject=1 ;;
     -h|--help) usage; exit 0 ;;

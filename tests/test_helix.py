@@ -394,6 +394,88 @@ class TestFetchAndSync(Base):
         self.assertTrue((self.stick / "ISO/2-Rescue/systemrescue-12.03-amd64.iso").exists())
         self.assertTrue(mine.exists())
 
+    def test_updating_from_a_second_pc_keeps_what_it_doesnt_have(self):
+        # This PC: the usual tools plus one of its own, and its own app
+        (self.repo / "byo").mkdir()
+        (self.repo / "byo/paid.iso").write_bytes(b"a licensed iso")
+        (self.repo / "byo/Tool.exe").write_bytes(b"MZ tool")
+        mine = ('[[tool]]\nname = "paid"\ntitle = "Paid Tool"\ndescription = "Costs money."\nkind = "iso"\n'
+                'category = "rescue"\nsource = "local"\nbyo = true\npath = "byo/paid.iso"\n\n'
+                '[[tool]]\nname = "tool"\ntitle = "Tool"\nkind = "app"\nsource = "local"\nbyo = true\n'
+                'path = "byo/Tool.exe"\nentry = "Tool.exe"\n')
+        (self.repo / "local.toml").write_text(mine)
+        self.cfg = cr.Config(repo=self.repo)
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync()[0], 0)
+        paid, app = self.stick / "ISO/2-Rescue/paid.iso", self.stick / "Apps/tool/Tool.exe"
+        state = lambda: json.loads((self.stick / cr.STATE_DIR / "state.json").read_text())   # noqa: E731
+        self.assertEqual(state()["tools"]["ISO/2-Rescue/paid.iso"], "paid")
+
+        # A second PC: the same project, none of your own files
+        other = self.tmp / "other-pc"
+        other.mkdir()
+        shutil.copy2(self.repo / "tools.toml", other / "tools.toml")
+        second = cr.Config(repo=other)
+        second._pc_id = "5ec0d5ec0d5ec0d5"                               # (the tests share one cache folder)
+        lock = cr.load_lock(second)
+        cr.save_lock(second, {k: v for k, v in lock.items() if k != "systemrescue"})   # its download failed there
+        rc, out = self.run_quiet(cr.cmd_sync, second, type("A", (), dict(
+            target=str(self.stick), init=False, dry_run=False, verify=False, no_prune=False))())
+        cr.save_lock(second, lock)
+        self.assertEqual(rc, 0, out)
+        self.assertTrue(paid.exists() and app.exists(), out)             # not stripped
+        self.assertTrue((self.stick / "ISO/2-Rescue/systemrescue-12.02-amd64.iso").exists(), out)
+        self.assertEqual(state()["by"]["ISO/2-Rescue/paid.iso"], self.cfg.pc_id())   # still the first PC's
+        self.assertIn("keeping 2 boot image(s) this PC has no copy of: ", out)
+        self.assertIn("keeping 1 app(s) this PC has no copy of: tool", out)
+        self.assertIn("ISO/2-Rescue/paid.iso", state()["files"])         # still this project's to manage
+        self.assertEqual(state()["apps"]["tool"], cr.load_lock(self.cfg)["tool"]["version"])
+        menu = (self.stick / "ventoy/ventoy.json").read_text()
+        self.assertIn('"alias": "Paid Tool"', menu)                      # its name and tip stay in the menu
+        self.assertIn("Costs money.", menu)
+        self.assertIn("Tool|tool\\Tool.exe", (self.stick / "Apps/apps.txt").read_text())
+        rc, out = self.run_quiet(cr.cmd_sync, second, type("A", (), dict(
+            target=str(self.stick), init=False, dry_run=False, verify=False, no_prune=False))())
+        self.assertTrue(paid.exists() and app.exists())                  # and again, once its download works
+        names = lambda text: sorted(a["alias"] for a in json.loads(text)["menu_alias"])   # noqa: E731
+        self.assertEqual(names(menu), names((self.stick / "ventoy/ventoy.json").read_text()))
+        self.assertIn("Costs money.", (self.stick / "ventoy/ventoy.json").read_text())
+
+
+        # Back on the first PC everything is as it was; switching a tool off there does remove it
+        rc, out = self.sync(init=False)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("keeping", out)
+        (self.repo / "local.toml").write_text(mine.replace('name = "paid"', 'name = "paid"\nenabled = false'))
+        self.cfg = cr.Config(repo=self.repo)
+        self.assertEqual(self.sync(init=False)[0], 0)
+        self.assertFalse(paid.exists())
+        self.assertNotIn("ISO/2-Rescue/paid.iso", state()["files"])
+
+        # --prune-unknown: the second PC may strip what it doesn't know, when asked to
+        rc, out = self.run_quiet(cr.cmd_sync, second, type("A", (), dict(
+            target=str(self.stick), init=False, dry_run=False, verify=False, no_prune=False, prune_unknown=True))())
+        self.assertFalse(app.exists(), out)
+
+    def test_a_stick_from_before_tools_were_recorded(self):
+        # state.json without "tools": an old version of the same file goes, anything else stays
+        self.fetch("systemrescue")
+        self.assertEqual(self.sync()[0], 0)
+        path = self.stick / cr.STATE_DIR / "state.json"
+        state = json.loads(path.read_text())
+        older = self.stick / "ISO/2-Rescue/systemrescue-11.00-amd64.iso"
+        theirs = self.stick / "ISO/2-Rescue/macrium-reflect.iso"
+        older.write_bytes(b"old")
+        theirs.write_bytes(b"theirs")
+        state["files"] += ["ISO/2-Rescue/systemrescue-11.00-amd64.iso", "ISO/2-Rescue/macrium-reflect.iso"]
+        del state["tools"]
+        path.write_text(json.dumps(state))
+        rc, out = self.sync(init=False)
+        self.assertEqual(rc, 0, out)
+        self.assertFalse(older.exists())
+        self.assertTrue(theirs.exists())
+        self.assertIn("macrium-reflect.iso", out)
+
     def test_checksum_mismatch_is_refused(self):
         put("dl/systemrescuecd/sysresccd-x86/12.02/systemrescue-12.02-amd64.iso.sha512",
             f"{'0'*128}  systemrescue-12.02-amd64.iso\n")

@@ -54,6 +54,16 @@ import xml.etree.ElementTree  # noqa: F401
 import zipfile  # noqa: F401
 import zlib  # noqa: F401
 
+try:  # Windows only fetches a root certificate the first time something asks its own way, and
+    # Python doesn't: a site whose root this PC hasn't met fails with CERTIFICATE_VERIFY_FAILED.
+    import ssl
+    import certifi
+    _https = ssl.create_default_context()
+    _https.load_verify_locations(certifi.where())       # Mozilla's roots, on top of the system's
+    urllib.request.install_opener(urllib.request.build_opener(urllib.request.HTTPSHandler(context=_https)))
+except ImportError:
+    pass
+
 try:  # optional there: previews, resizing your pictures, the splash's loading bar
     import PIL.Image  # noqa: F401
     import PIL.ImageDraw  # noqa: F401

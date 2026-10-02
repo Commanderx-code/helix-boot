@@ -211,6 +211,24 @@ class Config:
             except re.error as e:
                 raise RescueError(f"{where}: bad regex {pat!r}: {e}") from None
 
+    def pc_id(self) -> str:
+        """A random name for this PC, kept in its cache: a stick records which PC put each tool
+        on it, so a PC tidies up after itself and leaves another PC's tools alone."""
+        if not getattr(self, "_pc_id", None):
+            f = self.cache / "pc-id"
+            try:
+                self._pc_id = f.read_text(encoding="utf-8").strip()
+            except OSError:
+                self._pc_id = ""
+            if not re.fullmatch(r"[0-9a-f]{16}", self._pc_id):
+                self._pc_id = os.urandom(8).hex()
+                try:
+                    self.cache.mkdir(parents=True, exist_ok=True)
+                    f.write_text(self._pc_id + "\n", encoding="utf-8")
+                except OSError:
+                    pass        # a cache it can't write: a new name each run, so it only ever keeps
+        return self._pc_id
+
     def enabled(self, names: list[str] | None = None, kinds: set[str] | None = None) -> list[dict]:
         if names:
             known = {t["name"] for t in self.tools}
@@ -1455,6 +1473,106 @@ def _open_stick(mnt: Path, init: bool) -> tuple[Path, dict]:
     return state_dir, json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
 
 
+def _stale_split(state: dict, stale: list[str], placed: dict[str, str | None], off: set[str], me: str,
+                 everything: bool) -> tuple[list[str], list[str]]:
+    """Which of the images this project put on the stick, and this run doesn't want, to remove
+    and which to keep. One goes when this run brought the same tool again (a newer version, or
+    the same file in another folder), when its tool is switched off here, or when this PC put it
+    there itself and no longer has it. The rest are another PC's (its own tools, or one whose
+    download failed here): they stay, so updating from a second PC doesn't strip the stick.
+    `placed` is this run's images, stick path to tool name; `me` this PC; `everything` removes all."""
+    if everything:
+        return list(stale), []
+    tools, names = state.get("tools") or {}, {n for n in placed.values() if n}
+    by = state.get("by") or {}
+
+    def shape(rel: str) -> tuple[str, str]:        # its folder, and its name but for the numbers
+        folder, _, name = rel.rpartition("/")
+        return folder, re.sub(r"\d+", "#", name)
+
+    shapes = {shape(rel) for rel in placed}
+    remove, keep = [], []
+    for rel in stale:
+        name = tools.get(rel)
+        if by.get(rel) == me:
+            gone = True
+        elif name is not None:
+            gone = name in names or name in off
+        else:               # a stick from before the tools were recorded: go by the file's name
+            gone = shape(rel) in shapes
+        (remove if gone else keep).append(rel)
+    return remove, keep
+
+
+def _carry_menu(doc: dict, old: dict, kept: list[str]) -> dict:
+    """Keep the boot-menu names, tips and icons of images that stay on the stick though this PC
+    doesn't know their tools: taken from the menu as the stick had it."""
+    images = {f"/{rel}" for rel in kept}
+    dirs = {f"/{rel.rpartition('/')[0]}" for rel in kept}
+    stems = {rel.rpartition("/")[2].rsplit(".", 1)[0] for rel in kept}
+
+    def ours(e: dict) -> bool:
+        return e.get("image") in images or e.get("dir") in dirs or ("key" in e and e["key"] in stems)
+
+    def add(have: list, extra: list) -> list:
+        seen = {json.dumps({k: v for k, v in e.items() if k in ("image", "dir", "key")}, sort_keys=True) for e in have}
+        return have + [e for e in extra if isinstance(e, dict) and ours(e)
+                       and json.dumps({k: v for k, v in e.items() if k in ("image", "dir", "key")}, sort_keys=True) not in seen]
+
+    if isinstance(old.get("menu_alias"), list):
+        doc["menu_alias"] = add(doc.get("menu_alias", []), old["menu_alias"])
+    old_tip = old.get("menu_tip") if isinstance(old.get("menu_tip"), dict) else {}
+    if isinstance(old_tip.get("tips"), list):
+        tips = add((doc.get("menu_tip") or {}).get("tips", []), old_tip["tips"])
+        if tips:            # this PC's tools may have no tips at all: then where they go comes over too
+            doc.setdefault("menu_tip", {k: v for k, v in old_tip.items() if k != "tips"})["tips"] = tips
+    if isinstance(old.get("menu_class"), list):
+        classes = add(doc.get("menu_class", []), old["menu_class"])
+        if classes:         # Ventoy takes the first key that matches: longest first, as build_ventoy_json has them
+            doc["menu_class"] = ([c for c in classes if "key" not in c]
+                                 + sorted((c for c in classes if "key" in c), key=lambda c: -len(c["key"])))
+    return doc
+
+
+def _carry_extras(mnt: Path, extras: list[tuple[str, Path | bytes]], kept: list[str], kept_apps: list[str],
+                  apps_root: str) -> list[tuple[str, Path | bytes]]:
+    """The menu and the launcher's app list, with what is kept from the stick added back in."""
+    out = []
+    for rel, data in extras:
+        try:
+            if rel == BASE_JSON and kept and isinstance(data, bytes):
+                old = mnt / BASE_JSON if (mnt / BASE_JSON).is_file() else mnt / "ventoy" / "ventoy.json"
+                doc = _carry_menu(json.loads(data), json.loads(old.read_text(encoding="utf-8")), kept)
+                data = (json.dumps(doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+            elif rel == f"{apps_root}/apps.txt" and kept_apps and isinstance(data, bytes):
+                lines = [ln for ln in (mnt / rel).read_text(encoding="utf-8").splitlines()
+                         if ln.split("|")[1:2] and ln.split("|")[1].split("\\")[0] in kept_apps]
+                data += ("\r\n".join(lines) + "\r\n").encode("utf-8") if lines else b""
+        except (OSError, ValueError):
+            pass        # nothing readable to carry over: the tools still boot, under their file names
+        out.append((rel, data))
+    return out
+
+
+def _put_by(state: dict, me: str, files: set[str], wrote: set[str], kept: list[str],
+            apps: set[str], wrote_apps: set[str], kept_apps: list[str]) -> dict:
+    """Which PC put each image and app on the stick: this one for what it just wrote, whoever
+    it was before for what was already there or is being kept."""
+    by, apps_by = state.get("by") or {}, state.get("apps_by") or {}
+    return {
+        "by": {**{rel: by[rel] for rel in kept if rel in by},
+               **{rel: me if rel in wrote else by.get(rel, me) for rel in files}},
+        "apps_by": {**{n: apps_by[n] for n in kept_apps if n in apps_by},
+                    **{n: me if n in wrote_apps else apps_by.get(n, me) for n in apps}},
+    }
+
+
+def _keep_note(what: str, names: list[str]) -> None:
+    if names:
+        warn(f"keeping {len(names)} {what} this PC has no copy of: {', '.join(names)}. "
+             "They stay on the stick as they are; --prune-unknown removes them.")
+
+
 def _prune(mnt: Path, iso_root: str, stale: list[str], dry_run: bool) -> None:
     """Delete boot images this project put on the stick that are no longer wanted."""
     for rel in stale:
@@ -1524,6 +1642,8 @@ def cmd_sync(cfg: Config, args) -> int:
         warn(f"{m}: not fetched yet — run `helix fetch` (skipping)")
 
     stale = [f for f in state.get("files", []) if f not in want_files]
+    off = {t["name"] for t in cfg.tools if not t.get("enabled", True)}      # switched off here: theirs go
+    unknown = getattr(args, "prune_unknown", False)
     head(f"Syncing to {mnt}{'  (dry run)' if args.dry_run else ''}")
 
     # A file that only changed folder (e.g. a category was renamed) is moved, not copied again.
@@ -1532,6 +1652,7 @@ def cmd_sync(cfg: Config, args) -> int:
     # ISOs round to whole sectors, so a rebuilt Lazarus PE is often exactly as big as the last.
     recorded = state.get("images", {})
     images: dict[str, str] = {}
+    me, wrote, wrote_apps = cfg.pc_id(), set(), set()      # what this PC puts on the stick in this run
     for n, p in enumerate(placed, 1):
         dst = mnt / p["rel"]
         old = moved_from.get(p["file"])
@@ -1543,6 +1664,7 @@ def cmd_sync(cfg: Config, args) -> int:
                 if not args.dry_run:
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     os.replace(src_old, dst)
+                    wrote.add(p["rel"])
                 else:
                     continue
 
@@ -1572,6 +1694,7 @@ def cmd_sync(cfg: Config, args) -> int:
                     raise RescueError(f"{p['rel']} doesn't match after copying — the stick may be failing.")
             prog.clear()
             images[p["rel"]] = p["sha256"]
+            wrote.add(p["rel"])
             ok(f"{p['title']} copied")
 
     app_state = dict(state.get("apps", {}))
@@ -1598,13 +1721,18 @@ def cmd_sync(cfg: Config, args) -> int:
             shutil.rmtree(dst)
         os.replace(new, dst)
         app_state[t["name"]] = entry["version"]
+        wrote_apps.add(t["name"])
         ok(f"{t['title']} {'unpacked' if unzip else 'copied'}")
 
     enabled_apps = {t["name"] for t, _, _ in apps}
+    kept_apps = []
     for name in [n for n in app_state if n not in enabled_apps]:
         if not SAFE_NAME.fullmatch(name):   # state.json is on the stick: anything could have written it
             warn(f"ignoring an app name in the stick's state that isn't one: {name!r}")
             app_state.pop(name)
+            continue
+        if name not in off and not unknown and (state.get("apps_by") or {}).get(name) != me:
+            kept_apps.append(name)          # another PC's: this one just has no copy of it
             continue
         info(f"removing app no longer in the manifest: {name}")
         if not args.dry_run:
@@ -1612,8 +1740,14 @@ def cmd_sync(cfg: Config, args) -> int:
                 shutil.rmtree(_inside(root, name, "app folder"), ignore_errors=True)
             app_state.pop(name)
 
-    if stale and not args.no_prune:
-        _prune(mnt, cfg.iso_root, stale, args.dry_run)
+    remove, kept = _stale_split(state, stale, {p["rel"]: p["name"] for p in placed}, off, me, unknown)
+    kept = [rel for rel in kept if (mnt / rel).is_file()]       # not one that was moved to its new folder
+    if args.no_prune:
+        kept += [rel for rel in remove if (mnt / rel).is_file()]
+    elif remove:
+        _prune(mnt, cfg.iso_root, remove, args.dry_run)
+    _keep_note("boot image(s)", [rel.rpartition("/")[2] for rel in kept] if not args.no_prune else [])
+    _keep_note("app(s)", kept_apps)
 
     # Trees (the PortableApps.com Platform) go on once and then look after themselves:
     # never overwritten with an older copy, never pruned.
@@ -1641,9 +1775,14 @@ def cmd_sync(cfg: Config, args) -> int:
 
     app_root.mkdir(exist_ok=True)
     theme_src = cfg.assets / cfg.settings["theme"] if cfg.settings.get("theme") else None
-    vjson = _write_extras(cfg, mnt, state, _stick_extras(cfg, placed, apps),
-                          fresh_theme=bool(theme_src and theme_src.is_dir()))
-    _finish(mnt, state_dir, want_files, app_state, vjson, {"images": images})
+    extras = _carry_extras(mnt, _stick_extras(cfg, placed, apps), kept, kept_apps, cfg.apps_root)
+    vjson = _write_extras(cfg, mnt, state, extras, fresh_theme=bool(theme_src and theme_src.is_dir()))
+    images.update({rel: recorded[rel] for rel in kept if rel in recorded})
+    tools = {**{rel: n for rel, n in (state.get("tools") or {}).items() if rel in kept},
+             **{p["rel"]: p["name"] for p in placed}}
+    _finish(mnt, state_dir, want_files | set(kept), app_state, vjson, {
+        "images": images, "tools": tools,
+        **_put_by(state, me, want_files, wrote, kept, {t["name"] for t, _, _ in apps}, wrote_apps, kept_apps)})
     ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
     return 0
 
@@ -1749,7 +1888,7 @@ def cmd_pack(cfg: Config, args) -> int:
                 if p["sha256"] and sha != p["sha256"] and not p["local"]:
                     raise RescueError(f"{p['title']}: the cached {p['file']} has changed since it was verified. "
                                       f"Run `helix fetch --force {p['name']}`.")
-                isos.append({"rel": p["rel"], "title": p["title"], "version": p["version"], "sha256": sha,
+                isos.append({"rel": p["rel"], "name": p["name"], "title": p["title"], "version": p["version"], "sha256": sha,
                              "size": p["src"].stat().st_size})
             for t, entry, src in apps:
                 base = f"stick/{_app_root(cfg, t)}/{t['name']}"
@@ -1795,6 +1934,8 @@ def cmd_pack(cfg: Config, args) -> int:
                 "iso_root": cfg.iso_root, "apps_root": cfg.apps_root, "isos": isos,
                 "apps": {t["name"]: e["version"] for t, e, _ in apps},
                 "app_roots": {t["name"]: _app_root(cfg, t) for t, _, _ in apps if _app_root(cfg, t) != cfg.apps_root},
+                # switched off where the pack was made: unpack removes these from a stick that has them
+                "off": sorted(t["name"] for t in cfg.tools if not t.get("enabled", True)),
                 "ventoy": {"file": f"installer/{vsrc.name}", "version": ventry["version"]} if vsrc else None,
                 "ventoy_windows": ({"file": f"installer/{win_ventoy[0].name}", "version": win_ventoy[1]["version"]}
                                    if win_ventoy else None),
@@ -1939,6 +2080,7 @@ def cmd_unpack(cfg: Config, args) -> int:
         app_state = dict(state.get("apps", {}))
         app_root = _inside(mnt, apps_root, "apps folder")
         roots = meta.get("app_roots", {})         # apps that go elsewhere than Apps: the Mac tools
+        wrote_apps: set[str] = set()
         for name, version in meta["apps"].items():
             root = _inside(mnt, roots.get(name, apps_root), "apps folder")
             dst = _inside(root, name, "app folder")
@@ -1958,11 +2100,18 @@ def cmd_unpack(cfg: Config, args) -> int:
                 shutil.rmtree(dst)
             os.replace(new, dst)
             app_state[name] = version
+            wrote_apps.add(name)
             ok(f"{name} unpacked")
+        unknown, kept_apps = getattr(args, "prune_unknown", False), []
+        off = {n for n in meta.get("off", []) if isinstance(n, str)}
+        me = cfg.pc_id()
         for name in [n for n in app_state if n not in meta["apps"]]:
             if not SAFE_NAME.fullmatch(name):   # state.json is on the stick: anything could have written it
                 warn(f"ignoring an app name in the stick's state that isn't one: {name!r}")
                 app_state.pop(name)
+                continue
+            if name not in off and not unknown and (state.get("apps_by") or {}).get(name) != me:
+                kept_apps.append(name)      # another PC's: the pack just doesn't have it
                 continue
             info(f"removing app that isn't in this pack: {name}")
             if not args.dry_run:
@@ -1971,8 +2120,14 @@ def cmd_unpack(cfg: Config, args) -> int:
                 app_state.pop(name)
 
         stale = [f for f in state.get("files", []) if f not in want_files]
-        if stale and not args.no_prune:
-            _prune(mnt, iso_root, stale, args.dry_run)
+        remove, kept = _stale_split(state, stale, {i["rel"]: i.get("name") for i in meta["isos"]}, off, me, unknown)
+        kept = [rel for rel in kept if _inside(mnt, rel, "path in the stick's state").is_file()]
+        if args.no_prune:
+            kept += [rel for rel in remove if (mnt / rel).is_file()]
+        elif remove:
+            _prune(mnt, iso_root, remove, args.dry_run)
+        _keep_note("boot image(s)", [rel.rpartition("/")[2] for rel in kept] if not args.no_prune else [])
+        _keep_note("app(s)", kept_apps)
 
         for t in meta.get("trees", []):
             base = _inside(mnt, t["dest"], "tree folder") if t["dest"] else mnt   # "" is the stick's root
@@ -1999,8 +2154,13 @@ def cmd_unpack(cfg: Config, args) -> int:
         extras = [(m[len("stick/"):], zf.read(m)) for m in sorted(names)
                   if m.startswith("stick/") and not m.endswith("/") and m[len("stick/"):] not in want_files
                   and not m.startswith(app_dirs)]
+        extras = _carry_extras(mnt, extras, kept, kept_apps, apps_root)
         vjson = _write_extras(cfg, mnt, state, extras, fresh_theme=meta.get("fresh_theme", False))
-    _finish(mnt, state_dir, want_files, app_state, vjson, {"pack": meta["created"]})
+    tools = {**{rel: n for rel, n in (state.get("tools") or {}).items() if rel in kept},
+             **{i["rel"]: i["name"] for i in meta["isos"] if i.get("name")}}
+    _finish(mnt, state_dir, want_files | set(kept), app_state, vjson, {
+        "pack": meta["created"], "tools": tools,
+        **_put_by(state, me, want_files, {i["rel"] for i in todo}, kept, set(meta["apps"]), wrote_apps, kept_apps)})
     ok(f"Stick is up to date from the pack: {len(meta['isos'])} boot image(s), {len(meta['apps'])} app(s).")
     return 0
 
@@ -2757,6 +2917,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true", help="show what would change")
     p.add_argument("--verify", action="store_true", help="hash files on the stick (slow)")
     p.add_argument("--no-prune", action="store_true", help="keep old versions on the stick")
+    p.add_argument("--prune-unknown", action="store_true",
+                   help="also remove tools on the stick that this PC has no copy of (by default they stay)")
     p.set_defaults(fn=cmd_sync)
 
     p = sub.add_parser("pack", help="put the whole stick (and Ventoy) into one .zip for offline use")
@@ -2770,6 +2932,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true", help="show what would change")
     p.add_argument("--verify", action="store_true", help="hash files on the stick (slow)")
     p.add_argument("--no-prune", action="store_true", help="keep old versions on the stick")
+    p.add_argument("--prune-unknown", action="store_true",
+                   help="also remove tools on the stick that this PC has no copy of (by default they stay)")
     p.set_defaults(fn=cmd_unpack)
 
     p = sub.add_parser("splash", help="show the splash picture before the Ventoy menu (on its VTOYEFI partition)")
