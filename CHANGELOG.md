@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-02
+
 ### Added
 - **Helix Boot on the stick itself**: every stick gets a `HelixBoot` folder with
   the latest released `HelixBoot.exe` and `HelixBoot.sh` and a short README, so
@@ -370,7 +372,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.0...v0.6.1
