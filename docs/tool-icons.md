@@ -13,8 +13,10 @@ Their masters are in `artwork/helix-icons/`, one 128-pixel PNG per menu class:
 a tool's `name`, `cat-<category id>`, or one of Ventoy's own classes.
 `theme/build-theme.py` trims each, keeps its proportions and centres it on the
 40-pixel icon the boot loader shows (bigger icons use up its memory at boot).
-A tool with no master there keeps its classic icon; a few masters are for tools
-people commonly add themselves (`r-studio`, `ubcd`, `tails`, …), so those get an
+Every shipped tool has one. Lazarus PE's is drawn by
+`artwork/helix-icons/make-lazarus-pe.py`: the project's own phoenix on a glass
+globe in a steel ring, to sit with the rest. A tool with no master would keep
+its classic icon. A few masters are for tools people commonly add themselves (`r-studio`, `ubcd`, `tails`, …), so those get an
 icon as soon as a tool by that name exists. To change one, replace its master
 and re-run the builder; to add your own without touching the repo, use
 `byo/icons/`.

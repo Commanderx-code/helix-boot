@@ -67,6 +67,10 @@ class ToolIcons(unittest.TestCase):
         committed = {f.name: f.read_bytes() for f in (ROOT / "theme/icons").iterdir()}
         self.assertEqual(sorted(built), sorted(committed))
         self.assertEqual(built, committed, "run theme/build-theme.py: theme/icons is out of date")
+        tools = tomllib.loads((ROOT / "tools.toml").read_text())
+        for t in tools["tool"]:                             # every shipped boot tool is in the set
+            if t["kind"] == "iso":
+                self.assertTrue((build.ICON_DIR / f"{t['name']}.png").is_file(), f"no master for {t['name']}")
         for m in masters:                                   # small masters, one per menu class
             self.assertIn(m.name, committed)
             w, h = struct.unpack(">II", m.read_bytes()[16:24])

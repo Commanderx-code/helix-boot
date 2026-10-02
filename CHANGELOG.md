@@ -6,6 +6,11 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- Icons in the default set for the two entries that still had their classic
+  ones: Lazarus PE (the phoenix on a glossy badge, drawn by
+  `docs/artwork/helix-icons/make-lazarus-pe.py`) and Super GRUB2 Disk.
+
 ## [0.6.4] - 2026-10-02
 
 ### Added
