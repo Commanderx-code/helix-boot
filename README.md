@@ -73,6 +73,10 @@ with no downloads.
 [Releases](https://github.com/Commanderx-code/helix-boot/releases), put it
 in a folder of its own and run it (see [below](#windows-app)).
 
+**From a stick.** Every Helix Boot stick carries both apps in its `HelixBoot`
+folder, so a stick can be updated, or its look changed, from any PC: run
+`HelixBoot.exe` on Windows, or `bash HelixBoot.sh` on Linux.
+
 **From a pack.** Already have a pack zip? No clone needed:
 `unzip pack.zip 'installer/*'`, then `installer/install.sh`, or on Windows run
 `installer\HelixBoot.exe` from beside the zip
@@ -256,7 +260,8 @@ to the disk.
    running from.
 2. **Install** erases the stick (you type its disk number to confirm), installs
    Ventoy and copies everything on. **Update** refreshes a stick you already
-   have and keeps your files, including tools this PC has no copy of.
+   have and keeps your files, including tools this PC has no copy of. It first
+   shows what it will copy, remove and keep, and asks before changing anything.
 3. **Look…** changes the selected stick's look: a preset theme, the
    icons, your own background (with a slider to darken it) and splash, with a
    preview of the boot menu. Nothing changes until **Apply to the stick**.
@@ -319,7 +324,7 @@ standard-library Python script:
 | `helix list` | every tool, its source, and whether it's enabled |
 | `helix check [--json]` | compares your cache against upstream, no downloads |
 | `helix fetch [tool…] [--force]` | downloads, verifies and caches (`~/.cache/helix-boot`); resumes interrupted downloads |
-| `helix sync <mount> [--dry-run] [--verify] [--prune-unknown]` | copies the cache to a Ventoy stick, replaces old versions, writes the menu |
+| `helix sync <mount> [--dry-run] [--verify] [--prune-unknown]` | copies the cache to a Ventoy stick, replaces old versions, writes the menu; `--dry-run` ends with what it would copy, remove and keep |
 | `helix pack [file.zip]` | the whole stick, your own tools and Ventoy in one zip |
 | `helix unpack <pack.zip> <mount> [--dry-run] [--verify] [--prune-unknown]` | fills a Ventoy stick from a pack, no downloads |
 | `helix theme <mount> [--theme ID] [--icons ID] [--background PIC] [--splash PIC] [--menu] [--preview FILE]` | shows or changes a stick's look ([themes](#the-boot-menus-look)) |
@@ -350,7 +355,8 @@ If no strategy works, the tool is refused rather than silently used.
 - It lists only USB/removable disks and refuses any disk holding your running
   system, following LUKS, LVM and btrfs back to the physical disk.
 - You type the device name to confirm, and it warns if the "stick" is
-  suspiciously large.
+  suspiciously large. A new stick is named `HelixBoot` (`stick_label` under
+  `[settings]`), and is recognised later whatever you rename it to.
 - `refresh.sh` removes a tool from the stick only when it brings a newer copy of
   it, the tool is switched off, or this PC put it there and no longer has it.
   The stick records which PC put each tool on it, so updating from a second PC
@@ -509,6 +515,7 @@ ISO/7-Partition-Tools/  ISO/8-Password-Removal/  ISO/9-Windows-Recovery/
 ISO/OSimages/       your own installer ISOs (never touched; hidden while empty)
 Apps/               portable apps, the Helix Apps menu and LazarusStartup.cmd
 Apps/Lazarus/       the Lazarus launcher (Lazarus PE's start screen)
+HelixBoot/          HelixBoot.exe and HelixBoot.sh: update the stick or change its look from any PC
 Mac/                tools for a working Mac, as downloaded, with a README.txt
 PortableApps/       the PortableApps.com Platform's apps (Start.exe at the root)
 ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
@@ -538,6 +545,8 @@ ventoy/theme/       the look in use, built from .helix-boot (rebuilt on every re
       (`theme.sh`, the Look window in `HelixBoot.exe`), with a preview (0.6.0)
 - [x] Standby and Poly dark themes, greyscale icons, tools for a Mac (0.6.1)
 - [x] Updates that keep another PC's tools; a renamed stick is still recognised (0.6.2)
+- [x] New default icons (0.6.3)
+- [x] Helix Boot on the stick itself, an update summary, and a boot test of every theme in CI
 
 ## Contributing
 

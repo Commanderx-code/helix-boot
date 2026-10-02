@@ -6,6 +6,26 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **Helix Boot on the stick itself**: every stick gets a `HelixBoot` folder with
+  the latest released `HelixBoot.exe` and `HelixBoot.sh` and a short README, so
+  it can be updated, or its look changed, from any PC without downloading
+  anything first.
+- **An update says what it will do before it does it.** `HelixBoot.exe` shows
+  what **Update stick** will copy, remove and keep, and asks before writing
+  when anything is copied or removed. `helix sync --dry-run` and
+  `helix unpack --dry-run` end with the same summary.
+- **A new stick is named `HelixBoot`** instead of `Ventoy` (`stick_label` under
+  `[settings]`; `"Ventoy"` keeps Ventoy's own).
+- `tests/boot/boot_menu.py` boots the menu in QEMU with every theme, on UEFI
+  and BIOS, and checks each came up; CI runs it on every push and keeps the
+  screenshots.
+
+### Changed
+- A file on the stick that hasn't changed isn't written again on every
+  refresh, and one that is in use (the app updating the stick from the stick,
+  on Windows) no longer stops the run: it is replaced next time.
+
 ## [0.6.3] - 2026-10-02
 
 ### Changed

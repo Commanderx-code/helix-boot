@@ -118,6 +118,7 @@ class TestFlows(unittest.TestCase):
             mock.patch.object(app, "fetch", lambda cfg, tools=(): self.calls.append("fetch") or True),
             mock.patch.object(app, "ventoy_dir", lambda cfg: self.vdir),
             mock.patch.object(app, "sync", lambda cfg, target, init: self.calls.append(("sync", target, init))),
+            mock.patch.object(app, "update_summary", lambda cfg, target, pack=None: "Copy 1 (1.0 GiB): Clonezilla 3.3"),
         ]
         for p in patches:
             p.start()
@@ -154,6 +155,33 @@ class TestFlows(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             app.update(2, run=ps(VENTOY), ventoy=self.ventoy)
         self.assertEqual(self.calls, ["fetch", ("sync", "E:\\", False)])      # no Ventoy step by default
+
+    def test_update_says_what_it_will_do_and_can_be_called_off(self):
+        shown = []
+        with redirect_stdout(io.StringIO()) as out, self.assertRaisesRegex(app.RescueError, "nothing on the stick was changed"):
+            app.update(2, run=ps(VENTOY), ventoy=self.ventoy, confirm=lambda summary: shown.append(summary))   # "no"
+        self.assertEqual(shown, ["Copy 1 (1.0 GiB): Clonezilla 3.3"])
+        self.assertIn("This update will:", out.getvalue())
+        self.assertEqual(self.calls, ["fetch"])                               # asked before the stick is touched
+        self.calls.clear()
+        with redirect_stdout(io.StringIO()):
+            app.update(2, run=ps(RENAMED), ventoy=self.ventoy, confirm=lambda summary: True)
+        self.assertEqual(self.calls, ["fetch", ("sync", "E:\\", False)])
+
+    def test_a_new_stick_gets_its_name(self):
+        ran = []
+        with redirect_stdout(io.StringIO()) as out:
+            app.name_stick("E:\\", "HelixBoot", run=ran.append)
+            app.name_stick("E:\\", "Ventoy", run=ran.append)                # Ventoy's own name: nothing to do
+            app.name_stick("E:\\", "bad'; Format-Volume", run=ran.append)   # never reaches PowerShell
+        self.assertEqual(ran, ["Set-Volume -DriveLetter E -NewFileSystemLabel 'HelixBoot'"])
+        self.assertIn("Stick named HelixBoot", out.getvalue())
+
+        def refuses(script):
+            raise app.cr.RescueError("access denied")
+        with redirect_stdout(io.StringIO()) as out:
+            app.name_stick("E:\\", "HelixBoot", run=refuses)                # not worth failing an install over
+        self.assertIn("couldn't name the stick", out.getvalue())
 
     def pack_flow(self):
         self.pack = Path(tempfile.mkdtemp()) / "helix-boot-2026-09-29.zip"

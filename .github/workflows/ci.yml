@@ -39,6 +39,42 @@ jobs:
           name: HelixBoot-linux
           path: dist/HelixBoot.sh
 
+  boot:
+    # Boots the Ventoy menu in QEMU with every theme, on UEFI and on BIOS, and checks each came
+    # up with its own background and a drawn menu. The screenshots are kept as an artifact.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: QEMU, firmware and disk tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-x86 ovmf mtools dosfstools
+          # Let the runner's user use KVM: without it the same boots take several times as long
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          pip install --disable-pip-version-check pillow
+      - name: Boot every theme
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HELIX_CACHE: ${{ runner.temp }}/helix
+          NO_COLOR: "1"
+        run: |
+          ./helix fetch ventoy
+          python tests/boot/boot_menu.py --firmware both --out boot-shots
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: boot-menu-screenshots
+          path: boot-shots
+
   upstream:
     # Catches upstreams that renamed their files or moved (asset regex no longer matches).
     runs-on: ubuntu-latest

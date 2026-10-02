@@ -123,6 +123,8 @@ while read -r part; do
 done < <(lsblk -lnpo NAME,TYPE "$dev" | awk '$2=="part"{print $1}')
 
 flags=(-I)
+label=$("$HELIX" setting stick_label)     # the stick's name; Ventoy's own is "Ventoy"
+[[ $label == Ventoy ]] || flags+=(-L "$label")
 ((gpt)) && flags+=(-g)
 if ((secure)); then flags+=(-s); else flags+=(-S); fi
 [[ -n $reserve ]] && flags+=(-r "$reserve")

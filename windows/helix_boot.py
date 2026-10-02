@@ -320,6 +320,22 @@ def sync(cfg, target: str, init: bool) -> None:
         raise RescueError("copying to the stick failed (see above)")
 
 
+def name_stick(letter: str, label: str, run=powershell) -> None:
+    """Give a new stick its name (Ventoy for Windows can't; its own is "Ventoy"). Never fatal."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,11}", label or "") or label == "Ventoy":
+        return
+    try:
+        run(f"Set-Volume -DriveLetter {letter[0]} -NewFileSystemLabel '{label}'")
+        print(f"✓ Stick named {label}")
+    except cr.RescueError as e:
+        print(f"! couldn't name the stick {label}: {e}")
+
+
+def update_summary(cfg, target: str, pack=None) -> str:
+    """What an update would copy, remove and keep, in plain words."""
+    return cr.plan_text(cr.update_plan(cfg, target, str(pack) if pack else None))
+
+
 def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None, run=powershell,
             ventoy=run_ventoy, keep_going=lambda: True, pack=None) -> str:
     """Erase disk N, put Ventoy on it, fill it (from the internet, or from a pack).
@@ -336,6 +352,7 @@ def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None,
     ventoy(ventoy_command(vdir, "/I", disk_no, gpt, secure_boot), vdir, progress)
     letter = wait_for_ventoy_letter(disk_no, run)
     print(f"✓ Ventoy installed, stick is {letter}")
+    name_stick(letter, getattr(cfg, "stick_label", ""), run)
     if pack:
         unpack(cfg, letter, pack, init=True)
     else:
@@ -344,14 +361,19 @@ def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None,
 
 
 def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda pct: None,
-           run=powershell, ventoy=run_ventoy, pack=None) -> str:
-    """Refresh a Helix Boot / Ventoy stick in place. Never erases."""
+           run=powershell, ventoy=run_ventoy, pack=None, confirm=lambda summary: True) -> str:
+    """Refresh a Helix Boot / Ventoy stick in place. Never erases. `confirm` is shown what the
+    update will copy, remove and keep before anything is written, and can call it off."""
     cfg = config()
     d = pick(disk_no, run)
     if not d.get("IsVentoy") or not d.get("Ventoy"):
         raise RescueError(f"disk {disk_no} doesn't have Ventoy on it (or no drive letter) — use Install")
     if not pack:
         fetch(cfg)
+    summary = update_summary(cfg, f"{d['Ventoy']}:\\", pack)
+    print(f"\nThis update will:\n{summary}\n")
+    if not confirm(summary):
+        raise RescueError("stopped — nothing on the stick was changed")
     if upgrade_ventoy:
         vdir = pack_ventoy_dir(cfg, pack) if pack else ventoy_dir(cfg)
         print(f"\nUpdating Ventoy on disk {disk_no} (your files are kept) …")
@@ -553,6 +575,13 @@ def gui(selftest: bool = False) -> int:
         q.put(("ask", answer))
         return answer.get()
 
+    def confirm_update(summary):
+        if summary.startswith("Everything on the stick is already up to date"):
+            return True                 # nothing to copy or remove: no need to ask
+        answer = queue.Queue()
+        q.put(("confirm", summary, answer))
+        return answer.get()
+
     def do_install():
         d = selected()
         if not d:
@@ -574,7 +603,8 @@ def gui(selftest: bool = False) -> int:
         d = selected()
         pack = chosen_pack() if d else None
         if d and pack is not False:
-            work(update, d["Number"], upgrade_ventoy=upv.get(), secure_boot=secure.get(), pack=pack)
+            work(update, d["Number"], upgrade_ventoy=upv.get(), secure_boot=secure.get(), pack=pack,
+                 confirm=confirm_update)
 
     def do_look():
         d = selected()
@@ -610,6 +640,10 @@ def gui(selftest: bool = False) -> int:
                 elif item[0] == "pct":
                     bar.stop()
                     bar.config(mode="determinate", value=item[1])
+                elif item[0] == "confirm":
+                    bar.stop()
+                    item[2].put(messagebox.askokcancel(APP, f"This update will:\n\n{item[1]}\n\nGo ahead?"))
+                    bar.start(12)
                 elif item[0] == "ask":
                     item[1].put(messagebox.askyesno(APP, "Some tools failed to download (see the log).\n"
                                                          "Continue with what was fetched?"))

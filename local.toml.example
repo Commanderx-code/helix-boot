@@ -11,6 +11,7 @@
 # Settings:
 # [settings]
 # splash_seconds = 2      # how long the splash before the boot menu shows (0: none; default 1)
+# stick_label = "RESCUE"  # the name a new stick gets (default HelixBoot; "Ventoy" is Ventoy's own)
 # theme = ""              # Ventoy's own look instead of the Helix themes (./theme.sh picks one)
 
 # Leave a tool for a Mac off the stick (one entry per tool; tools.toml has their names):

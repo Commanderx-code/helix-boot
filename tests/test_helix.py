@@ -493,6 +493,80 @@ class TestFetchAndSync(Base):
         self.assertEqual(self.sync(init=False)[0], 0)
         self.assertEqual((icon.read_bytes(), splash.read_bytes()), (b"my newer icon", b"stock splash"))
 
+    def test_a_dry_run_and_the_apps_get_the_plan_in_one_piece(self):
+        self.fetch("systemrescue", "memtest86plus")
+        with self.assertRaisesRegex(cr.RescueError, "doesn't look like a Ventoy stick"):
+            cr.update_plan(self.cfg, str(self.stick))                    # not a stick yet; and it cleans up after itself
+        self.assertTrue(cr._PLAN is None and sys.stdout is not None)
+        self.assertEqual(self.sync()[0], 0)
+        self.assertEqual(cr.plan_text(cr.update_plan(self.cfg, str(self.stick))),
+                         "Everything on the stick is already up to date.")
+        new = b"systemrescue 12.03 iso"
+        put("dl/systemrescuecd/sysresccd-x86/12.03/systemrescue-12.03-amd64.iso.sha512",
+            f"{sha(new, 'sha512')}  systemrescue-12.03-amd64.iso\n")
+        sf_feed("systemrescuecd", "/sysresccd-x86", [
+            ("/sysresccd-x86/12.03/systemrescue-12.03-amd64.iso", new, "Mon, 01 Sep 2025 10:00:00 UT")])
+        self.fetch("systemrescue")
+        (self.stick / "ISO/5-Diagnostics/theirs.iso").write_bytes(b"another PC's")
+        path = self.stick / cr.STATE_DIR / "state.json"
+        state = json.loads(path.read_text())
+        state["files"].append("ISO/5-Diagnostics/theirs.iso")
+        state["by"]["ISO/5-Diagnostics/theirs.iso"] = "0123456789abcdef"
+        path.write_text(json.dumps(state))
+        plan = cr.update_plan(self.cfg, str(self.stick))
+        self.assertEqual([(a, what) for a, what, _ in plan],
+                         [("copy", "SystemRescue 12.03"), ("remove", "systemrescue-12.02-amd64.iso"), ("keep", "theirs.iso")])
+        self.assertEqual(plan[0][2], len(new))
+        text = cr.plan_text(plan)
+        self.assertEqual(text.splitlines(), [f"Copy 1 ({cr._fmt_bytes(len(new))}): SystemRescue 12.03",
+                                             "Remove 1: systemrescue-12.02-amd64.iso",
+                                             "Keep 1 this PC has no copy of: theirs.iso"])
+        self.assertTrue((self.stick / "ISO/2-Rescue/systemrescue-12.02-amd64.iso").exists())   # only a plan
+        self.assertIsNone(cr._PLAN)
+        rc, out = self.sync(init=False, dry_run=True)
+        self.assertIn(text + "\nDry run — nothing was written.", out)
+
+    def test_helix_boot_itself_goes_on_the_stick(self):
+        (self.repo / "byo").mkdir()
+        (self.repo / "byo/HelixBoot.exe").write_bytes(b"MZ the app")
+        (self.repo / "byo/HelixBoot.sh").write_bytes(b"#!/bin/bash\n")
+        (self.repo / "local.toml").write_text("".join(
+            f'[[tool]]\nname = "helixboot-{ext}"\ntitle = "Helix Boot"\nkind = "file"\ndest = "HelixBoot/HelixBoot.{ext}"\n'
+            f'source = "local"\npath = "byo/HelixBoot.{ext}"\n\n' for ext in ("exe", "sh")))
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch()
+        self.assertEqual(self.sync()[0], 0)
+        folder = self.stick / "HelixBoot"
+        self.assertEqual(sorted(f.name for f in folder.iterdir()), ["HelixBoot.exe", "HelixBoot.sh", "README.txt"])
+        self.assertIn("run HelixBoot.exe", (folder / "README.txt").read_text())
+        # a file that hasn't changed isn't written again; one that is in use (Windows) doesn't stop the run
+        with unittest.mock.patch.object(cr.shutil, "copy2", side_effect=AssertionError("rewritten")):
+            self.assertEqual(self.sync(init=False)[0], 0)
+        (self.repo / "byo/HelixBoot.exe").write_bytes(b"MZ the newer app")
+        real = cr.shutil.copy2
+
+        def in_use(src, dst, *a, **kw):
+            if Path(dst).name == "HelixBoot.exe":
+                raise PermissionError(13, "in use")
+            return real(src, dst, *a, **kw)
+        self.fetch()
+        with unittest.mock.patch.object(cr.shutil, "copy2", side_effect=in_use):
+            rc, out = self.sync(init=False)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("HelixBoot/HelixBoot.exe is in use", out)
+        self.assertEqual((folder / "HelixBoot.exe").read_bytes(), b"MZ the app")
+        self.assertEqual(self.sync(init=False)[0], 0)
+        self.assertEqual((folder / "HelixBoot.exe").read_bytes(), b"MZ the newer app")
+
+    def test_the_sticks_name(self):
+        self.assertEqual(self.cfg.stick_label, "HelixBoot")
+        (self.repo / "local.toml").write_text('[settings]\nstick_label = "RESCUE-1"\n')
+        self.assertEqual(cr.Config(repo=self.repo).stick_label, "RESCUE-1")
+        for bad in ("", "has space", "twelve-chars", "né"):
+            (self.repo / "local.toml").write_text(f'[settings]\nstick_label = "{bad}"\n')
+            with self.assertRaisesRegex(cr.RescueError, "stick_label"):
+                cr.Config(repo=self.repo)
+
     def test_a_stick_from_before_tools_were_recorded(self):
         # state.json without "tools": an old version of the same file goes, anything else stays
         self.fetch("systemrescue")

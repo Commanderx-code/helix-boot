@@ -54,6 +54,7 @@ HASH_BY_LEN = {32: "md5", 40: "sha1", 64: "sha256", 128: "sha512"}
 STRENGTH = {"md5": 1, "sha1": 2, "sha256": 3, "sha512": 4}
 STATE_DIR = ".helix-boot"
 TAG_FILE = "helix-boot.tag"
+STICK_LABEL = "HelixBoot"     # the volume name a new stick gets (Ventoy's own is "Ventoy")
 # The stick's look (`helix theme`): ventoy/theme and ventoy/ventoy.json are built from these
 THEME_SRC = f"{STATE_DIR}/theme"              # the theme as synced: presets, icon packs, your own icons
 BASE_JSON = f"{STATE_DIR}/ventoy.base.json"   # the boot menu before the look is applied
@@ -160,6 +161,9 @@ class Config:
         self.iso_root = self.settings.get("iso_root", "ISO")
         self.apps_root = self.settings.get("apps_root", "Apps")
         self.mac_root = self.settings.get("mac_root", "Mac")   # apps with platform = "mac"
+        self.stick_label = str(self.settings.get("stick_label", STICK_LABEL))   # the name install gives a stick
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,11}", self.stick_label):
+            raise RescueError("stick_label must be 1 to 11 letters, digits, - or _ (it is the stick's volume name)")
 
     def _validate(self, t: dict, seen: set) -> None:
         name = t.get("name")
@@ -1214,6 +1218,23 @@ def _app_root(cfg: Config, t: dict) -> str:
     return cfg.mac_root if t.get("platform") == "mac" else cfg.apps_root
 
 
+STICK_README = """Helix Boot: update this stick, or change how its boot menu looks, from any PC
+============================================================================
+
+Windows:  run HelixBoot.exe in this folder (it asks for admin rights).
+          Pick the stick, then Update stick, or Look... for themes and icons.
+Linux:    bash HelixBoot.sh        (in a terminal, in this folder)
+          It shows a menu: update the stick, change its look, check for updates.
+
+Updating from here keeps every tool already on the stick, including ones this
+PC has no copy of. Install ERASES whatever stick you pick: don't use it on this one.
+
+Your own settings (local.toml) and tools (byo/) go beside the app you run. To
+use the ones you already have, run Helix Boot from the folder that holds them.
+https://github.com/Commanderx-code/helix-boot
+"""
+
+
 def _mac_readme(cfg: Config, apps: list[tuple]) -> bytes | None:
     """Mac/README.txt: what each Mac tool is, and how to open it."""
     mac = [(t, src) for t, _, src in apps if t.get("platform") == "mac"]
@@ -1408,6 +1429,9 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
     readme = _mac_readme(cfg, apps)
     if readme:
         out.append((f"{cfg.mac_root}/README.txt", readme))
+    own = {rel.rpartition("/")[0] for rel, _ in out if rel.endswith(("/HelixBoot.exe", "/HelixBoot.sh"))}
+    for folder in sorted(own):          # the apps on the stick itself: say what they are
+        out.append((f"{folder}/README.txt", STICK_README.encode("utf-8")))
     launcher = cfg.assets / "pe" / "launcher"
     if launcher.is_dir():  # works from any WinPE, including Hiren's
         out += [(f"{cfg.apps_root}/{f.name}", f) for f in sorted(launcher.iterdir())
@@ -1464,7 +1488,7 @@ def _open_stick(mnt: Path, init: bool) -> tuple[Path, dict]:
         os.rename(mnt / OLD_STATE_DIR, state_dir)          # a stick from before the rename to Helix Boot
     if not state_dir.exists():
         label = _label_of(mnt)
-        if not init and label != "Ventoy":
+        if not init and label not in ("Ventoy", STICK_LABEL):
             raise RescueError(
                 f"{mnt} doesn't look like a Ventoy stick (label: {label or 'unknown'}). "
                 "If you're sure, rerun with --init."
@@ -1567,7 +1591,58 @@ def _put_by(state: dict, me: str, files: set[str], wrote: set[str], kept: list[s
     }
 
 
+# What a run is about to do to a stick, collected while it works it out, so a dry run can say
+# it in one piece and the apps can ask first (update_plan).
+_PLAN: list[tuple[str, str, int]] | None = None
+
+
+def _planned(action: str, what: str, size: int = 0) -> None:
+    """Note one thing this run does: action is copy, remove or keep."""
+    if _PLAN is not None:
+        _PLAN.append((action, what, size))
+
+
+def plan_text(plan: list[tuple[str, str, int]]) -> str:
+    """A plan in plain words: what an update copies, removes and leaves alone."""
+    def names(action: str) -> list[str]:
+        return [what for a, what, _ in plan if a == action]
+
+    def listed(items: list[str]) -> str:
+        return ", ".join(items[:8]) + (f" and {len(items) - 8} more" if len(items) > 8 else "")
+
+    copy, remove, keep = names("copy"), names("remove"), names("keep")
+    if not copy and not remove:
+        lines = ["Everything on the stick is already up to date."]
+    else:
+        lines = []
+        if copy:
+            size = sum(n for a, _, n in plan if a == "copy")
+            lines.append(f"Copy {len(copy)}" + (f" ({_fmt_bytes(size)})" if size else "") + f": {listed(copy)}")
+        lines.append(f"Remove {len(remove)}: {listed(remove)}" if remove else "Remove nothing.")
+    if keep:
+        lines.append(f"Keep {len(keep)} this PC has no copy of: {listed(keep)}")
+    return "\n".join(lines)
+
+
+def update_plan(cfg: Config, target: str, pack: str | None = None, prune_unknown: bool = False) -> list:
+    """What `sync` (or `unpack`, given a pack) would do to the stick, without doing it or
+    printing anything: a list of (copy | remove | keep, what, bytes) for plan_text."""
+    global _PLAN
+    args = argparse.Namespace(target=target, pack=pack, init=False, dry_run=True, verify=False,
+                              no_prune=False, prune_unknown=prune_unknown)
+    _PLAN, streams = [], (sys.stdout, sys.stderr)
+    try:
+        with open(os.devnull, "w", encoding="utf-8") as quiet:
+            sys.stdout = sys.stderr = quiet
+            (cmd_unpack if pack else cmd_sync)(cfg, args)
+        return _PLAN
+    finally:
+        (sys.stdout, sys.stderr), _PLAN = streams, None
+
+
 def _keep_note(what: str, names: list[str]) -> None:
+    for name in names:
+        _planned("keep", name)
     if names:
         warn(f"keeping {len(names)} {what} this PC has no copy of: {', '.join(names)}. "
              "They stay on the stick as they are; --prune-unknown removes them.")
@@ -1579,6 +1654,7 @@ def _prune(mnt: Path, iso_root: str, stale: list[str], dry_run: bool) -> None:
         p = (mnt / rel).resolve()
         if p.is_relative_to(mnt) and p.exists():
             info(f"removing old {rel}")
+            _planned("remove", rel.rpartition("/")[2])
             if not dry_run:
                 p.unlink()
     if not dry_run:  # category folders emptied by a rename or removal
@@ -1616,10 +1692,14 @@ def _write_extras(cfg: Config, mnt: Path, state: dict, extras: list[tuple[str, P
     for rel, data in extras:
         dst = _inside(mnt, rel)
         dst.parent.mkdir(parents=True, exist_ok=True)
-        if isinstance(data, bytes):
-            dst.write_bytes(data)
-        else:
-            shutil.copy2(data, dst)
+        try:
+            if isinstance(data, bytes):
+                dst.write_bytes(data)
+            elif not _same_file(data, dst):
+                shutil.copy2(data, dst)
+        except PermissionError:     # Windows: the app updating the stick is running from it
+            warn(f"{rel} is in use, so it wasn't replaced: it will be on the next update, "
+                 "or run Helix Boot from another folder")
     for sub, aside in kept.items():                 # the stick's own icons and splash, back in place
         (mnt / THEME_SRC / "mine").mkdir(parents=True, exist_ok=True)
         os.replace(aside, mnt / THEME_SRC / "mine" / sub)
@@ -1627,6 +1707,16 @@ def _write_extras(cfg: Config, mnt: Path, state: dict, extras: list[tuple[str, P
         shutil.rmtree(mnt / STATE_DIR / "mine.keep", ignore_errors=True)
     _apply_look(cfg, mnt)
     return vjson
+
+
+def _same_file(src: Path, dst: Path) -> bool:
+    """Is dst already a copy of src? By size and time (copies keep the time; exFAT rounds it to
+    2 s), which spares rewriting the big files on every refresh."""
+    try:
+        a, b = src.stat(), dst.stat()
+    except OSError:
+        return False
+    return a.st_size == b.st_size and abs(a.st_mtime - b.st_mtime) <= 2
 
 
 def _set_mine_aside(cfg: Config, mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]]) -> dict[str, Path]:
@@ -1670,6 +1760,9 @@ def _finish(mnt: Path, state_dir: Path, files: set[str], app_state: dict, vjson:
 
 
 def cmd_sync(cfg: Config, args) -> int:
+    global _PLAN
+    if args.dry_run and _PLAN is None:
+        _PLAN = []                      # a dry run ends by saying what it would do, in one piece
     mnt = Path(args.target).expanduser().resolve()
     state_dir, state = _open_stick(mnt, args.init)
     placed, apps, missing = _plan(cfg, load_lock(cfg))
@@ -1717,6 +1810,7 @@ def cmd_sync(cfg: Config, args) -> int:
             ok(f"{p['title']} {p['version']} — already on stick")
             continue
         info(f"{p['title']} {p['version']} → {p['rel']}")
+        _planned("copy", f"{p['title']} {p['version']}", p["src"].stat().st_size)
         if not args.dry_run:
             prog = Progress()
             prog.file(f"({n}/{len(placed)}) {p['file']}", p["src"].stat().st_size)
@@ -1742,6 +1836,7 @@ def cmd_sync(cfg: Config, args) -> int:
             ok(f"{t['title']} {entry['version']} — already on stick")
             continue
         info(f"{t['title']} {entry['version']} → {_app_root(cfg, t)}/{t['name']}/")
+        _planned("copy", f"{t['title']} {entry['version']}", src.stat().st_size)
         if args.dry_run:
             continue
         new = root / f".{t['name']}.new"
@@ -1771,6 +1866,7 @@ def cmd_sync(cfg: Config, args) -> int:
             kept_apps.append(name)          # another PC's: this one just has no copy of it
             continue
         info(f"removing app no longer in the manifest: {name}")
+        _planned("remove", name)
         if not args.dry_run:
             for root in (app_root, mnt / cfg.mac_root):
                 shutil.rmtree(_inside(root, name, "app folder"), ignore_errors=True)
@@ -1795,6 +1891,7 @@ def cmd_sync(cfg: Config, args) -> int:
             continue
         files = _tree_files(src)
         info(f"{t['title']} {entry['version']} → /{t['dest']}")
+        _planned("copy", f"{t['title']} {entry['version']}")
         if args.dry_run:
             continue
         prog = Progress(sum(f.stat().st_size for _, f in files))
@@ -1806,7 +1903,7 @@ def cmd_sync(cfg: Config, args) -> int:
         _tree_patches(t, base, args.dry_run)
 
     if args.dry_run:
-        print("\nDry run — nothing was written.")
+        print(f"\n{plan_text(_PLAN or [])}\nDry run — nothing was written.")
         return 0
 
     app_root.mkdir(exist_ok=True)
@@ -2064,6 +2161,9 @@ def _unzip_to(zf: zipfile.ZipFile, member: str, dst: Path, progress: Progress | 
 
 
 def cmd_unpack(cfg: Config, args) -> int:
+    global _PLAN
+    if args.dry_run and _PLAN is None:
+        _PLAN = []
     mnt = Path(args.target).expanduser().resolve()
     state_dir, state = _open_stick(mnt, args.init)
     with _open_pack(args.pack) as zf:
@@ -2090,6 +2190,7 @@ def cmd_unpack(cfg: Config, args) -> int:
                 ok(f"{i['title']} {i['version']} — already on stick")
                 continue
             info(f"{i['title']} {i['version']} → {i['rel']}")
+            _planned("copy", f"{i['title']} {i['version']}", i["size"])
             if args.dry_run:
                 continue
             if f"stick/{i['rel']}" not in names:
@@ -2124,6 +2225,7 @@ def cmd_unpack(cfg: Config, args) -> int:
                 ok(f"{name} {version} — already on stick")
                 continue
             info(f"{name} {version} → {roots.get(name, apps_root)}/{name}/")
+            _planned("copy", f"{name} {version}")
             if args.dry_run:
                 continue
             new = root / f".{name}.new"
@@ -2150,6 +2252,7 @@ def cmd_unpack(cfg: Config, args) -> int:
                 kept_apps.append(name)      # another PC's: the pack just doesn't have it
                 continue
             info(f"removing app that isn't in this pack: {name}")
+            _planned("remove", name)
             if not args.dry_run:
                 for root in {apps_root, cfg.mac_root, *roots.values()}:
                     shutil.rmtree(_inside(_inside(mnt, root, "apps folder"), name, "app folder"), ignore_errors=True)
@@ -2182,7 +2285,7 @@ def cmd_unpack(cfg: Config, args) -> int:
             _tree_patches(t, base, args.dry_run)
 
         if args.dry_run:
-            print("\nDry run — nothing was written.")
+            print(f"\n{plan_text(_PLAN or [])}\nDry run — nothing was written.")
             return 0
 
         app_root.mkdir(exist_ok=True)
@@ -2993,6 +3096,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="don't change the stick: write a picture of how the menu would look")
     p.add_argument("--json", action="store_true", help="print the look and the choices as JSON")
     p.set_defaults(fn=cmd_theme)
+
+    p = sub.add_parser("setting", help="print one of the [settings], for the scripts (e.g. stick_label)")
+    p.add_argument("name", choices=["stick_label", "iso_root", "apps_root", "mac_root"])
+    p.set_defaults(fn=lambda cfg, a: print(getattr(cfg, a.name)) or 0)
 
     p = sub.add_parser("ventoy-path", help="print the extracted Ventoy folder")
     p.add_argument("--from", dest="from_pack", metavar="PACK", help="use the Ventoy inside a pack")

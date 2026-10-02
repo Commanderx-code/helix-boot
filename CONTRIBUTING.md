@@ -25,11 +25,16 @@ pictures (previews, the loading bar, greyscale icons) are skipped without it.
 python3 -m unittest discover -s tests -v   # the whole suite runs offline
 shellcheck -x install.sh refresh.sh theme.sh scripts/common.sh pe/vm/build-vm.sh linux/build.sh linux/HelixBoot.sh.in
 ./helix check                             # live: does every upstream still resolve?
+tests/boot/boot_menu.py --firmware both   # boots the menu in QEMU with every theme, takes screenshots
 ```
 
 The tests run against a local fake GitHub / SourceForge / web server, so they
 need no network; the Windows app's tests fake PowerShell and Ventoy, so they run
-here too. CI also runs a weekly live download-and-verify of every tool, builds
+here too. `tests/boot/boot_menu.py` builds a throwaway Ventoy disk and boots it
+in QEMU once per theme, on UEFI and BIOS, checking that each comes up with its
+own background and a drawn menu; it needs QEMU, OVMF, mtools, dosfstools and
+Pillow, and it is where the README's screenshots come from. CI runs it on
+every push, and also runs a weekly live download-and-verify of every tool, builds
 and smoke-tests `HelixBoot.exe` on Windows, and checks the Lazarus launcher
 (`pe/lazarus`) on Windows PowerShell 5.1, uploading screenshots of it.
 

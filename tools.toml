@@ -57,6 +57,7 @@ cache_dir = "~/.cache/helix-boot"
 iso_root  = "ISO"
 apps_root = "Apps"
 mac_root  = "Mac"     # apps with platform = "mac": tools to run on a working Mac
+stick_label = "HelixBoot"   # the name a new stick gets (up to 11 letters, digits, - or _); "Ventoy" is Ventoy's own
 theme     = "theme"   # Ventoy boot-menu theme (folder in this repo); remove for Ventoy's default
 
 # ── Menu categories (folder order = boot menu order) ──────────────────────
@@ -663,6 +664,28 @@ url = "https://go.microsoft.com/fwlink/?LinkId=212732"   # x64; expires 10 days 
 file = "msert.exe"
 entry = "msert.exe"
 checksum = ["tofu"]
+
+# ── Helix Boot itself, on the stick (USB:/HelixBoot, with a README.txt) ───
+# The latest released apps, so the stick can be updated, or its look changed, from any PC.
+[[tool]]
+name = "helixboot-exe"
+title = "Helix Boot for Windows"
+kind = "file"
+dest = "HelixBoot/HelixBoot.exe"
+source = "github"
+repo = "Commanderx-code/helix-boot"
+asset = ['^HelixBoot\.exe$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "helixboot-sh"
+title = "Helix Boot for Linux"
+kind = "file"
+dest = "HelixBoot/HelixBoot.sh"
+source = "github"
+repo = "Commanderx-code/helix-boot"
+asset = ['^HelixBoot\.sh$']
+checksum = ["github-digest"]
 
 # ── Tools for a Mac (USB:/Mac, with a README.txt) ─────────────────────────
 # Nothing here boots a Mac: these run on a working one, Apple silicon included. Each stays
