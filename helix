@@ -159,6 +159,7 @@ class Config:
             os.rename(old, self.cache)          # renamed with the project: move it over, don't re-download
         self.iso_root = self.settings.get("iso_root", "ISO")
         self.apps_root = self.settings.get("apps_root", "Apps")
+        self.mac_root = self.settings.get("mac_root", "Mac")   # apps with platform = "mac"
 
     def _validate(self, t: dict, seen: set) -> None:
         name = t.get("name")
@@ -174,6 +175,8 @@ class Config:
                 raise RescueError(f"{where}: recolor.{img} must be a hex colour like 2AA9BE")
         if t.get("ventoy_mode") and t.get("ventoy_mode") not in VENTOY_MODES:
             raise RescueError(f"{where}: ventoy_mode must be one of {sorted(VENTOY_MODES)}")
+        if t.get("platform") not in (None, "mac") or (t.get("platform") and t["kind"] != "app"):
+            raise RescueError(f"{where}: platform can only be \"mac\", on an app")
         if t["kind"] == "file":
             dest = t.get("dest") or ""
             if not dest or dest.startswith("/") or ".." in dest.split("/"):
@@ -1187,6 +1190,30 @@ def _plan(cfg: Config, lock: dict) -> tuple[list[dict], list[tuple], list[str]]:
     return placed, apps, missing
 
 
+def _app_root(cfg: Config, t: dict) -> str:
+    """The stick folder an app goes in: Apps, or Mac for `platform = "mac"` (tools to run on a
+    working Mac; they stay as downloaded, since an unpacked .app doesn't survive exFAT)."""
+    return cfg.mac_root if t.get("platform") == "mac" else cfg.apps_root
+
+
+def _mac_readme(cfg: Config, apps: list[tuple]) -> bytes | None:
+    """Mac/README.txt: what each Mac tool is, and how to open it."""
+    mac = [(t, src) for t, _, src in apps if t.get("platform") == "mac"]
+    if not mac:
+        return None
+    lines = ["Helix Boot: tools for a Mac", "===========================", "",
+             "These run on a working Mac; nothing here boots one. Copy a tool's folder to the Mac",
+             "first (the Desktop will do), then open the file in it: a .dmg or .pkg opens with a",
+             "double-click, a .zip unpacks to the app. If macOS won't open an app because it can't",
+             "check its developer, allow it under System Settings > Privacy & Security (Open Anyway);",
+             "on macOS 14 and older, right-clicking the app and choosing Open does the same.", ""]
+    for t, src in sorted(mac, key=lambda ts: ts[0]["title"].lower()):
+        lines += [f"{t['title']}", f"    {t['name']}/{src.name}"]
+        lines += [f"    {t['description']}"] if t.get("description") else []
+        lines += [""]
+    return "\n".join(lines).encode("utf-8")
+
+
 def _trees(cfg: Config, lock: dict) -> list[tuple[dict, dict, Path]]:
     """Fetched `kind = "tree"` tools: (tool, lock entry, folder). A local tree is a folder as is."""
     out = []
@@ -1360,6 +1387,9 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
              + " ".join(t.get("description", "").replace("|", "/").split())
              for t, _, _ in apps if t.get("entry")]
     out.append((f"{cfg.apps_root}/apps.txt", ("\r\n".join(lines) + "\r\n").encode("utf-8")))
+    readme = _mac_readme(cfg, apps)
+    if readme:
+        out.append((f"{cfg.mac_root}/README.txt", readme))
     launcher = cfg.assets / "pe" / "launcher"
     if launcher.is_dir():  # works from any WinPE, including Hiren's
         out += [(f"{cfg.apps_root}/{f.name}", f) for f in sorted(launcher.iterdir())
@@ -1547,17 +1577,18 @@ def cmd_sync(cfg: Config, args) -> int:
     app_state = dict(state.get("apps", {}))
     app_root = mnt / cfg.apps_root
     for t, entry, src in apps:
-        dst = app_root / t["name"]
+        root = mnt / _app_root(cfg, t)
+        dst = root / t["name"]
         if app_state.get(t["name"]) == entry["version"] and dst.exists():
             ok(f"{t['title']} {entry['version']} — already on stick")
             continue
-        info(f"{t['title']} {entry['version']} → {cfg.apps_root}/{t['name']}/")
+        info(f"{t['title']} {entry['version']} → {_app_root(cfg, t)}/{t['name']}/")
         if args.dry_run:
             continue
-        new = app_root / f".{t['name']}.new"
+        new = root / f".{t['name']}.new"
         shutil.rmtree(new, ignore_errors=True)
         new.mkdir(parents=True)
-        if zipfile.is_zipfile(src):
+        if zipfile.is_zipfile(src) and t.get("platform") != "mac":
             with zipfile.ZipFile(src) as zf:
                 zf.extractall(new, members=_safe_zip_members(zf))
         else:
@@ -1576,7 +1607,8 @@ def cmd_sync(cfg: Config, args) -> int:
             continue
         info(f"removing app no longer in the manifest: {name}")
         if not args.dry_run:
-            shutil.rmtree(_inside(app_root, name, "app folder"), ignore_errors=True)
+            for root in (app_root, mnt / cfg.mac_root):
+                shutil.rmtree(_inside(root, name, "app folder"), ignore_errors=True)
             app_state.pop(name)
 
     if stale and not args.no_prune:
@@ -1719,8 +1751,8 @@ def cmd_pack(cfg: Config, args) -> int:
                 isos.append({"rel": p["rel"], "title": p["title"], "version": p["version"], "sha256": sha,
                              "size": p["src"].stat().st_size})
             for t, entry, src in apps:
-                base = f"stick/{cfg.apps_root}/{t['name']}"
-                if zipfile.is_zipfile(src):  # unpacked now, exactly as `sync` would
+                base = f"stick/{_app_root(cfg, t)}/{t['name']}"
+                if zipfile.is_zipfile(src) and t.get("platform") != "mac":  # unpacked now, exactly as `sync` would
                     with zipfile.ZipFile(src) as zs:
                         for m in _safe_zip_members(zs):
                             if m.is_dir():
@@ -1761,6 +1793,7 @@ def cmd_pack(cfg: Config, args) -> int:
                 "created": dt.datetime.now().isoformat(timespec="seconds"),
                 "iso_root": cfg.iso_root, "apps_root": cfg.apps_root, "isos": isos,
                 "apps": {t["name"]: e["version"] for t, e, _ in apps},
+                "app_roots": {t["name"]: _app_root(cfg, t) for t, _, _ in apps if _app_root(cfg, t) != cfg.apps_root},
                 "ventoy": {"file": f"installer/{vsrc.name}", "version": ventry["version"]} if vsrc else None,
                 "ventoy_windows": ({"file": f"installer/{win_ventoy[0].name}", "version": win_ventoy[1]["version"]}
                                    if win_ventoy else None),
@@ -1806,6 +1839,7 @@ def _read_pack(zf: zipfile.ZipFile) -> dict:
                           "Update Helix Boot.")
     _safe_zip_members(zf)
     for rel in ([meta[k] for k in ("iso_root", "apps_root") if k in meta] + [i["rel"] for i in meta["isos"]]
+                + list(meta.get("app_roots", {}).values())
                 + [t[k] for t in meta.get("trees", []) for k in ("dest", "once") if t[k]]):
         _safe_rel(rel, "path in pack")
     for name in list(meta["apps"]) + [t["name"] for t in meta.get("trees", [])]:
@@ -1903,17 +1937,19 @@ def cmd_unpack(cfg: Config, args) -> int:
 
         app_state = dict(state.get("apps", {}))
         app_root = _inside(mnt, apps_root, "apps folder")
+        roots = meta.get("app_roots", {})         # apps that go elsewhere than Apps: the Mac tools
         for name, version in meta["apps"].items():
-            dst = _inside(app_root, name, "app folder")
+            root = _inside(mnt, roots.get(name, apps_root), "apps folder")
+            dst = _inside(root, name, "app folder")
             if app_state.get(name) == version and dst.exists():
                 ok(f"{name} {version} — already on stick")
                 continue
-            info(f"{name} {version} → {apps_root}/{name}/")
+            info(f"{name} {version} → {roots.get(name, apps_root)}/{name}/")
             if args.dry_run:
                 continue
-            new = app_root / f".{name}.new"
+            new = root / f".{name}.new"
             shutil.rmtree(new, ignore_errors=True)
-            prefix = f"stick/{apps_root}/{name}/"
+            prefix = f"stick/{roots.get(name, apps_root)}/{name}/"
             for m in names:
                 if m.startswith(prefix) and not m.endswith("/"):
                     _unzip_to(zf, m, _inside(new, m[len(prefix):], "path in pack"))
@@ -1929,7 +1965,8 @@ def cmd_unpack(cfg: Config, args) -> int:
                 continue
             info(f"removing app that isn't in this pack: {name}")
             if not args.dry_run:
-                shutil.rmtree(_inside(app_root, name, "app folder"), ignore_errors=True)
+                for root in {apps_root, cfg.mac_root, *roots.values()}:
+                    shutil.rmtree(_inside(_inside(mnt, root, "apps folder"), name, "app folder"), ignore_errors=True)
                 app_state.pop(name)
 
         stale = [f for f in state.get("files", []) if f not in want_files]
@@ -1957,7 +1994,7 @@ def cmd_unpack(cfg: Config, args) -> int:
             return 0
 
         app_root.mkdir(exist_ok=True)
-        app_dirs = tuple(f"stick/{apps_root}/{n}/" for n in meta["apps"])
+        app_dirs = tuple(f"stick/{roots.get(n, apps_root)}/{n}/" for n in meta["apps"])
         extras = [(m[len("stick/"):], zf.read(m)) for m in sorted(names)
                   if m.startswith("stick/") and not m.endswith("/") and m[len("stick/"):] not in want_files
                   and not m.startswith(app_dirs)]

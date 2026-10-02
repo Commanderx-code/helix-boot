@@ -34,6 +34,8 @@
 #   version_pin fixed version string for hand-bumped `url` sources
 #   extract     optional regex: pull a matching member out of a downloaded .zip
 #   entry       (apps) the .exe the PE launcher should start
+#   platform    (apps) "mac": a tool for a working Mac. It goes in Mac/<name>/ instead of
+#               Apps/, as downloaded (.dmg, .pkg, .zip): an unpacked .app doesn't survive exFAT
 #   checksum    list of strategies, tried in order; the first that produces a
 #               hash is used. The download is rejected if it doesn't match.
 #       "github-digest"            sha256 GitHub records for each release asset
@@ -54,6 +56,7 @@
 cache_dir = "~/.cache/helix-boot"
 iso_root  = "ISO"
 apps_root = "Apps"
+mac_root  = "Mac"     # apps with platform = "mac": tools to run on a working Mac
 theme     = "theme"   # Ventoy boot-menu theme (folder in this repo); remove for Ventoy's default
 
 # ── Menu categories (folder order = boot menu order) ──────────────────────
@@ -660,3 +663,204 @@ url = "https://go.microsoft.com/fwlink/?LinkId=212732"   # x64; expires 10 days 
 file = "msert.exe"
 entry = "msert.exe"
 checksum = ["tofu"]
+
+# ── Tools for a Mac (USB:/Mac, with a README.txt) ─────────────────────────
+# Nothing here boots a Mac: these run on a working one, Apple silicon included. Each stays
+# as downloaded (.dmg, .pkg, .zip) in Mac/<name>/; copy it to the Mac, then open it.
+[[tool]]
+name = "etrecheck"
+title = "EtreCheck"
+description = "One-click report on what is slowing or breaking a Mac; free to run, some extras paid"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://cdn.etrecheck.com/EtreCheckPro.zip"
+checksum = ["tofu"]
+
+# OnyX is built per macOS version: pick the one matching the Mac.
+[[tool]]
+name = "onyx-tahoe"
+title = "OnyX for macOS 26 Tahoe"
+description = "Maintenance and cleaning: rebuild caches and indexes, verify the startup disk"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://www.titanium-software.fr/download/26/OnyX.dmg"
+checksum = ["tofu"]
+
+[[tool]]
+name = "onyx-sequoia"
+title = "OnyX for macOS 15 Sequoia"
+description = "Maintenance and cleaning: rebuild caches and indexes, verify the startup disk"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://www.titanium-software.fr/download/15/OnyX.dmg"
+checksum = ["tofu"]
+
+[[tool]]
+name = "onyx-sonoma"
+title = "OnyX for macOS 14 Sonoma"
+description = "Maintenance and cleaning: rebuild caches and indexes, verify the startup disk"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://www.titanium-software.fr/download/14/OnyX.dmg"
+checksum = ["tofu"]
+
+[[tool]]
+name = "malwarebytes-mac"
+title = "Malwarebytes for Mac"
+description = "Malware and adware scan and removal; scanning is free"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://downloads.malwarebytes.com/file/mb-mac"
+file = "Malwarebytes-Mac.pkg"
+checksum = ["tofu"]
+
+[[tool]]
+name = "knockknock"
+title = "KnockKnock"
+description = "Objective-See: lists everything set to start by itself, to spot persistent malware"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "objective-see/KnockKnock"
+asset = ['^KnockKnock_[\d.]+\.zip$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "taskexplorer"
+title = "TaskExplorer"
+description = "Objective-See: running processes with their signatures, open files and connections"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "objective-see/TaskExplorer"
+asset = ['^TaskExplorer_[\d.]+\.zip$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "lulu"
+title = "LuLu"
+description = "Objective-See: free firewall that asks before a program connects out"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "objective-see/LuLu"
+asset = ['^LuLu_[\d.]+\.dmg$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "grandperspective"
+title = "GrandPerspective"
+description = "Shows what is filling a disk, as a map of blocks"
+kind = "app"
+platform = "mac"
+source = "sourceforge"
+project = "grandperspectiv"
+path = "/grandperspective"
+asset = ['^GrandPerspective-[\d_]+\.dmg$']
+version = 'GrandPerspective-([\d_]+)\.dmg'
+checksum = ["sf-md5"]
+
+[[tool]]
+name = "testdisk-mac"
+title = "TestDisk & PhotoRec for Mac"
+description = "Recover lost partitions (TestDisk) and deleted files (PhotoRec); Intel build, runs under Rosetta"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://www.cgsecurity.org/testdisk-7.2.mac_intel_x86_64.tar.bz2"   # bump by hand
+version_pin = "7.2"
+checksum = ["tofu"]
+
+[[tool]]
+name = "coconutbattery"
+title = "coconutBattery"
+description = "Battery health, cycle count and age, for the Mac and a connected iPhone or iPad"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://coconut-flavour.com/downloads/coconutBattery_latest.zip"
+checksum = ["tofu"]
+
+[[tool]]
+name = "stats"
+title = "Stats"
+description = "Menu bar monitor: CPU, memory, disks, temperatures and fan speeds"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "exelban/stats"
+asset = ['^Stats\.dmg$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "macs-fan-control"
+title = "Macs Fan Control"
+description = "Read every temperature sensor and set fan speeds by hand; the free edition"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "crystalidea/macs-fan-control"
+asset = ['^macsfancontrol\.zip$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "appcleaner"
+title = "AppCleaner"
+description = "Uninstall an app together with the files it left around the system"
+kind = "app"
+platform = "mac"
+source = "page"
+page = "https://freemacsoft.net/appcleaner/"
+asset = ['AppCleaner_[\d.]+\.zip$']
+version = 'AppCleaner_([\d.]+)\.zip'
+checksum = ["tofu"]
+
+[[tool]]
+name = "superduper"
+title = "SuperDuper!"
+description = "Clone a Mac's disk to another drive; full copies are free"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://www.shirt-pocket.com/downloads/SuperDuper!.dmg"
+file = "SuperDuper.dmg"
+checksum = ["tofu"]
+
+[[tool]]
+name = "mist"
+title = "Mist"
+description = "Download macOS installers and firmware, and make a bootable macOS installer"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "ninxsoft/Mist"
+asset = ['^Mist\.[\d.]+\.dmg$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "opencore-legacy-patcher"
+title = "OpenCore Legacy Patcher"
+description = "Install a newer macOS than Apple allows on an older Intel Mac"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "dortania/OpenCore-Legacy-Patcher"
+asset = ['^OpenCore-Patcher\.pkg$']
+checksum = ["github-digest"]
+
+# On hold upstream: macOS no longer lets it change much. Unsigned, so macOS asks before opening it.
+[[tool]]
+name = "macutil"
+title = "Chris Titus Tech MacUtil"
+description = "Chris Titus Tech's utility to fix macOS defaults and remove animations; on hold upstream"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "ChrisTitusTech/macutil"
+asset = ['^MacUtil-Universal\.app\.zip$']
+checksum = ["github-digest"]

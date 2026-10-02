@@ -1122,6 +1122,53 @@ class TestPack(Base):
         self.assertNotIn("copied", out)
         self.assertNotIn("backed up", out)
 
+    def test_mac_tools_go_in_their_own_folder_as_downloaded(self):
+        (self.repo / "byo").mkdir()
+        app_zip = zipped({"Thing.app/Contents/MacOS/Thing": b"mach-o"})
+        (self.repo / "byo/Thing.zip").write_bytes(app_zip)
+        (self.repo / "byo/Disk.dmg").write_bytes(b"koly disk image")
+        mac = ('[[tool]]\nname = "thing"\ntitle = "Thing"\ndescription = "Does a thing."\nkind = "app"\n'
+               'platform = "mac"\nsource = "local"\nbyo = true\npath = "byo/Thing.zip"\n\n'
+               '[[tool]]\nname = "disk-tool"\ntitle = "Disk Tool"\nkind = "app"\nplatform = "mac"\n'
+               'source = "local"\nbyo = true\npath = "byo/Disk.dmg"\n')
+        (self.repo / "local.toml").write_text(mac)
+        self.cfg = cr.Config(repo=self.repo)
+        self.assertEqual(self.fetch()[0], 0)
+        rc, out = self.sync()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((self.stick / "Mac/thing/Thing.zip").read_bytes(), app_zip)        # not unpacked
+        self.assertEqual((self.stick / "Mac/disk-tool/Disk.dmg").read_bytes(), b"koly disk image")
+        self.assertFalse((self.stick / "Apps/thing").exists())
+        readme = (self.stick / "Mac/README.txt").read_text()
+        for text in ("Thing\n    thing/Thing.zip\n    Does a thing.", "Disk Tool\n    disk-tool/Disk.dmg"):
+            self.assertIn(text, readme)
+        self.assertNotIn("Thing", (self.stick / "Apps/apps.txt").read_text())               # not for the PE launcher
+        self.assertTrue((self.stick / "Apps/sysinternals").is_dir())                         # Windows apps as before
+
+        pack, _ = self.pack()
+        other = self.tmp / "stick2"
+        other.mkdir()
+        rc, out = self.unpack(pack, other)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.tree(other), self.tree(self.stick))
+        rc, out = self.unpack(pack, other)                                                   # nothing to do twice
+        self.assertIn("thing", out)
+        self.assertNotIn("unpacked", out)
+
+        (self.repo / "local.toml").write_text(mac.split("\n\n")[1])                         # "thing" is dropped
+        self.cfg = cr.Config(repo=self.repo)
+        self.assertEqual(self.sync(init=False)[0], 0)
+        self.assertFalse((self.stick / "Mac/thing").exists())
+        self.assertTrue((self.stick / "Mac/disk-tool/Disk.dmg").is_file())
+        self.assertNotIn("Thing", (self.stick / "Mac/README.txt").read_text())
+
+        for bad in ('platform = "amiga"', 'platform = "mac"\nkind = "iso"\ncategory = "rescue"'):
+            (self.repo / "local.toml").write_text(
+                f'[[tool]]\nname = "bad"\ntitle = "Bad"\nkind = "app"\nsource = "local"\npath = "byo/x"\n{bad}\n'
+                .replace('kind = "app"\n', '' if "kind" in bad else 'kind = "app"\n'))
+            with self.assertRaisesRegex(cr.RescueError, "platform can only be"):
+                cr.Config(repo=self.repo)
+
     def test_packs_from_before_the_rename_still_unpack(self):
         self.fetch()
         pack, _ = self.pack()

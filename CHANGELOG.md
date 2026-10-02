@@ -7,6 +7,13 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- **Tools for a Mac**, in a `Mac` folder on the stick with a `README.txt`: 18
+  free utilities to run on a working Mac (EtreCheck, OnyX, Malwarebytes, the
+  Objective-See tools, Stats, Macs Fan Control, coconutBattery,
+  GrandPerspective, AppCleaner, SuperDuper!, TestDisk & PhotoRec, Mist,
+  OpenCore Legacy Patcher, Chris Titus Tech's MacUtil), fetched, verified and
+  kept current like everything else. `platform = "mac"` on an app puts it
+  there, as downloaded, and packs carry them.
 - Two more themes for `theme.sh` and the Look window, both other people's GRUB
   themes with their own layout, adapted for Ventoy: **Standby** (Llewelyn
   Trahaearn, GPL) and **Poly dark** (Andrei Shevchuk, MIT), each with a splash

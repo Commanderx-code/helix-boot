@@ -117,6 +117,21 @@ Kaspersky Virus Removal Tool *(off by default)*. The launcher also carries
 after a repair: run it from the stick in the fixed Windows to debloat, tweak
 or reinstall apps.
 
+**Tools for a Mac**, in `USB:/Mac` with a `README.txt`. Nothing on the stick
+boots a Mac (Apple silicon can't start a PC stick at all), so these are for a
+Mac that still runs, Apple silicon included: copy a tool to the Mac, then open
+it. Each stays as downloaded (`.dmg`, `.pkg`, `.zip`), because an unpacked Mac
+app doesn't survive the stick's exFAT file system.
+
+| For | Tools |
+|---|---|
+| Finding the problem | EtreCheck, Stats, Macs Fan Control, coconutBattery, GrandPerspective |
+| Malware | Malwarebytes for Mac, KnockKnock, TaskExplorer, LuLu (the last three from [Objective-See](https://objective-see.org)) |
+| Cleaning up | OnyX (one each for macOS 26, 15 and 14), AppCleaner |
+| Data | SuperDuper!, TestDisk & PhotoRec |
+| Reinstalling | Mist (macOS installers), OpenCore Legacy Patcher (newer macOS on older Intel Macs) |
+| Tweaks | [Chris Titus Tech's MacUtil](https://github.com/ChrisTitusTech/macutil) *(on hold upstream, and unsigned: macOS asks before opening it)* |
+
 <details>
 <summary><b>Notes on unverified tools, antivirus and Kaspersky</b></summary>
 
@@ -434,6 +449,7 @@ ISO/7-Partition-Tools/  ISO/8-Password-Removal/  ISO/9-Windows-Recovery/
 ISO/OSimages/       your own installer ISOs (never touched; hidden while empty)
 Apps/               portable apps, the Helix Apps menu and LazarusStartup.cmd
 Apps/Lazarus/       the Lazarus launcher (Lazarus PE's start screen)
+Mac/                tools for a working Mac, as downloaded, with a README.txt
 PortableApps/       the PortableApps.com Platform's apps (Start.exe at the root)
 ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 .helix-boot/        sync state (which files this project manages)
