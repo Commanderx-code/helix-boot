@@ -437,10 +437,11 @@ takes the place of Ventoy's own white look, which `theme = ""` under
 
 | Icons | |
 |---|---|
-| `auto` | the theme's own style: logos in colour, or grey on Standby and Poly dark (the default) |
-| `logos` | the tools' logos in colour, and yours from `byo/icons/` |
+| `auto` | the theme's own style: the icons in colour, or grey on Standby and Poly dark (the default) |
+| `logos` | the default icons in colour, and yours from `byo/icons/` |
 | `grey` | the same icons in shades of grey; a flat one-colour icon turns white |
-| `badges` | two-letter badges in place of the tools' logos |
+| `classic` | the set before 0.6.3: each tool's own logo in its original colours, flat category icons |
+| `badges` | two-letter badges in place of the tools' icons |
 | `off` | no icons, just the names |
 
 Your own pictures are resized to 1920×1080 with Pillow; without it, a PNG is
@@ -449,7 +450,7 @@ its look, and for adding a preset or an icon pack of your own.
 
 ### Your own icons and splash
 
-To show a tool's real logo instead of its letter badge, save a square PNG as
+To give a tool your own icon, save a square PNG as
 `byo/icons/<tool name>.png`; `byo/icons/cat-<category id>.png` replaces a
 category icon, and Ventoy's own (`vtoyiso`, `vtoydir`, `vtoyret` for "back", …)
 can be replaced the same way. Yours win over a preset's. Ventoy shows icons at
@@ -473,16 +474,17 @@ small VTOYEFI partition, and re-add them after a Ventoy upgrade.
 
 ### The default theme
 
-**Helix Neon** is purple/cyan DNA artwork, the HELIXBOOT wordmark, cyan
-category icons and a purple selection with a cyan edge. The menu, scrolling,
+**Helix Neon** is purple/cyan DNA artwork, the HELIXBOOT wordmark and a purple
+selection with a cyan edge. The menu, scrolling,
 timeout, hotkeys and boot-mode indicators are real Ventoy components; no menu
 entries are painted into the wallpaper. Lazarus PE keeps its separate green
 PortableApps theme.
 
-Tool entries use curated product/project icons in their original colours,
-with publisher marks where a product-specific icon was not available.
-[Icon preview and sources](docs/tool-icons.md) identify each asset and the
-two remaining letter-badge fallbacks.
+Every tool, category and Ventoy entry has an icon from one glossy set, the
+HELIXBOOT icon collection, the same on every theme. The set before it (each
+tool's own logo in its original colours, with flat category icons) is still
+there as the `classic` icon pack. The [icon notes](docs/tool-icons.md) show
+both and say where each comes from.
 
 ![Helix Neon layout preview](docs/artwork/helix-neon-preview.jpg)
 
@@ -548,12 +550,14 @@ privately as described in [SECURITY.md](SECURITY.md).
 Built on [Ventoy](https://www.ventoy.net),
 [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) and the
 [PortableApps.com Platform](https://portableapps.com), with thanks to every tool
-author listed in [`tools.toml`](tools.toml). Icons from
-[Material Design Icons](https://pictogrammers.com/library/mdi/). Inspired by
-MediCat USB.
+author listed in [`tools.toml`](tools.toml). The classic icon pack's category
+icons are from [Material Design Icons](https://pictogrammers.com/library/mdi/).
+Inspired by MediCat USB.
 
 This repo's scripts are [MIT](LICENSE) licensed. Each tool keeps its own
-license, and nothing here grants rights to software you bring yourself. Two of
+license, and nothing here grants rights to software you bring yourself. Product
+names, logos and icons belong to their owners and only identify the software
+([icon notes](docs/tool-icons.md)). Two of
 the boot-menu themes are other people's work under their own licences, credited
 in their folders: [Standby](theme/presets/standby/NOTICE.md) (GPL) and
 [Poly dark](theme/presets/poly-dark/NOTICE.md) (MIT).

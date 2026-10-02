@@ -28,7 +28,8 @@ W, H = 1920, 1080
 
 # Helix Neon palette (keep theme.txt and helix's menu_tip colour in step).
 ARTWORK = HERE.parent / "docs/artwork/helix-purple-source.png"
-TOOL_ICON_DIR = HERE.parent / "docs/artwork/tool-icons"
+TOOL_ICON_DIR = HERE.parent / "docs/artwork/tool-icons"       # the classic set: the tools' own logos
+ICON_DIR = HERE.parent / "docs/artwork/helix-icons"            # the default set: <menu class>.png masters
 PANEL = (9, 5, 20, 228)
 BORDER = (152, 76, 230, 255)
 ACCENT = (181, 94, 255)
@@ -434,37 +435,55 @@ def tool_icon(t: dict, sources: dict, out: Path | None = None) -> bool:
 
 
 def icons() -> None:
+    """theme/icons/: the default set, from the masters in docs/artwork/helix-icons/ (one per
+    menu class: a tool's name, cat-<category id>, Ventoy's own). A boot tool without a master
+    there keeps its classic icon: its own logo, or a letter badge."""
+    out = out_dir() / "icons"
+    shutil.rmtree(out, ignore_errors=True)
+    classic_icons(out)
+    for src in sorted(ICON_DIR.glob("*.png")):
+        with Image.open(src) as master:
+            icon = master.convert("RGBA")
+        icon = ImageOps.contain(icon.crop(icon.getchannel("A").getbbox()), (ICON - 2, ICON - 2), Image.Resampling.LANCZOS)
+        canvas = Image.new("RGBA", (ICON, ICON))
+        canvas.alpha_composite(icon, ((ICON - icon.width) // 2, (ICON - icon.height) // 2))
+        canvas.save(out / src.name, optimize=True)
+
+
+def classic_icons(out: Path) -> None:
+    """The classic set, in `out`: the tools' own logos in their original colours (the masters
+    and their sources are in docs/artwork/tool-icons/), flat category icons drawn here, letter
+    badges for the rest."""
     manifest = tomllib.loads((HERE.parent / "tools.toml").read_text(encoding="utf-8"))
     sources = json.loads((TOOL_ICON_DIR / "sources.json").read_text(encoding="utf-8"))
-    shutil.rmtree(out_dir() / "icons", ignore_errors=True)
     white = (255, 255, 255, 255)
     for cid in CATEGORIES:
         pen = Pen()
         glyph(cid, pen, (*CYAN, 255), PANEL)
-        pen.save(f"cat-{cid}")
+        pen.save(f"cat-{cid}", out)
 
     for t in manifest.get("tool", []):
         if t.get("kind") == "iso":
-            if not tool_icon(t, sources):
-                badge(t)
+            if not tool_icon(t, sources, out):
+                badge(t, out)
 
     # Ventoy's own classes: folders, the "go back" entry and files without an icon of their own
     pen = Pen()
     accent = (*CYAN, 255)
     pen.d.polygon(pen.xy(.12, .24, .4, .24, .46, .32, .88, .32, .88, .4, .12, .4), fill=accent)
     pen.d.rounded_rectangle(pen.xy(.12, .34, .88, .78), radius=pen.w(.05), fill=accent)
-    pen.save("vtoydir")
+    pen.save("vtoydir", out)
     pen = Pen(bg=(*BORDER[:3], 255))
     pen.d.line(pen.xy(.72, .5, .32, .5), fill=white, width=pen.w(.08))
     pen.d.polygon(pen.xy(.22, .5, .44, .3, .44, .7), fill=white)
-    pen.save("vtoyret")
+    pen.save("vtoyret", out)
     pen = Pen()
     pen.d.ellipse(pen.xy(.12, .12, .88, .88), fill=(*TEXT, 255))
     pen.d.ellipse(pen.xy(.24, .24, .76, .76), outline=(*MUTED, 255), width=pen.w(.03))
     pen.d.ellipse(pen.xy(.4, .4, .6, .6), fill=(*BORDER[:3], 255))
     pen.d.ellipse(pen.xy(.46, .46, .54, .54), fill=(0, 0, 0, 0))
     for cls in ("vtoyiso", "vtoyimg", "vtoywim", "vtoyefi", "vtoyvhd", "vtoyvtoy"):
-        pen.save(cls)
+        pen.save(cls, out)
 
 
 def themed() -> None:
@@ -501,9 +520,11 @@ def presets() -> None:
                      SCROLL=p["scroll"], LINE=tuple(round(c * .45) for c in p["border"][:3]),
                      DIM=p["sky"][0], TITLE=p["title"], DESCRIPTION=p["description"])
             themed()
-            for icon in sorted((out / "icons").iterdir()):   # the logos don't change colour: keep one copy
+            for icon in sorted((out / "icons").iterdir()):   # the icons don't change colour: keep one copy
                 if icon.read_bytes() == (HERE / "icons" / icon.name).read_bytes():
                     icon.unlink()
+            if not any((out / "icons").iterdir()):
+                (out / "icons").rmdir()
             item = tuple(round(a + (b - a) * .25) for a, b in zip(TEXT, MUTED))
             text = theme_txt.replace(default["TITLE"], TITLE)
             for old, new in (("#f4f0ff", TEXT), ("#e6dff2", item), ("#b55eff", ACCENT), ("#baabd3", MUTED)):
@@ -549,6 +570,12 @@ def icon_packs() -> None:
             badge(t, out, col=(186, 171, 211))       # neutral, so it suits every preset
     (out / "pack.toml").write_text('title = "Letter badges"\n'
                                    'description = "Two-letter badges in place of the tools\' logos."\n',
+                                   encoding="utf-8")
+    out = HERE / "icon-packs" / "classic"
+    shutil.rmtree(out, ignore_errors=True)
+    classic_icons(out)
+    (out / "pack.toml").write_text('title = "Classic"\n'
+                                   'description = "The tools\' own logos in their original colours, with flat category icons."\n',
                                    encoding="utf-8")
 
 

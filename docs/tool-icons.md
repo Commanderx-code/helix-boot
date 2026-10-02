@@ -1,11 +1,40 @@
-# Boot-tool icons
+# Boot-menu icons
 
-![Tool icons at their actual 40-pixel menu size](artwork/tool-icons-preview.jpg)
+![The default icons at their actual 40-pixel menu size](artwork/helix-icons-preview.png)
 
-26 of the 28 boot entries now use artwork instead of letter badges: 17
+## The default set
+
+Every boot tool, category and Ventoy entry (folder, "back", ISO, WIM, …) has an
+icon from one glossy set, the HELIXBOOT icon collection, supplied by the
+project's maintainer. They are the same on every theme; Standby and Poly dark
+show them in shades of grey.
+
+Their masters are in `artwork/helix-icons/`, one 128-pixel PNG per menu class:
+a tool's `name`, `cat-<category id>`, or one of Ventoy's own classes.
+`theme/build-theme.py` trims each, keeps its proportions and centres it on the
+40-pixel icon the boot loader shows (bigger icons use up its memory at boot).
+A tool with no master there keeps its classic icon; a few masters are for tools
+people commonly add themselves (`r-studio`, `ubcd`, `tails`, …), so those get an
+icon as soon as a tool by that name exists. To change one, replace its master
+and re-run the builder; to add your own without touching the repo, use
+`byo/icons/`.
+
+These icons are illustrations, not the publishers' official artwork. Product
+names and marks belong to their respective owners and are used only to
+identify the software; inclusion does not imply endorsement.
+
+## The classic set
+
+![The classic icons](artwork/tool-icons-preview.jpg)
+
+The default until 0.6.3, kept as the `classic` icon pack
+(`./theme.sh --icons classic`): each tool's own logo in its original colours,
+with flat category icons.
+
+26 of the 28 boot entries use artwork instead of letter badges: 17
 product/project marks, six publisher marks, two Windows logos reproduced on
 Wikimedia Commons, and one custom Lazarus PE phoenix. **PassMark MemTest86 Free
-and Jayro’s Lockpick still use their letter badges.** Memtest86+ is a separate
+and Jayro’s Lockpick use letter badges there.** Memtest86+ is a separate
 project and has its own verified icon.
 
 MemTest86's asset downloads returned HTTP 403 in the build environment, and
@@ -15,13 +44,14 @@ product icon; publisher marks below are explicitly identified.
 
 ## Apply and rebuild
 
-Apply the icon patch after the purple DNA theme patch, then run `./refresh.sh`.
-All rendered `theme/icons/*.png` are committed, so users do not need image
+Run `./refresh.sh`. All rendered icons (`theme/icons/*.png`, and the classic
+ones in `theme/icon-packs/classic/`) are committed, so users do not need image
 libraries, upstream access or a font rebuild to use them. These are Ventoy
 boot-menu icons; PortableApps continues to use the icons shipped by each app.
 
-`python3 theme/build-theme.py --skip-fonts` rebuilds the graphics from the
-curated PNG masters in `docs/artwork/tool-icons/`. Masters are at most 256px;
+`python3 theme/build-theme.py --skip-fonts` rebuilds both sets. The classic
+one comes from the curated PNG masters in `docs/artwork/tool-icons/`. Those are
+at most 256px;
 the builder preserves aspect ratio and original colours, fits each into a
 36px area within a transparent 40px canvas, and centres it. Dark DBAN and
 Kaspersky marks get a light backplate so their original colours remain legible.
@@ -32,7 +62,7 @@ Your existing `byo/icons/<tool-name>.png` overrides still win during refresh.
 Use `byo/icons/memtest86.png` or `byo/icons/lockpick.png` when you have verified
 art from your own media. Those files are never changed by the theme builder.
 
-## Sources and rights
+## Sources and rights of the classic set
 
 Sources were retrieved on 2026-09-29. `artwork/tool-icons/sources.json` records
 original URLs, source-byte and normalized-master SHA-256 hashes, and notes.

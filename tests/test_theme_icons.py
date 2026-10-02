@@ -43,11 +43,41 @@ class ToolIcons(unittest.TestCase):
             build.HERE = repo / "theme"
             build.HERE.mkdir()
             shutil.copy2(ROOT / "tools.toml", repo / "tools.toml")
-            build.icons()
+            build.classic_icons(repo / "classic")                       # the classic set: the tools' own logos
             for name in registry:
-                generated = build.HERE / "icons" / f"{name}.png"
-                self.assertEqual(generated.read_bytes(), (ROOT / "theme/icons" / generated.name).read_bytes(), name)
-            self.assertTrue((build.HERE / "icons/cat-live.png").exists())
+                generated = repo / "classic" / f"{name}.png"
+                self.assertEqual(generated.read_bytes(),
+                                 (ROOT / "theme/icon-packs/classic" / generated.name).read_bytes(), name)
+            self.assertTrue((repo / "classic/cat-live.png").exists())
+
+    @unittest.skipUnless(HAVE_PILLOW, "theme rebuild verification needs Pillow")
+    def test_default_set_is_built_from_its_masters(self):
+        spec = importlib.util.spec_from_file_location("theme_build", ROOT / "theme/build-theme.py")
+        build = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(build)
+        masters = sorted(build.ICON_DIR.glob("*.png"))
+        self.assertGreater(len(masters), 40)
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            build.HERE = repo / "theme"
+            build.HERE.mkdir()
+            shutil.copy2(ROOT / "tools.toml", repo / "tools.toml")
+            build.icons()
+            built = {f.name: f.read_bytes() for f in (build.HERE / "icons").iterdir()}
+        committed = {f.name: f.read_bytes() for f in (ROOT / "theme/icons").iterdir()}
+        self.assertEqual(sorted(built), sorted(committed))
+        self.assertEqual(built, committed, "run theme/build-theme.py: theme/icons is out of date")
+        for m in masters:                                   # small masters, one per menu class
+            self.assertIn(m.name, committed)
+            w, h = struct.unpack(">II", m.read_bytes()[16:24])
+            self.assertTrue(0 < w <= 256 and 0 < h <= 256, m.name)
+        for name, data in committed.items():                # what the boot loader shows: 40x40, always
+            self.assertEqual(struct.unpack(">II", data[16:24]), (40, 40), name)
+        tools = tomllib.loads((ROOT / "tools.toml").read_text())
+        for cls in ([t["name"] for t in tools["tool"] if t["kind"] == "iso"]
+                    + [f"cat-{c['id']}" for c in tools["category"]]
+                    + ["vtoydir", "vtoyret", "vtoyiso", "vtoyimg", "vtoywim", "vtoyefi", "vtoyvhd", "vtoyvtoy"]):
+            self.assertIn(f"{cls}.png", committed, "no icon for it")
 
     @unittest.skipUnless(HAVE_PILLOW, "theme asset validation needs Pillow")
     def test_missing_registered_artwork_is_not_silently_badged(self):

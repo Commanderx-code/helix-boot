@@ -40,9 +40,8 @@ same files the stick would get; it is a close sketch, not a boot capture.
 Refresh rewrites the first two and rebuilds the last, so the look survives it.
 Don't edit `ventoy/theme/` by hand: it is rebuilt each time.
 
-Icons are layered, later ones winning: the theme's, the preset's (its
-recoloured category and folder icons), yours from `byo/icons/`, then the icon
-pack you picked. The splash is yours (`--splash PICTURE`, else
+Icons are layered, later ones winning: the theme's, the preset's if it brings
+any, yours from `byo/icons/`, then the icon pack you picked. The splash is yours (`--splash PICTURE`, else
 `byo/splash.png`) or else the theme's; `--splash theme` uses the theme's even
 when you have your own.
 
@@ -52,8 +51,8 @@ the default, `auto`, leaves it to the theme (Standby and Poly dark ask for
 grey). That needs Pillow; without it they stay in colour.
 
 A preset is a folder, `theme/presets/<id>/`, holding what differs from the
-theme: `theme.txt`, the background and splash, the box images, its recoloured
-icons, and `preset.toml` (title, description, the `muted` text colour for
+theme: `theme.txt`, the background and splash, the box images, any icons of
+its own (`icons/`), and `preset.toml` (title, description, the `muted` text colour for
 Ventoy's tips and version, and the loading bar's two colours). Add one to
 `PRESETS` in `theme/build-theme.py` and re-run it.
 

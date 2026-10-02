@@ -7,6 +7,11 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Changed
+- **New default icons**: every tool, category and Ventoy entry now has an icon
+  from one glossy set, the HELIXBOOT icon collection, the same on every theme
+  (the presets no longer recolour the category icons). The set before it, each
+  tool's own logo with flat category icons, is the `classic` icon pack:
+  `./theme.sh --icons classic`. Masters are in `docs/artwork/helix-icons/`.
 - A stick keeps its own icons and splash (the ones from a `byo/` folder) when it
   is updated from a PC that has none of its own, instead of getting the stock
   ones back. The PC that put them there still replaces or removes them.

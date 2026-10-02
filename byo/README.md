@@ -85,8 +85,8 @@ Portable versions are the ones to look for.
 
 ## Menu icons
 
-Every tool in `tools.toml` has an icon in the boot menu: its logo, or a letter
-badge. Tools you add in `local.toml` get a badge with one command (it needs
+Every tool in `tools.toml` has an icon in the boot menu. Tools you add in
+`local.toml` get a letter badge with one command (it needs
 Pillow, and never overwrites an icon already in `byo/icons/`):
 
 ```fish
