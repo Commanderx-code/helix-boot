@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-02
+
 ### Changed
 - **New default icons**: every tool, category and Ventoy entry now has an icon
   from one glossy set, the HELIXBOOT icon collection, the same on every theme
@@ -342,7 +344,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.5.3...v0.6.0
