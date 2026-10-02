@@ -488,6 +488,35 @@ class TestFetchAndSync(Base):
         self.assertIn("keeping the stick's own icons", out)
         self.assertIn("keeping the stick's own splash", out)
         self.assertFalse((self.stick / cr.STATE_DIR / "mine.keep").exists())
+
+        # They are never moved out of the way, so a run that fails half-way can't lose them …
+        mine_dir = self.stick / cr.THEME_SRC / "mine"
+        with unittest.mock.patch.object(cr, "_apply_look", side_effect=OSError("the stick is full")), \
+                self.assertRaises(OSError):
+            self.run_quiet(cr.cmd_sync, second, again)
+        self.assertEqual((mine_dir / "icons/systemrescue.png").read_bytes(), b"my icon")
+        self.assertEqual((mine_dir / "splash.png").read_bytes(), b"my splash")
+        # … and one left aside by 0.6.3/0.6.4, cut short, is put back
+        aside = self.stick / cr.STATE_DIR / "mine.keep"
+        aside.mkdir()
+        os.replace(mine_dir / "icons", aside / "icons")
+        rc, out = self.run_quiet(cr.cmd_sync, second, again)
+        self.assertEqual((rc, icon.read_bytes(), aside.exists()), (0, b"my icon", False), out)
+
+        # A refresh that changes nothing writes nothing: not the theme on the stick, not the built one
+        before = {f: f.stat().st_mtime_ns for f in self.stick.rglob("*") if f.is_file()
+                  and (cr.THEME_SRC in f.as_posix() or "ventoy/theme" in f.as_posix())}
+        with unittest.mock.patch.object(cr, "_build_look", side_effect=AssertionError("rebuilt")), \
+                unittest.mock.patch.object(cr.shutil, "copy2", side_effect=AssertionError("rewritten")):
+            rc, out = self.run_quiet(cr.cmd_sync, second, again)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(before, {f: f.stat().st_mtime_ns for f in before})
+        (self.stick / cr.LOOK_FILE).write_text('{"icons": "off"}')        # the look changed by hand: rebuilt
+        self.run_quiet(cr.cmd_sync, second, again)
+        self.assertFalse(icon.exists())
+        (self.stick / cr.LOOK_FILE).unlink()
+        self.run_quiet(cr.cmd_sync, second, again)
+        self.assertEqual(icon.read_bytes(), b"my icon")
         self.run_quiet(cr.cmd_sync, second, again)
         self.assertEqual(icon.read_bytes(), b"my icon")                  # and again
 
@@ -528,6 +557,32 @@ class TestFetchAndSync(Base):
         self.assertIsNone(cr._PLAN)
         rc, out = self.sync(init=False, dry_run=True)
         self.assertIn(text + "\nDry run — nothing was written.", out)
+
+    def test_a_dry_run_calls_a_move_a_move(self):
+        self.fetch("systemrescue", "memtest86plus")
+        self.assertEqual(self.sync()[0], 0)
+        toml = (self.repo / "tools.toml").read_text().replace('dir = "2-Rescue"', 'dir = "2-Recovery"')
+        (self.repo / "tools.toml").write_text(toml)
+        self.cfg = cr.Config(repo=self.repo)
+        plan = cr.update_plan(self.cfg, str(self.stick))
+        self.assertEqual([(a, what) for a, what, _ in plan], [("move", "SystemRescue")])
+        self.assertEqual(cr.plan_text(plan), "Move 1 to its new folder: SystemRescue\nRemove nothing.")
+        self.assertEqual(self.sync(init=False)[0], 0)
+        self.assertTrue((self.stick / "ISO/2-Recovery/systemrescue-12.02-amd64.iso").exists())
+        self.assertFalse((self.stick / "ISO/2-Rescue").exists())          # emptied, removed
+
+    def test_a_menu_that_cant_be_written_fails_the_run(self):
+        self.fetch("systemrescue")
+        self.assertEqual(self.sync()[0], 0)
+        self.fetch("memtest86plus")                                       # so the menu has to change
+        real = Path.write_bytes
+
+        def locked(path, data):
+            if path.name == "ventoy.base.json":
+                raise PermissionError(13, "locked by a scanner")
+            return real(path, data)
+        with unittest.mock.patch.object(Path, "write_bytes", locked), self.assertRaises(PermissionError):
+            self.sync(init=False)
 
     def test_helix_boot_itself_goes_on_the_stick(self):
         (self.repo / "byo").mkdir()
@@ -581,13 +636,21 @@ class TestFetchAndSync(Base):
         older.write_bytes(b"old")
         theirs.write_bytes(b"theirs")
         state["files"] += ["ISO/2-Rescue/systemrescue-11.00-amd64.iso", "ISO/2-Rescue/macrium-reflect.iso"]
-        del state["tools"]
+        del state["tools"], state["by"]
         path.write_text(json.dumps(state))
         rc, out = self.sync(init=False)
         self.assertEqual(rc, 0, out)
         self.assertFalse(older.exists())
         self.assertTrue(theirs.exists())
         self.assertIn("macrium-reflect.iso", out)
+
+        # Two of your own files that differ only in a number are two tools, not two versions:
+        # another PC's windows10.iso stays when this PC only has windows11.iso.
+        split = lambda placed, versioned: cr._stale_split(   # noqa: E731
+            {"files": []}, ["ISO/Windows/windows10.iso"], placed, set(), "me", False, versioned)
+        mine = {"ISO/Windows/windows11.iso": "windows11"}
+        self.assertEqual(split(mine, set()), ([], ["ISO/Windows/windows10.iso"]))
+        self.assertEqual(split(mine, set(mine)), (["ISO/Windows/windows10.iso"], []))    # were it a download
 
     def test_checksum_mismatch_is_refused(self):
         put("dl/systemrescuecd/sysresccd-x86/12.02/systemrescue-12.02-amd64.iso.sha512",
@@ -1110,6 +1173,15 @@ class TestFetchAndSync(Base):
         self.assertEqual(rc, 0, out)
         self.assertEqual(json.loads((self.stick / cr.LOOK_FILE).read_text())["theme"], "quiet")
         self.assertEqual((built / "background.png").read_bytes(), b"quiet background")
+
+    def test_a_look_file_with_values_from_elsewhere(self):
+        built, menu = self.themed_repo()
+        (self.stick / cr.LOOK_FILE).write_text('{"theme": "night", "splash": "none", "background": "wallpaper", '
+                                               '"icons": "../x", "extra": 1}')
+        self.assertEqual(cr._look(self.stick), {**cr.LOOK_DEFAULT, "theme": "night"})   # the rest: the defaults
+        rc, out = self.look()                                            # and showing it doesn't trip on them
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Night", out)
 
     def test_look_needs_a_stick_from_this_version(self):
         self.fetch("systemrescue")

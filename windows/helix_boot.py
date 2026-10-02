@@ -333,7 +333,7 @@ def name_stick(letter: str, label: str, run=powershell) -> None:
 
 def update_summary(cfg, target: str, pack=None) -> str:
     """What an update would copy, remove and keep, in plain words."""
-    return cr.plan_text(cr.update_plan(cfg, target, str(pack) if pack else None))
+    return cr.plan_text(cr.update_plan(cfg, target, str(pack) if pack else None, init=True))
 
 
 def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None, run=powershell,
@@ -370,6 +370,7 @@ def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda
         raise RescueError(f"disk {disk_no} doesn't have Ventoy on it (or no drive letter) — use Install")
     if not pack:
         fetch(cfg)
+    # (init=True below: this disk was just checked to be a Ventoy stick, whatever it has been named)
     summary = update_summary(cfg, f"{d['Ventoy']}:\\", pack)
     print(f"\nThis update will:\n{summary}\n")
     if not confirm(summary):
@@ -380,9 +381,9 @@ def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda
         ventoy(ventoy_command(vdir, "/U", disk_no, secure_boot=secure_boot), vdir, progress)
     letter = wait_for_ventoy_letter(disk_no, run)
     if pack:
-        unpack(cfg, letter, pack, init=False)
+        unpack(cfg, letter, pack, init=True)
     else:
-        sync(cfg, letter, init=False)
+        sync(cfg, letter, init=True)
     return letter
 
 
@@ -618,6 +619,8 @@ def gui(selftest: bool = False) -> int:
             look_window(Path(f"{d['Ventoy']}:\\"), parent=root)
         except cr.RescueError as e:
             messagebox.showerror(APP, str(e))
+        except Exception as e:  # noqa: BLE001: a button that does nothing is worse than a message
+            messagebox.showerror(APP, f"Couldn't open the Look window: {e}")
 
     def open_folder():
         path = user_dir() / "byo"
@@ -689,6 +692,15 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     cr.look_changes(mnt)                       # an older stick is refused here, before a window opens
     win = tk.Toplevel(parent) if parent else tk.Tk()
     win.title(f"{APP}: the look of {mnt}")
+    if parent:      # modal: Install and Update can't be started while this can still write to the stick
+        win.transient(parent)
+
+        def hold():
+            try:
+                win.grab_set()
+            except tk.TclError:     # not on screen yet
+                win.after(50, hold)
+        win.after(0, hold)
     # The preview sets the window's height: a smaller one where the screen is short (768 px laptops)
     preview_size = (672, 378) if win.winfo_screenheight() >= 900 else (480, 270)
     win.minsize(preview_size[0] + 40, preview_size[1] + 270)
@@ -705,6 +717,7 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     splash = tk.StringVar(value=next(k for k, v in splashes.items() if v == look["splash"]))
     dim = tk.IntVar(value=40)
     chosen: dict[str, str] = {}                # pictures picked here, not on the stick yet
+    sent: set[str] = set()                     # which of them the last Apply put there
     on_stick = dict(report["custom"])
 
     preview = ttk.Label(frm, anchor="center", text="Drawing the preview…")
@@ -870,6 +883,7 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
             try:
                 (new_look, pictures), darken = job
                 changed = cr.set_look(cfg, mnt, new_look, pictures, darken)
+                sent.update(pictures)
                 q.put(("applied", "The stick's look is changed." if changed else "The stick already looks like this."))
             except Exception as e:  # noqa: BLE001
                 q.put(("failed", str(e)))
@@ -886,10 +900,11 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
                 elif kind == "nopreview":
                     preview.config(image="", text=f"No preview: {text}")
                 else:
-                    if kind == "applied":      # the pictures chosen here are on the stick now
-                        for what in chosen:
+                    if kind == "applied":      # the pictures that were sent are on the stick now
+                        for what in list(sent):
                             on_stick[what] = True
-                        chosen.clear()
+                            chosen.pop(what, None)
+                        sent.clear()
                         refresh()
                     status.config(text=text if kind == "applied" else f"✗ {text}")
                     for b in (b_apply, b_reset):

@@ -121,8 +121,8 @@ first_partition() {
 # script on the VTOYEFI partition. Never fails the run: without it, Ventoy starts as usual.
 apply_splash() {  # apply_splash <disk>
   local efi mnt
-  efi=$(lsblk -lnpo NAME,LABEL "$1" 2>/dev/null | awk '$2=="VTOYEFI" { print $1; exit }')
-  if [[ -z $efi ]]; then warn "no VTOYEFI partition on $1, so no splash"; return 0; fi
+  efi=$(lsblk -lnpo NAME,LABEL "$1" 2>/dev/null | awk '$2=="VTOYEFI" { print $1; exit }') || efi=''
+  if [[ -z $efi ]]; then warn "no VTOYEFI partition on ${1:-that disk}, so no splash"; return 0; fi
   mnt=$(mount_part "$efi" 2>/dev/null) || mnt=''
   if [[ -z $mnt ]]; then warn "couldn't mount $efi, so no splash"; return 0; fi
   "$HELIX" splash "$mnt" || warn "couldn't add the splash; Ventoy starts without it"

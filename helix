@@ -11,6 +11,7 @@ import argparse
 import datetime as dt
 import hashlib
 import html
+import importlib.util
 import json
 import os
 import re
@@ -1486,7 +1487,21 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
     return out
 
 
-def _open_stick(mnt: Path, init: bool) -> tuple[Path, dict]:
+def _beside_vtoyefi(mnt: Path) -> bool:
+    """Is mnt on a disk that also has Ventoy's own VTOYEFI partition? (Linux; elsewhere the
+    caller checks, as the Windows app does.) That is a Ventoy stick whatever its name."""
+    if os.name == "nt" or not shutil.which("lsblk") or not shutil.which("findmnt"):
+        return False
+    try:
+        run = lambda *cmd: subprocess.run(cmd, capture_output=True, text=True, check=True).stdout   # noqa: E731
+        src = run("findmnt", "-no", "SOURCE", "--target", str(mnt)).strip().split("[")[0]
+        disk = run("lsblk", "-no", "PKNAME", src).split()
+        return bool(disk) and "VTOYEFI" in run("lsblk", "-lno", "LABEL", f"/dev/{disk[0]}").split()
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
+def _open_stick(mnt: Path, init: bool, cfg: Config | None = None) -> tuple[Path, dict]:
     """Check the target is a Ventoy stick (or one we've filled before); return its state."""
     if not mnt.is_dir():
         raise RescueError(f"{mnt} isn't a mounted folder. Plug the stick in and pass its mount point.")
@@ -1495,7 +1510,8 @@ def _open_stick(mnt: Path, init: bool) -> tuple[Path, dict]:
         os.rename(mnt / OLD_STATE_DIR, state_dir)          # a stick from before the rename to Helix Boot
     if not state_dir.exists():
         label = _label_of(mnt)
-        if not init and label not in ("Ventoy", STICK_LABEL):
+        names = {"Ventoy", STICK_LABEL} | ({cfg.stick_label} if cfg else set())
+        if not init and label not in names and not _beside_vtoyefi(mnt):
             raise RescueError(
                 f"{mnt} doesn't look like a Ventoy stick (label: {label or 'unknown'}). "
                 "If you're sure, rerun with --init."
@@ -1505,13 +1521,14 @@ def _open_stick(mnt: Path, init: bool) -> tuple[Path, dict]:
 
 
 def _stale_split(state: dict, stale: list[str], placed: dict[str, str | None], off: set[str], me: str,
-                 everything: bool) -> tuple[list[str], list[str]]:
+                 everything: bool, versioned: set[str] = frozenset()) -> tuple[list[str], list[str]]:
     """Which of the images this project put on the stick, and this run doesn't want, to remove
     and which to keep. One goes when this run brought the same tool again (a newer version, or
     the same file in another folder), when its tool is switched off here, or when this PC put it
     there itself and no longer has it. The rest are another PC's (its own tools, or one whose
     download failed here): they stay, so updating from a second PC doesn't strip the stick.
-    `placed` is this run's images, stick path to tool name; `me` this PC; `everything` removes all."""
+    `placed` is this run's images, stick path to tool name; `me` this PC; `everything` removes all;
+    `versioned` the placed paths whose file is a download named after its version."""
     if everything:
         return list(stale), []
     tools, names = state.get("tools") or {}, {n for n in placed.values() if n}
@@ -1521,7 +1538,10 @@ def _stale_split(state: dict, stale: list[str], placed: dict[str, str | None], o
         folder, _, name = rel.rpartition("/")
         return folder, re.sub(r"\d+", "#", name)
 
-    shapes = {shape(rel) for rel in placed}
+    # A stick from before tools were recorded: a stale file is an older download of a tool placed
+    # now when it sits in the same folder under the same name but for its numbers. Only for
+    # downloads: your own files (windows10.iso, windows11.iso) are different tools, not versions.
+    shapes = {shape(rel) for rel in versioned}
     remove, keep = [], []
     for rel in stale:
         name = tools.get(rel)
@@ -1529,7 +1549,7 @@ def _stale_split(state: dict, stale: list[str], placed: dict[str, str | None], o
             gone = True
         elif name is not None:
             gone = name in names or name in off
-        else:               # a stick from before the tools were recorded: go by the file's name
+        else:
             gone = shape(rel) in shapes
         (remove if gone else keep).append(rel)
     return remove, keep
@@ -1617,25 +1637,28 @@ def plan_text(plan: list[tuple[str, str, int]]) -> str:
     def listed(items: list[str]) -> str:
         return ", ".join(items[:8]) + (f" and {len(items) - 8} more" if len(items) > 8 else "")
 
-    copy, remove, keep = names("copy"), names("remove"), names("keep")
-    if not copy and not remove:
+    copy, remove, keep, move = names("copy"), names("remove"), names("keep"), names("move")
+    if not copy and not remove and not move:
         lines = ["Everything on the stick is already up to date."]
     else:
         lines = []
         if copy:
             size = sum(n for a, _, n in plan if a == "copy")
             lines.append(f"Copy {len(copy)}" + (f" ({_fmt_bytes(size)})" if size else "") + f": {listed(copy)}")
+        if move:
+            lines.append(f"Move {len(move)} to its new folder: {listed(move)}")
         lines.append(f"Remove {len(remove)}: {listed(remove)}" if remove else "Remove nothing.")
     if keep:
         lines.append(f"Keep {len(keep)} this PC has no copy of: {listed(keep)}")
     return "\n".join(lines)
 
 
-def update_plan(cfg: Config, target: str, pack: str | None = None, prune_unknown: bool = False) -> list:
+def update_plan(cfg: Config, target: str, pack: str | None = None, prune_unknown: bool = False,
+                init: bool = False) -> list:
     """What `sync` (or `unpack`, given a pack) would do to the stick, without doing it or
     printing anything: a list of (copy | remove | keep, what, bytes) for plan_text."""
     global _PLAN
-    args = argparse.Namespace(target=target, pack=pack, init=False, dry_run=True, verify=False,
+    args = argparse.Namespace(target=target, pack=pack, init=init, dry_run=True, verify=False,
                               no_prune=False, prune_unknown=prune_unknown)
     _PLAN, streams = [], (sys.stdout, sys.stderr)
     try:
@@ -1685,34 +1708,35 @@ def _keep_edited_json(mnt: Path, state: dict) -> Path:
 
 def _write_extras(cfg: Config, mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]],
                   fresh_theme: bool) -> Path:
-    """Write the launcher, theme and boot menu, keeping a copy of a ventoy.json someone edited."""
-    vjson = _keep_edited_json(mnt, state)
-    kept: dict[str, Path] = {}
-    if fresh_theme:
-        legacy = any(rel.startswith("ventoy/theme/") for rel, _ in extras)
-        if not legacy:
-            kept = _set_mine_aside(cfg, mnt, state, extras)
+    """Write the launcher, theme and boot menu, keeping a copy of a ventoy.json someone edited.
+    Only what differs is written: a refresh that changes nothing writes nothing here."""
+    vjson = mnt / "ventoy" / "ventoy.json"
+    changed = vjson.exists() and state.get("ventoy_json_sha") != file_hash(vjson)   # edited by hand: redo it
+    _keep_edited_json(mnt, state)
+    legacy = fresh_theme and any(rel.startswith("ventoy/theme/") for rel, _ in extras)
+    if legacy:                      # a pack from before `helix theme`: its theme and menu are ready-made
         shutil.rmtree(mnt / THEME_SRC, ignore_errors=True)
-        if legacy:                  # a pack from before `helix theme`: its theme and menu are ready-made
-            shutil.rmtree(mnt / "ventoy" / "theme", ignore_errors=True)
-            (mnt / BASE_JSON).unlink(missing_ok=True)
+        shutil.rmtree(mnt / "ventoy" / "theme", ignore_errors=True)
+        (mnt / BASE_JSON).unlink(missing_ok=True)
     for rel, data in extras:
         dst = _inside(mnt, rel)
         dst.parent.mkdir(parents=True, exist_ok=True)
         try:
             if isinstance(data, bytes):
-                dst.write_bytes(data)
+                if not (dst.is_file() and dst.stat().st_size == len(data) and dst.read_bytes() == data):
+                    dst.write_bytes(data)
+                    changed = True
             elif not _same_file(data, dst):
                 shutil.copy2(data, dst)
-        except PermissionError:     # Windows: the app updating the stick is running from it
-            warn(f"{rel} is in use, so it wasn't replaced: it will be on the next update, "
-                 "or run Helix Boot from another folder")
-    for sub, aside in kept.items():                 # the stick's own icons and splash, back in place
-        (mnt / THEME_SRC / "mine").mkdir(parents=True, exist_ok=True)
-        os.replace(aside, mnt / THEME_SRC / "mine" / sub)
-    if kept:
-        shutil.rmtree(mnt / STATE_DIR / "mine.keep", ignore_errors=True)
-    _apply_look(cfg, mnt)
+                changed = True
+        except PermissionError:
+            if dst.name != APP_EXE:  # anything else that can't be written is a failed run, not a detail
+                raise
+            warn(f"{rel} is in use (it is the app doing this update), so it wasn't replaced: "
+                 "it will be on the next update, or run Helix Boot from another folder")
+    if fresh_theme and not legacy:
+        changed |= _tidy_theme_source(cfg, mnt, state, {rel for rel, _ in extras})
+    _apply_look(cfg, mnt, changed)
     return vjson
 
 
@@ -1726,31 +1750,39 @@ def _same_file(src: Path, dst: Path) -> bool:
     return a.st_size == b.st_size and abs(a.st_mtime - b.st_mtime) <= 2
 
 
-def _set_mine_aside(cfg: Config, mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]]) -> dict[str, Path]:
-    """Before the theme on the stick is replaced: the stick's own icons and splash (from some
-    PC's byo/) stay when this PC brings none and wasn't the one that put them there, so updating
-    from a second PC doesn't swap them for the stock ones. Moves those out of the way and
-    returns them (name under mine/ -> where it is); records in `state` whose each kind is."""
-    me, mine = cfg.pc_id(), mnt / THEME_SRC / "mine"
-    by = dict(state.get("mine_by") or {})
-    kept: dict[str, Path] = {}
-    for kind, sub in (("icons", "icons"), ("splash", "splash.png")):
-        if any(rel.startswith(f"{THEME_SRC}/mine/{sub}") for rel, _ in extras):
+def _tidy_theme_source(cfg: Config, mnt: Path, state: dict, want: set[str]) -> bool:
+    """After the theme on the stick was written: remove what this run didn't bring, in place.
+    The stick's own icons and splash (from some PC's byo/) stay when this PC brings none and
+    wasn't the one that put them there, so updating from a second PC doesn't swap them for the
+    stock ones. Records in `state` whose each kind is; True when anything was removed."""
+    me, src = cfg.pc_id(), mnt / THEME_SRC
+    aside = mnt / STATE_DIR / "mine.keep"           # from 0.6.3/0.6.4, which moved them out of the way:
+    if aside.is_dir():                              # a run cut short left them there. Put them back.
+        for item in aside.iterdir():
+            if not (src / "mine" / item.name).exists():
+                (src / "mine").mkdir(parents=True, exist_ok=True)
+                os.replace(item, src / "mine" / item.name)
+        shutil.rmtree(aside, ignore_errors=True)
+    by, keep = dict(state.get("mine_by") or {}), []
+    for kind, sub in (("icons", "mine/icons"), ("splash", "mine/splash.png")):
+        if any(rel.startswith(f"{THEME_SRC}/{sub}") for rel in want):
             by[kind] = me                           # this PC brings its own
-        elif (mine / sub).exists() and by.get(kind) != me:
-            aside = mnt / STATE_DIR / "mine.keep" / sub
-            if aside.is_dir():                      # left by a run that was cut short
-                shutil.rmtree(aside)
-            else:
-                aside.unlink(missing_ok=True)
-            aside.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(mine / sub, aside)
-            kept[sub] = aside
-            info(f"keeping the stick's own {'icons' if kind == 'icons' else 'splash'}: this PC has none of its own")
+        elif (src / sub).exists() and by.get(kind) != me:
+            keep.append(f"{THEME_SRC}/{sub}")
+            info(f"keeping the stick's own {kind}: this PC has none of its own")
         else:
-            by.pop(kind, None)                      # gone, or this PC's own that it no longer has
+            by.pop(kind, None)                      # this PC's own, which it no longer has
     state["mine_by"] = by
-    return kept
+    removed = False
+    for f in sorted(src.rglob("*"), reverse=True):  # a folder comes after what is in it
+        rel = f.relative_to(mnt).as_posix()
+        if f.is_dir():
+            if not any(f.iterdir()):
+                f.rmdir()
+        elif rel not in want and not any(rel == k or rel.startswith(f"{k}/") for k in keep):
+            f.unlink()
+            removed = True
+    return removed
 
 
 def _finish(mnt: Path, state_dir: Path, files: set[str], app_state: dict, vjson: Path, extra: dict) -> None:
@@ -1771,7 +1803,7 @@ def cmd_sync(cfg: Config, args) -> int:
     if args.dry_run and _PLAN is None:
         _PLAN = []                      # a dry run ends by saying what it would do, in one piece
     mnt = Path(args.target).expanduser().resolve()
-    state_dir, state = _open_stick(mnt, args.init)
+    state_dir, state = _open_stick(mnt, args.init, cfg)
     placed, apps, missing = _plan(cfg, load_lock(cfg))
     want_files = {p["rel"] for p in placed}
     for m in missing:
@@ -1789,6 +1821,7 @@ def cmd_sync(cfg: Config, args) -> int:
     recorded = state.get("images", {})
     images: dict[str, str] = {}
     me, wrote, wrote_apps = cfg.pc_id(), set(), set()      # what this PC puts on the stick in this run
+    moved: set[str] = set()                                 # old paths of images that only change folder
     for n, p in enumerate(placed, 1):
         dst = mnt / p["rel"]
         old = moved_from.get(p["file"])
@@ -1797,6 +1830,8 @@ def cmd_sync(cfg: Config, args) -> int:
             if src_old.is_relative_to(mnt) and src_old.is_file() \
                     and src_old.stat().st_size == p["src"].stat().st_size:
                 info(f"{p['title']}: moving {old} → {p['rel']}")
+                moved.add(old)
+                _planned("move", p["title"])
                 if not args.dry_run:
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     os.replace(src_old, dst)
@@ -1879,12 +1914,14 @@ def cmd_sync(cfg: Config, args) -> int:
                 shutil.rmtree(_inside(root, name, "app folder"), ignore_errors=True)
             app_state.pop(name)
 
-    remove, kept = _stale_split(state, stale, {p["rel"]: p["name"] for p in placed}, off, me, unknown)
-    kept = [rel for rel in kept if (mnt / rel).is_file()]       # not one that was moved to its new folder
+    remove, kept = _stale_split(state, stale, {p["rel"]: p["name"] for p in placed}, off, me, unknown,
+                                versioned={p["rel"] for p in placed if not p["local"]})
+    remove = [rel for rel in remove if rel not in moved]        # moved to its new folder, not removed
+    kept = [rel for rel in kept if (mnt / rel).is_file() and rel not in moved]
     if args.no_prune:
         kept += [rel for rel in remove if (mnt / rel).is_file()]
-    elif remove:
-        _prune(mnt, cfg.iso_root, remove, args.dry_run)
+    elif remove or moved:           # (the folders that moved images left empty go too)
+        _prune(mnt, cfg.iso_root, remove + ([] if args.dry_run else sorted(moved)), args.dry_run)
     _keep_note("boot image(s)", [rel.rpartition("/")[2] for rel in kept] if not args.no_prune else [])
     _keep_note("app(s)", kept_apps)
 
@@ -2028,7 +2065,8 @@ def cmd_pack(cfg: Config, args) -> int:
                 if p["sha256"] and sha != p["sha256"] and not p["local"]:
                     raise RescueError(f"{p['title']}: the cached {p['file']} has changed since it was verified. "
                                       f"Run `helix fetch --force {p['name']}`.")
-                isos.append({"rel": p["rel"], "name": p["name"], "title": p["title"], "version": p["version"], "sha256": sha,
+                isos.append({"rel": p["rel"], "name": p["name"], "local": p["local"], "title": p["title"],
+                             "version": p["version"], "sha256": sha,
                              "size": p["src"].stat().st_size})
             for t, entry, src in apps:
                 base = f"stick/{_app_root(cfg, t)}/{t['name']}"
@@ -2172,7 +2210,7 @@ def cmd_unpack(cfg: Config, args) -> int:
     if args.dry_run and _PLAN is None:
         _PLAN = []
     mnt = Path(args.target).expanduser().resolve()
-    state_dir, state = _open_stick(mnt, args.init)
+    state_dir, state = _open_stick(mnt, args.init, cfg)
     with _open_pack(args.pack) as zf:
         meta = _read_pack(zf)
         names = set(zf.namelist())
@@ -2266,7 +2304,8 @@ def cmd_unpack(cfg: Config, args) -> int:
                 app_state.pop(name)
 
         stale = [f for f in state.get("files", []) if f not in want_files]
-        remove, kept = _stale_split(state, stale, {i["rel"]: i.get("name") for i in meta["isos"]}, off, me, unknown)
+        remove, kept = _stale_split(state, stale, {i["rel"]: i.get("name") for i in meta["isos"]}, off, me, unknown,
+                                    versioned={i["rel"] for i in meta["isos"] if i.get("local") is False})
         kept = [rel for rel in kept if _inside(mnt, rel, "path in the stick's state").is_file()]
         if args.no_prune:
             kept += [rel for rel in remove if (mnt / rel).is_file()]
@@ -2513,8 +2552,10 @@ def _look(mnt: Path) -> dict:
         got = json.loads((mnt / LOOK_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return look
-    if isinstance(got, dict):
-        look.update({k: v for k, v in got.items() if k in look and isinstance(v, str) and SAFE_NAME.fullmatch(v)})
+    known = {"background": ("theme", "custom"), "splash": ("auto", "theme", "custom", "off")}
+    if isinstance(got, dict):   # the stick is anyone's to edit: a theme or pack by name, the rest from a list
+        look.update({k: v for k, v in got.items() if k in look and isinstance(v, str) and SAFE_NAME.fullmatch(v)
+                     and v in known.get(k, (v,))})
     return look
 
 
@@ -2634,14 +2675,26 @@ def _desktop_image(theme: Path) -> str:
     return name.group(1) if name else "background.png"
 
 
-def _apply_look(cfg: Config, mnt: Path) -> None:
-    """Build ventoy/theme and ventoy/ventoy.json from the theme on the stick and its look."""
+def _apply_look(cfg: Config, mnt: Path, changed: bool = True) -> None:
+    """Build ventoy/theme and ventoy/ventoy.json from the theme on the stick and its look.
+    `changed` False: what they are built from is as it was, so only rebuild if the look, this
+    version or Pillow's presence (greyscale icons, the loading bar) differ from last time."""
     if not (mnt / BASE_JSON).is_file():
         return                     # filled by an older Helix Boot or pack: the menu is as it was written
     out = mnt / "ventoy" / "theme"
     (mnt / "ventoy").mkdir(exist_ok=True)
+    look = _look(mnt)
+    stamp = {"look": look, "helix": __version__, "pillow": importlib.util.find_spec("PIL") is not None}
+    built = mnt / STATE_DIR / "built.json"
+    try:
+        same = json.loads(built.read_text(encoding="utf-8")) == stamp
+    except (OSError, ValueError):
+        same = False
+    if same and not changed and (mnt / "ventoy" / "ventoy.json").is_file() \
+            and (out.is_dir() or not (mnt / THEME_SRC / "theme.txt").is_file() or look["theme"] == "off"):
+        return
     new = out.with_name("theme.helix-new")
-    doc = _build_look(cfg, mnt, _look(mnt), new)
+    doc = _build_look(cfg, mnt, look, new)
     if any(new.iterdir()) or (mnt / THEME_SRC / "theme.txt").is_file():
         shutil.rmtree(out, ignore_errors=True)
     if any(new.iterdir()):
@@ -2649,6 +2702,7 @@ def _apply_look(cfg: Config, mnt: Path) -> None:
     else:                          # no theme on the stick, or it and the splash are off
         new.rmdir()
     (mnt / "ventoy" / "ventoy.json").write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    built.write_text(json.dumps(stamp) + "\n", encoding="utf-8")
 
 
 def _own_picture(src: Path, dst: Path, dim: int = 0) -> None:
@@ -2729,7 +2783,7 @@ def look_changes(mnt: Path, theme=None, icons=None, background=None, splash=None
 def set_look(cfg: Config, mnt: Path, look: dict, pictures: dict[str, Path] | None = None, dim: int = 0) -> bool:
     """Put a look on the stick (False: it already has it). The choice is kept there."""
     pictures = pictures or {}
-    state_dir, state = _open_stick(mnt, init=False)
+    state_dir, state = _open_stick(mnt, False, cfg)
     if look == _look(mnt) and not pictures:
         return False
     for what, picture in pictures.items():
@@ -2961,7 +3015,7 @@ def cmd_theme(cfg: Config, args) -> int:
     """Show or change a stick's look: a preset theme (or none), an icon pack (or none), your own
     background and splash. The choice is kept on the stick, so a refresh doesn't undo it."""
     mnt = Path(args.stick).expanduser().resolve()
-    _open_stick(mnt, init=False)
+    _open_stick(mnt, False, cfg)
     look, pictures = look_changes(mnt, args.theme, args.icons, args.background, args.splash, args.dim, args.reset)
     if args.menu:
         return _look_menu(cfg, mnt)

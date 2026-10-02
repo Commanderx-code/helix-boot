@@ -6,6 +6,37 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Fixed
+From a review of everything since 0.5.3:
+- A stick's own icons and splash could be lost for good if an update from
+  another PC failed half-way: they were moved aside first. They now stay in
+  place.
+- On a stick last written by 0.6.1 or older, a tool could be taken for an old
+  version of another whose file name differed only in a number
+  (`windows10.iso`, `windows11.iso`) and be removed. Only a download named after
+  its version is matched that way now.
+- A stick given a name of your own (`stick_label`), or renamed, was refused by
+  `refresh.sh` and Update if its first fill had been cut short. It is known by
+  Ventoy's own partition beside it.
+- In the Windows app, **Apply** in the Look window could run while an update
+  was copying. The Look window now holds the app while it is open.
+- A dry run, and the app's update summary, listed an image that only moves
+  folder as one to be removed.
+- A `look.json` on the stick with a value this version doesn't know crashed
+  `theme.sh` and left the Look… button doing nothing.
+- In the Look window, a picture chosen but not sent was treated as already on
+  the stick after Apply.
+- A boot menu or theme file that couldn't be written on Windows was reported
+  as "in use" and the update still ended as a success; only the running app's
+  own file is let through now.
+- `refresh.sh <folder>` stopped with an error after a good sync when the folder
+  wasn't on a plain partition.
+
+### Changed
+- A refresh that changes nothing writes nothing to the stick's theme: the
+  theme on the stick is updated in place, and the boot menu is only rebuilt
+  when what it is built from changed.
+
 ### Added
 - Icons in the default set for the two entries that still had their classic
   ones: Lazarus PE (the phoenix on a glossy badge, drawn by

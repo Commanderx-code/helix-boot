@@ -154,7 +154,7 @@ class TestFlows(unittest.TestCase):
             app.update(2, run=ps(STICK), ventoy=self.ventoy)
         with redirect_stdout(io.StringIO()):
             app.update(2, run=ps(VENTOY), ventoy=self.ventoy)
-        self.assertEqual(self.calls, ["fetch", ("sync", "E:\\", False)])      # no Ventoy step by default
+        self.assertEqual(self.calls, ["fetch", ("sync", "E:\\", True)])       # no Ventoy step by default
 
     def test_update_says_what_it_will_do_and_can_be_called_off(self):
         shown = []
@@ -166,7 +166,7 @@ class TestFlows(unittest.TestCase):
         self.calls.clear()
         with redirect_stdout(io.StringIO()):
             app.update(2, run=ps(RENAMED), ventoy=self.ventoy, confirm=lambda summary: True)
-        self.assertEqual(self.calls, ["fetch", ("sync", "E:\\", False)])
+        self.assertEqual(self.calls, ["fetch", ("sync", "E:\\", True)])     # checked to be Ventoy: any name will do
 
     def test_a_new_stick_gets_its_name(self):
         ran = []
@@ -209,11 +209,11 @@ class TestFlows(unittest.TestCase):
         self.pack_flow()
         with redirect_stdout(io.StringIO()), mock.patch.dict(os.environ, {"PROCESSOR_ARCHITECTURE": "x86"}):
             app.update(2, run=ps(VENTOY), ventoy=self.ventoy, pack=self.pack)
-            self.assertEqual(self.calls, [("unpack", "E:\\", False)])
+            self.assertEqual(self.calls, [("unpack", "E:\\", True)])
             self.calls.clear()
             app.update(2, run=ps(VENTOY), ventoy=self.ventoy, pack=self.pack, upgrade_ventoy=True)
         self.assertEqual(self.calls, [("pack-ventoy", self.pack), ("ventoy", ["VTOYCLI", "/U", "/PhyDrive:2"]),
-                                      ("unpack", "E:\\", False)])
+                                      ("unpack", "E:\\", True)])
 
     def test_linux_only_pack_is_refused_before_the_disk_is_touched(self):
         pack = Path(tempfile.mkdtemp()) / "old.zip"
