@@ -411,10 +411,13 @@ class TestFetchAndSync(Base):
         state = lambda: json.loads((self.stick / cr.STATE_DIR / "state.json").read_text())   # noqa: E731
         self.assertEqual(state()["tools"]["ISO/2-Rescue/paid.iso"], "paid")
 
-        # A second PC: the same project, none of your own files
+        # A second PC: the same project, none of your own files. There "paid" isn't even known,
+        # and a tool that is off as shipped but on here (as Kaspersky is) counts as off.
         other = self.tmp / "other-pc"
         other.mkdir()
         shutil.copy2(self.repo / "tools.toml", other / "tools.toml")
+        with open(other / "tools.toml", "a") as f:
+            f.write(mine.split("\n\n")[0].replace('name = "paid"', 'name = "paid"\nenabled = false') + "\n")
         second = cr.Config(repo=other)
         second._pc_id = "5ec0d5ec0d5ec0d5"                               # (the tests share one cache folder)
         lock = cr.load_lock(second)

@@ -135,6 +135,13 @@ class Config:
             overrides = ldata.get("overrides", {})
             data.setdefault("tool", []).extend(ldata.get("tool", []))
             data.setdefault("settings", {}).update(ldata.get("settings", {}))
+            ldata_tools = ldata.get("tool", [])
+        else:
+            ldata_tools = []
+        # Tools you switched off yourself, in local.toml. Not the ones that are off as shipped
+        # (Kaspersky): another PC may have them on, and an update here mustn't remove theirs.
+        self.switched_off = ({n for n, o in overrides.items() if o.get("enabled") is False}
+                             | {t.get("name") for t in ldata_tools if t.get("enabled") is False})
 
         self.settings = data.get("settings", {})
         self.categories = {c["id"]: c for c in data.get("category", [])}
@@ -1771,7 +1778,7 @@ def cmd_sync(cfg: Config, args) -> int:
         warn(f"{m}: not fetched yet — run `helix fetch` (skipping)")
 
     stale = [f for f in state.get("files", []) if f not in want_files]
-    off = {t["name"] for t in cfg.tools if not t.get("enabled", True)}      # switched off here: theirs go
+    off = cfg.switched_off                 # switched off in this PC's local.toml: those go
     unknown = getattr(args, "prune_unknown", False)
     head(f"Syncing to {mnt}{'  (dry run)' if args.dry_run else ''}")
 
@@ -2067,8 +2074,8 @@ def cmd_pack(cfg: Config, args) -> int:
                 "iso_root": cfg.iso_root, "apps_root": cfg.apps_root, "isos": isos,
                 "apps": {t["name"]: e["version"] for t, e, _ in apps},
                 "app_roots": {t["name"]: _app_root(cfg, t) for t, _, _ in apps if _app_root(cfg, t) != cfg.apps_root},
-                # switched off where the pack was made: unpack removes these from a stick that has them
-                "off": sorted(t["name"] for t in cfg.tools if not t.get("enabled", True)),
+                # switched off by hand where the pack was made: unpack removes these from a stick that has them
+                "off": sorted(cfg.switched_off),
                 "ventoy": {"file": f"installer/{vsrc.name}", "version": ventry["version"]} if vsrc else None,
                 "ventoy_windows": ({"file": f"installer/{win_ventoy[0].name}", "version": win_ventoy[1]["version"]}
                                    if win_ventoy else None),

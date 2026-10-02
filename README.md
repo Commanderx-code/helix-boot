@@ -392,8 +392,8 @@ ISOs you copy onto the stick by hand (e.g. into `ISO/Custom/`) are never touched
 ### Updating from more than one PC
 
 An update removes a tool from the stick only when it brings a newer copy of
-that tool, the tool is switched off (`enabled = false`), or the PC that put it
-there no longer has it. Tools from another PC stay where they are, with their
+that tool, you switched the tool off in `local.toml` (`enabled = false`), or
+the PC that put it there no longer has it. Tools from another PC stay where they are, with their
 names, tips and icons in the menu: your paid tools when you update from the
 Windows app on a second machine, or a tool whose download just failed. The run
 lists what it kept; `./refresh.sh --prune-unknown` removes them. The stick's own

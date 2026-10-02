@@ -21,6 +21,12 @@ tagged releases also publish the Windows app.
   and BIOS, and checks each came up; CI runs it on every push and keeps the
   screenshots.
 
+### Fixed
+- An update from a PC without your `local.toml` removed a tool that is switched
+  off as shipped but that you had switched on (Kaspersky Rescue Disk): it took
+  "off here" as a reason to remove it. Only a tool switched off by hand in that
+  PC's own `local.toml` counts now.
+
 ### Changed
 - A file on the stick that hasn't changed isn't written again on every
   refresh, and one that is in use (the app updating the stick from the stick,
