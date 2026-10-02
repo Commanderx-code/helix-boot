@@ -85,9 +85,9 @@ Portable versions are the ones to look for.
 
 ## Menu icons
 
-Every tool in `tools.toml` has a letter badge in the boot menu. Tools you add
-in `local.toml` get theirs with one command (it needs Pillow, and never
-overwrites an icon already in `byo/icons/`):
+Every tool in `tools.toml` has an icon in the boot menu: its logo, or a letter
+badge. Tools you add in `local.toml` get a badge with one command (it needs
+Pillow, and never overwrites an icon already in `byo/icons/`):
 
 ```fish
 theme/build-theme.py --local
@@ -99,6 +99,25 @@ real logo instead, save it as `byo/icons/<name>.png`, using the tool's `name` fr
 `byo/icons/acronis.png`), and refresh. A category's icon is
 `byo/icons/cat-<id>.png` (e.g. `cat-antivirus.png`).
 
-Use a square, non-interlaced PNG, ideally 40×40 pixels (larger ones are
-scaled down). A tool with no icon at all gets a plain disc. Like everything
-else in `byo/`, your icons stay out of git.
+Use a square, non-interlaced PNG at 40×40 pixels. Bigger ones use up the boot
+loader's memory, so later icons don't appear: `theme/build-theme.py --fit-icons`
+shrinks yours and keeps the originals in `byo/icons/originals/`. A tool with no
+icon at all gets a plain disc. Like everything else in `byo/`, your icons stay
+out of git.
+
+Your icons win over a theme preset's, and on the Standby and Poly dark themes
+they are shown in grey like the rest (`./theme.sh --icons logos` keeps colour).
+
+A whole set of your own is an icon pack: put the PNGs, named the same way, in
+`byo/icon-packs/<name>/` (an optional `pack.toml` gives it a `title` and
+`description`), refresh, and pick it with `./theme.sh --icons <name>`.
+
+## Splash and background
+
+`byo/splash.png` is shown for a moment before the boot menu, with a loading bar
+drawn across it, in place of the theme's own splash. 1920×1080 works best.
+`splash_seconds` under `[settings]` in `local.toml` sets how long (0: none).
+
+A background of your own is set on the stick rather than kept here:
+`./theme.sh --background picture.jpg --dim 40`. See the README's
+[boot menu's look](../README.md#the-boot-menus-look).

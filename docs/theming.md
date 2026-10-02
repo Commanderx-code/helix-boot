@@ -1,18 +1,22 @@
 # HELIXBOOT themes
 
-The Ventoy theme is **Helix Neon**: near-black, violet and cyan, with DNA
-branding and the tagline **RECOVERY • DIAGNOSTICS • REPAIR**. The separate
-Lazarus PE PortableApps theme remains green and keeps the Retro Dark slot.
-The other five PortableApps themes and the user's saved selection are unchanged.
+The default Ventoy theme is **Helix Neon**: near-black, violet and cyan, with
+DNA branding and the tagline **RECOVERY • DIAGNOSTICS • REPAIR**. Six presets
+sit beside it: Midnight, Ember, Terminal and Slate, the same menu in other
+colours, and Standby and Poly dark, two other people's GRUB themes adapted for
+Ventoy. The separate Lazarus PE PortableApps theme remains green and keeps the
+Retro Dark slot. The other five PortableApps themes and the user's saved
+selection are unchanged.
 
 ## Apply
 
-Run `./refresh.sh` with the stick attached. The normal refresh copies the committed theme assets and writes
-Ventoy's menu configuration. It also checks for tool updates as usual.
-No Windows PE rebuild or PortableApps reinstall is needed.
+Run `./refresh.sh` with the stick attached. The normal refresh copies the
+committed theme assets, presets included, and writes Ventoy's menu
+configuration. It also checks for tool updates as usual. No Windows PE rebuild
+or PortableApps reinstall is needed. The stick keeps the look it had.
 
 To keep Ventoy's stock appearance, set `theme = ""` in `[settings]` in
-`local.toml`, then refresh. Custom icons in `byo/icons/` still take priority.
+`local.toml`, then refresh.
 
 ## Change a stick's look
 

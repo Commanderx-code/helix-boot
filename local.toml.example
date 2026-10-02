@@ -7,3 +7,18 @@
 # Skip a tool on this stick:
 # [overrides.shredos]
 # enabled = false
+
+# Settings:
+# [settings]
+# splash_seconds = 2      # how long the splash before the boot menu shows (0: none; default 1)
+# theme = ""              # Ventoy's own look instead of the Helix themes (./theme.sh picks one)
+
+# Leave a tool for a Mac off the stick (one entry per tool; tools.toml has their names):
+# [overrides.opencore-legacy-patcher]
+# enabled = false
+
+# Your own files (git-ignored), see byo/README.md:
+#   byo/<slot>.iso            paid and bring-your-own tools
+#   byo/icons/<tool>.png      your own menu icons
+#   byo/icon-packs/<name>/    a whole icon pack of your own
+#   byo/splash.png            your own splash

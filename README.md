@@ -16,6 +16,7 @@ Current tools, verified downloads, a MediCat-style boot menu, and room for your 
 [What's on the stick](#whats-on-the-stick) ·
 [Packs](#packs-the-whole-stick-in-one-file) ·
 [Lazarus PE](#lazarus-pe) ·
+[Themes](#the-boot-menus-look) ·
 [Customising](#customising) ·
 [Changelog](CHANGELOG.md)
 
@@ -35,7 +36,8 @@ desktop) and fixes the rest:
 | **Always current** | Every tool resolves to its latest upstream release on each refresh. |
 | **Verified** | Downloads are checked against the publisher's own checksums before they reach the stick. Anything without one is flagged, never trusted silently. |
 | **Free by default** | The shipped tool list is free software and freeware. Paid tools get [bring-your-own](#bring-your-own-tools) slots for your licensed copies. |
-| **Refreshable in place** | `./refresh.sh` swaps in new versions and leaves files you added yourself alone. |
+| **Refreshable in place** | `./refresh.sh` swaps in new versions and leaves alone the files you added yourself, and the tools another PC put there. |
+| **Yours to restyle** | Seven boot-menu [themes](#the-boot-menus-look), icon styles, your own background and splash: switched on a finished stick from Linux or the Windows app, with a preview first. |
 | **Offline-ready** | [Packs](#packs-the-whole-stick-in-one-file) put the whole stick, your own tools included, into one zip that builds a stick with no internet, from Linux or Windows. |
 | **A real recovery desktop** | [Lazarus PE](#lazarus-pe), your own Windows 11 PE, opens on a full-screen launcher with every tool on the stick sorted into categories. |
 | **Nothing redistributed** | The repo holds a manifest and scripts, not binaries. The Windows PE is built from *your* Windows ISO. |
@@ -57,6 +59,7 @@ Keep it current later:
 ```fish
 ./refresh.sh                    # update the stick in place
 ./refresh.sh --upgrade-ventoy   # …and the Ventoy boot loader too
+./theme.sh --menu               # change how the boot menu looks
 ```
 
 **Linux, one file.** Or skip the clone: download **`HelixBoot.sh`** from
@@ -232,9 +235,12 @@ downloads. A pack holds both Ventoy packages (Linux and Windows) and the
 latest released `HelixBoot.exe`, each checked against its published checksum.
 
 Inside is the stick exactly as `helix sync` lays it out, with boot images
-stored uncompressed and each one's sha256 recorded. Extracting streams files
-straight onto the stick and checks every image, so a damaged pack is caught,
-not booted. A stick filled from a pack refreshes normally afterwards.
+stored uncompressed and each one's sha256 recorded: the boot images, the apps,
+the Mac tools, every theme preset and your own icons and splash. Extracting
+streams files straight onto the stick and checks every image, so a damaged pack
+is caught, not booted. A stick filled from a pack refreshes normally
+afterwards, keeps the look it had, and keeps tools the pack doesn't have
+([why](#updating-from-more-than-one-pc)).
 
 > [!IMPORTANT]
 > A pack holds your licensed tools, so keep it private: a drive, a NAS or your
@@ -255,14 +261,21 @@ to the disk.
    icons, your own background (with a slider to darken it) and splash, with a
    preview of the boot menu. Nothing changes until **Apply to the stick**.
 
+A stick is recognised whatever you have named its main partition: it is known
+by Ventoy's own small `VTOYEFI` partition.
+
 It uses the same engine as the Linux scripts: the same tool list, checksums,
 theme and menu. Your `local.toml` and `byo/` folder live next to the `.exe`, and
 downloads are cached in `%LOCALAPPDATA%\HelixBoot`. The command line
 works too: `HelixBoot.exe --help`.
 
-To build a stick offline, pick **Tools from: a pack** and choose a pack zip. A
-pack next to the `.exe` is chosen for you. From the command line, add
-`--pack helix-boot-<date>.zip` to `--install` or `--update`.
+**Tools from** chooses where Install and Update get the tools. *The internet*
+downloads the free tools fresh; your own paid tools come along only if their
+files are in the `byo` folder beside the `.exe`. *A pack* copies everything
+from a pack zip with no downloads, your own tools included, and a pack next to
+the `.exe` is chosen for you. From the command line, add
+`--pack helix-boot-<date>.zip` to `--install` or `--update`; `--look E:\`
+opens the Look window, or changes the look with `--theme`, `--icons` and so on.
 
 ## Lazarus PE
 
@@ -306,9 +319,16 @@ standard-library Python script:
 | `helix list` | every tool, its source, and whether it's enabled |
 | `helix check [--json]` | compares your cache against upstream, no downloads |
 | `helix fetch [tool…] [--force]` | downloads, verifies and caches (`~/.cache/helix-boot`); resumes interrupted downloads |
-| `helix sync <mount> [--dry-run] [--verify]` | copies the cache to a Ventoy stick, prunes old versions, writes the menu |
+| `helix sync <mount> [--dry-run] [--verify] [--prune-unknown]` | copies the cache to a Ventoy stick, replaces old versions, writes the menu |
 | `helix pack [file.zip]` | the whole stick, your own tools and Ventoy in one zip |
-| `helix unpack <pack.zip> <mount> [--dry-run] [--verify]` | fills a Ventoy stick from a pack, no downloads |
+| `helix unpack <pack.zip> <mount> [--dry-run] [--verify] [--prune-unknown]` | fills a Ventoy stick from a pack, no downloads |
+| `helix theme <mount> [--theme ID] [--icons ID] [--background PIC] [--splash PIC] [--menu] [--preview FILE]` | shows or changes a stick's look ([themes](#the-boot-menus-look)) |
+| `helix splash <VTOYEFI mount>` | adds the splash to Ventoy's boot script (`install.sh` and `refresh.sh` run it) |
+
+`theme.sh` wraps `helix theme` the same way: it finds and mounts the stick first.
+Pillow is the one optional extra: with it the engine draws previews, the
+splash's loading bar and greyscale icons, and resizes your pictures; without it
+those are skipped and everything else works.
 
 ### Verification
 
@@ -331,7 +351,10 @@ If no strategy works, the tool is refused rather than silently used.
   system, following LUKS, LVM and btrfs back to the physical disk.
 - You type the device name to confirm, and it warns if the "stick" is
   suspiciously large.
-- `refresh.sh` never erases anything except old versions of files it put there.
+- `refresh.sh` removes a tool from the stick only when it brings a newer copy of
+  it, the tool is switched off, or this PC put it there and no longer has it.
+  The stick records which PC put each tool on it, so updating from a second PC
+  leaves the first one's tools alone ([more](#updating-from-more-than-one-pc)).
 - Nothing read from a pack or from a stick (paths, app names) can reach outside
   the stick: a crafted pack or a stick tampered with on an infected PC can't
   write or delete anything else.
@@ -360,91 +383,118 @@ checksum = [{ url = "https://cdimage.kali.org/current/SHA256SUMS" }]
 
 ISOs you copy onto the stick by hand (e.g. into `ISO/Custom/`) are never touched.
 
-**Updating from more than one PC.** An update removes a tool from the stick only
-when it brings a newer copy of that tool, or the tool is switched off
-(`enabled = false`). Tools this PC has no copy of stay where they are, with
-their names and icons in the menu: your paid tools when you update from the
-Windows app on another PC, or a tool whose download just failed. The run lists
-what it kept; `./refresh.sh --prune-unknown` removes them.
+### Updating from more than one PC
 
-**Theme.** The default Ventoy theme is **Helix Neon**: purple/cyan DNA artwork,
-the HELIXBOOT wordmark, cyan category icons and a purple selection with a cyan
-edge. The menu, scrolling, timeout, hotkeys and boot-mode indicators are real
-Ventoy components; no menu entries are painted into the wallpaper. Lazarus PE
-keeps its separate green PortableApps theme.
+An update removes a tool from the stick only when it brings a newer copy of
+that tool, the tool is switched off (`enabled = false`), or the PC that put it
+there no longer has it. Tools from another PC stay where they are, with their
+names, tips and icons in the menu: your paid tools when you update from the
+Windows app on a second machine, or a tool whose download just failed. The run
+lists what it kept; `./refresh.sh --prune-unknown` removes them.
 
-Tool entries use curated product/project icons in their original colours,
-with publisher marks where a product-specific icon was not available.
-[Icon preview and sources](docs/tool-icons.md) identify each asset and the
-two remaining letter-badge fallbacks. The builder preserves these icons.
+### The boot menu's look
 
-![Helix Neon layout preview](docs/artwork/helix-neon-preview.jpg)
-
-The image above is a layout preview; the screenshots at the top are the real
-thing. The theme targets 1920×1080; other screen modes use Ventoy's resolution
-fallback, and longer menus scroll.
-
-After pulling the changes, `./refresh.sh` installs the new theme on an existing
-stick. No PE rebuild is needed. See [theme notes](docs/theming.md) for rebuilding
-assets and checking the result on your hardware.
-
-The boot-menu theme lives in [`theme/`](theme/). Edit `theme.txt` for layout,
-or the colours and text in `theme/build-theme.py` and re-run it to regenerate
-the images, icons and fonts (`--skip-fonts` reuses the committed fonts).
-To show a tool's real logo instead of
-its letter badge, save a square PNG as `byo/icons/<tool name>.png`;
-`byo/icons/cat-<category id>.png` replaces a category icon, and Ventoy's own
-(`vtoyiso`, `vtoydir`, `vtoyret` for "back", …) can be replaced the same way.
-Ventoy shows icons at 40×40, and big ones use up its memory at boot so later
-icons don't appear: `theme/build-theme.py --fit-icons` shrinks yours to
-40×40, keeping the originals in `byo/icons/originals/`. Put icons there, not
-straight onto the stick: refresh rewrites the stick's theme folder. For Ventoy's stock look, set `theme = ""` under `[settings]`.
-
-**Change the look.** `./theme.sh` changes a finished stick's look without
-rebuilding anything, and the choice is kept on the stick, so a refresh doesn't
-undo it:
+`./theme.sh` changes a finished stick's look without rebuilding anything. The
+choice is kept on the stick, so a refresh doesn't undo it:
 
 ```sh
 ./theme.sh                                  # how it looks now, and what there is to choose
+./theme.sh --menu                           # choose from numbered lists, with a preview
 ./theme.sh --theme midnight                 # a preset: midnight, ember, terminal, slate (default: Helix Neon)
 ./theme.sh --theme standby                  # the plain one (also --theme off); poly-dark is another
 ./theme.sh --icons off                      # no icons, just names (--icons grey, --icons badges)
 ./theme.sh --background ~/pic.jpg --dim 40  # your own picture behind the menu, darkened 40 %
 ./theme.sh --splash ~/pic.png               # your own picture before the menu (--splash off: none)
+./theme.sh --preview out.png --theme ember  # a picture of how it would look; the stick is untouched
 ./theme.sh --reset                          # back to the default look
 ```
 
+On Windows it is the app's **Look…** button, with a live preview, or
+`HelixBoot.exe --look E:\ --theme midnight`. `HelixBoot.sh` has it in its menu
+as **Change a stick's look**.
+
 ![The Midnight, Ember, Terminal and Slate presets](docs/themes.jpg)
 
-`./theme.sh --menu` (also **Change a stick's look** in `HelixBoot.sh`) offers the
-same choices as numbered lists; `--preview out.png` draws how the menu would
-look without changing the stick. On Windows it is the app's **Look…** button,
-or `HelixBoot.exe --look E:\ --theme midnight`.
+| Theme | |
+|---|---|
+| `default` | **Helix Neon**: purple and cyan over the helix artwork |
+| `midnight` | deep navy with ice blue and cyan |
+| `ember` | charcoal with orange and amber |
+| `terminal` | black with phosphor green |
+| `slate` | plain graphite and steel |
+| `standby` | black cubes, a power symbol, grey icons; the plain choice (`--theme off` gives it) |
+| `poly-dark` | dark polygons and a plain list, in greys |
+
+Midnight, Ember, Terminal and Slate are the same menu in other colours, over
+artwork drawn by `theme/build-theme.py`, so all of it can be shared. **Standby**
+(by Llewelyn Trahaearn, GPL) and **Poly dark** (by Andrei Shevchuk, MIT) are
+other people's GRUB themes with their own layout, adapted for Ventoy. Standby
+takes the place of Ventoy's own white look, which `theme = ""` under
+`[settings]` in `local.toml` still gives.
 
 ![The Standby and Poly dark themes](docs/themes-imported.jpg)
 
-Midnight, Ember, Terminal and Slate are the same menu in other colours, over
-artwork drawn by `theme/build-theme.py` (so all of it can be shared). **Standby**
-(by Llewelyn Trahaearn, GPL) and **Poly dark** (by Andrei Shevchuk, MIT) are
-other people's GRUB themes with their own layout, adapted for Ventoy; they show
-every tool's icon in shades of grey, which `--icons grey` does on any theme and
-`--icons logos` undoes. Standby is the plain choice: it takes the place of
-Ventoy's own white look, which `theme = ""` in `local.toml` still gives. Your own icons and
-`byo/splash.png` still win over a preset's. More icon packs go in
-`byo/icon-packs/<name>/` (PNGs named like the ones in `byo/icons/`). Your own
-pictures are resized to 1920×1080 with Pillow; without it, a PNG is used as it
-is. See [theme notes](docs/theming.md) for how the stick stores all this.
+| Icons | |
+|---|---|
+| `auto` | the theme's own style: logos in colour, or grey on Standby and Poly dark (the default) |
+| `logos` | the tools' logos in colour, and yours from `byo/icons/` |
+| `grey` | the same icons in shades of grey; a flat one-colour icon turns white |
+| `badges` | two-letter badges in place of the tools' logos |
+| `off` | no icons, just the names |
 
-**Splash.** When the stick boots, a splash (the HELIXBOOT logo over the theme's
-artwork, `theme/splash.png`) shows for about a second before the Ventoy menu,
-with a loading bar filling up along the bottom. Save your own picture as
-`byo/splash.png` (1920×1080 works best), set `splash_seconds` under
-`[settings]` in `local.toml` (0 turns it off), and refresh. The boot loader
-only counts whole seconds, so the bar is a set of frames drawn one after
-another: a slower PC takes a little longer. Refresh makes the frames with
-Pillow (`python-pillow`); without it the splash is a still picture. Ventoy has no setting for this, so `install.sh` and `refresh.sh` add a
-few marked lines to Ventoy's own boot script on the stick's small VTOYEFI
-partition, and re-add them after a Ventoy upgrade.
+Your own pictures are resized to 1920×1080 with Pillow; without it, a PNG is
+used as it is. See the [theme notes](docs/theming.md) for how the stick stores
+its look, and for adding a preset or an icon pack of your own.
+
+### Your own icons and splash
+
+To show a tool's real logo instead of its letter badge, save a square PNG as
+`byo/icons/<tool name>.png`; `byo/icons/cat-<category id>.png` replaces a
+category icon, and Ventoy's own (`vtoyiso`, `vtoydir`, `vtoyret` for "back", …)
+can be replaced the same way. Yours win over a preset's. Ventoy shows icons at
+40×40, and big ones use up its memory at boot so later icons don't appear:
+`theme/build-theme.py --fit-icons` shrinks yours to 40×40, keeping the
+originals in `byo/icons/originals/`. A whole set of your own goes in
+`byo/icon-packs/<name>/` and is picked with `./theme.sh --icons <name>`. Put
+icons there, not straight onto the stick: the stick's theme folder is rebuilt
+on every refresh.
+
+When the stick boots, a splash shows for about a second before the Ventoy
+menu, with a loading bar filling up along the bottom: the HELIXBOOT logo over
+the theme's artwork, or your own picture saved as `byo/splash.png` (1920×1080
+works best). `splash_seconds` under `[settings]` in `local.toml` sets how long
+(0 turns it off). The boot loader only counts whole seconds, so the bar is a set
+of frames drawn one after another, and a slower PC takes a little longer.
+Refresh makes the frames with Pillow (`python-pillow`); without it the splash
+is a still picture. Ventoy has no setting for a splash, so `install.sh` and
+`refresh.sh` add a few marked lines to Ventoy's own boot script on the stick's
+small VTOYEFI partition, and re-add them after a Ventoy upgrade.
+
+### The default theme
+
+**Helix Neon** is purple/cyan DNA artwork, the HELIXBOOT wordmark, cyan
+category icons and a purple selection with a cyan edge. The menu, scrolling,
+timeout, hotkeys and boot-mode indicators are real Ventoy components; no menu
+entries are painted into the wallpaper. Lazarus PE keeps its separate green
+PortableApps theme.
+
+Tool entries use curated product/project icons in their original colours,
+with publisher marks where a product-specific icon was not available.
+[Icon preview and sources](docs/tool-icons.md) identify each asset and the
+two remaining letter-badge fallbacks.
+
+![Helix Neon layout preview](docs/artwork/helix-neon-preview.jpg)
+
+The image above is a layout preview; the screenshots at the top are the real
+thing. The themes target 1920×1080; other screen modes use Ventoy's resolution
+fallback, and longer menus scroll.
+
+The theme lives in [`theme/`](theme/). Edit `theme.txt` for layout, or the
+colours and text in `theme/build-theme.py`, and re-run it to regenerate the
+images, icons, presets and fonts (`--skip-fonts` reuses the committed fonts).
+`./refresh.sh` then puts it on a stick; no PE rebuild is needed. See the
+[theme notes](docs/theming.md) for rebuilding assets and checking the result on
+your hardware.
 
 <details>
 <summary><b>Layout on the stick</b></summary>
@@ -459,7 +509,9 @@ Apps/Lazarus/       the Lazarus launcher (Lazarus PE's start screen)
 Mac/                tools for a working Mac, as downloaded, with a README.txt
 PortableApps/       the PortableApps.com Platform's apps (Start.exe at the root)
 ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
-.helix-boot/        sync state (which files this project manages)
+ventoy/theme/       the look in use, built from .helix-boot (rebuilt on every refresh)
+.helix-boot/        what this project manages: which tool each file is and which PC put
+                    it there, the theme with its presets, and the look you chose
 ```
 
 </details>
@@ -478,6 +530,11 @@ ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
 - [x] Renamed to Helix Boot (0.5.0), Helix Neon boot-menu theme
 - [x] Lazarus PE look and the Lazarus launcher
 - [x] One-file Linux installer (`HelixBoot.sh`)
+- [x] Splash before the menu, with a loading bar
+- [x] Theme builder: presets, icon styles, your own background and splash
+      (`theme.sh`, the Look window in `HelixBoot.exe`), with a preview (0.6.0)
+- [x] Standby and Poly dark themes, greyscale icons, tools for a Mac (0.6.1)
+- [x] Updates that keep another PC's tools; a renamed stick is still recognised (0.6.2)
 
 ## Contributing
 

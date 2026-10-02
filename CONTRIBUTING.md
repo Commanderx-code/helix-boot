@@ -18,10 +18,12 @@ Tools that ship in `tools.toml` must be:
 ## Development
 
 Requirements: Linux, Python 3.11+ (standard library only) and ShellCheck.
+Pillow is optional: the theme generator needs it, and the tests that draw
+pictures (previews, the loading bar, greyscale icons) are skipped without it.
 
 ```fish
 python3 -m unittest discover -s tests -v   # the whole suite runs offline
-shellcheck -x install.sh refresh.sh scripts/common.sh pe/vm/build-vm.sh linux/build.sh linux/HelixBoot.sh.in
+shellcheck -x install.sh refresh.sh theme.sh scripts/common.sh pe/vm/build-vm.sh linux/build.sh linux/HelixBoot.sh.in
 ./helix check                             # live: does every upstream still resolve?
 ```
 
@@ -33,13 +35,20 @@ and smoke-tests `HelixBoot.exe` on Windows, and checks the Lazarus launcher
 
 ## Pull requests
 
-- Keep `helix` standard-library only, and match the surrounding style.
+- Keep `helix` standard-library only, and match the surrounding style. Pillow
+  may be imported where it is used, as long as the feature degrades without it.
 - PowerShell for Lazarus PE must run on Windows PowerShell 5.1; save `.ps1`
   files with non-ASCII text as UTF-8 **with** a BOM (5.1 reads them as ANSI
   otherwise).
 - Add or update tests for behaviour changes, and keep ShellCheck clean.
 - After adding a tool or category, run `theme/build-theme.py` so it gets a menu
-  icon (a test checks this).
+  icon (a test checks this). The same run regenerates the theme presets and the
+  letter-badge icon pack; see [theme notes](docs/theming.md) for adding a preset.
+- A tool to run on a working Mac is an app with `platform = "mac"`: it goes in
+  the stick's `Mac` folder as downloaded.
+- Anything that removes files from a stick must keep to the rule in the README
+  ("Updating from more than one PC"): another PC's tools are never removed
+  unless asked for with `--prune-unknown`.
 - Update `README.md` and `CHANGELOG.md` (under *Unreleased*) when users would
   notice the change.
 - Never commit ISOs, packs or anything from `byo/`.
