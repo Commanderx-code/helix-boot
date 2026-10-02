@@ -390,7 +390,8 @@ that tool, the tool is switched off (`enabled = false`), or the PC that put it
 there no longer has it. Tools from another PC stay where they are, with their
 names, tips and icons in the menu: your paid tools when you update from the
 Windows app on a second machine, or a tool whose download just failed. The run
-lists what it kept; `./refresh.sh --prune-unknown` removes them.
+lists what it kept; `./refresh.sh --prune-unknown` removes them. The stick's own
+icons and splash stay the same way when the updating PC has none of its own.
 
 ### The boot menu's look
 

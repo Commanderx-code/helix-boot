@@ -457,6 +457,42 @@ class TestFetchAndSync(Base):
             target=str(self.stick), init=False, dry_run=False, verify=False, no_prune=False, prune_unknown=True))())
         self.assertFalse(app.exists(), out)
 
+    def test_updating_from_a_second_pc_keeps_the_sticks_own_icons_and_splash(self):
+        theme = self.repo / "theme"
+        (theme / "icons").mkdir(parents=True)
+        (theme / "theme.txt").write_text('desktop-image: "background.png"\n')
+        (theme / "background.png").write_bytes(b"background")
+        (theme / "splash.png").write_bytes(b"stock splash")
+        (theme / "icons/systemrescue.png").write_bytes(b"stock icon")
+        (self.repo / "byo/icons").mkdir(parents=True)
+        (self.repo / "byo/icons/systemrescue.png").write_bytes(b"my icon")
+        (self.repo / "byo/splash.png").write_bytes(b"my splash")
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("systemrescue")
+        self.assertEqual(self.sync()[0], 0)
+        icon, splash = self.stick / "ventoy/theme/icons/systemrescue.png", self.stick / "ventoy/theme/splash.png"
+        self.assertEqual((icon.read_bytes(), splash.read_bytes()), (b"my icon", b"my splash"))
+
+        other = self.tmp / "other-pc"                                    # the same project, no byo/ of its own
+        shutil.copytree(self.repo, other, ignore=shutil.ignore_patterns("byo"))
+        second = cr.Config(repo=other)
+        second._pc_id = "5ec0d5ec0d5ec0d5"
+        again = type("A", (), dict(target=str(self.stick), init=False, dry_run=False, verify=False, no_prune=False))()
+        rc, out = self.run_quiet(cr.cmd_sync, second, again)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((icon.read_bytes(), splash.read_bytes()), (b"my icon", b"my splash"), out)
+        self.assertIn("keeping the stick's own icons", out)
+        self.assertIn("keeping the stick's own splash", out)
+        self.assertFalse((self.stick / cr.STATE_DIR / "mine.keep").exists())
+        self.run_quiet(cr.cmd_sync, second, again)
+        self.assertEqual(icon.read_bytes(), b"my icon")                  # and again
+
+        (self.repo / "byo/splash.png").unlink()                          # the first PC takes its own away
+        (self.repo / "byo/icons/systemrescue.png").write_bytes(b"my newer icon")
+        self.assertEqual(self.sync(init=False)[0], 0)
+        self.assertEqual((icon.read_bytes(), splash.read_bytes()), (b"my newer icon", b"stock splash"))
+
     def test_a_stick_from_before_tools_were_recorded(self):
         # state.json without "tools": an old version of the same file goes, anything else stays
         self.fetch("systemrescue")

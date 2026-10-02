@@ -6,6 +6,11 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Changed
+- A stick keeps its own icons and splash (the ones from a `byo/` folder) when it
+  is updated from a PC that has none of its own, instead of getting the stock
+  ones back. The PC that put them there still replaces or removes them.
+
 ## [0.6.2] - 2026-10-02
 
 ### Changed

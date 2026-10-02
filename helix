@@ -1604,10 +1604,14 @@ def _write_extras(cfg: Config, mnt: Path, state: dict, extras: list[tuple[str, P
                   fresh_theme: bool) -> Path:
     """Write the launcher, theme and boot menu, keeping a copy of a ventoy.json someone edited."""
     vjson = _keep_edited_json(mnt, state)
+    kept: dict[str, Path] = {}
     if fresh_theme:
+        legacy = any(rel.startswith("ventoy/theme/") for rel, _ in extras)
+        if not legacy:
+            kept = _set_mine_aside(cfg, mnt, state, extras)
         shutil.rmtree(mnt / THEME_SRC, ignore_errors=True)
-        if any(rel.startswith("ventoy/theme/") for rel, _ in extras):   # a pack from before `helix theme`:
-            shutil.rmtree(mnt / "ventoy" / "theme", ignore_errors=True)  # its theme and menu are ready-made
+        if legacy:                  # a pack from before `helix theme`: its theme and menu are ready-made
+            shutil.rmtree(mnt / "ventoy" / "theme", ignore_errors=True)
             (mnt / BASE_JSON).unlink(missing_ok=True)
     for rel, data in extras:
         dst = _inside(mnt, rel)
@@ -1616,8 +1620,40 @@ def _write_extras(cfg: Config, mnt: Path, state: dict, extras: list[tuple[str, P
             dst.write_bytes(data)
         else:
             shutil.copy2(data, dst)
+    for sub, aside in kept.items():                 # the stick's own icons and splash, back in place
+        (mnt / THEME_SRC / "mine").mkdir(parents=True, exist_ok=True)
+        os.replace(aside, mnt / THEME_SRC / "mine" / sub)
+    if kept:
+        shutil.rmtree(mnt / STATE_DIR / "mine.keep", ignore_errors=True)
     _apply_look(cfg, mnt)
     return vjson
+
+
+def _set_mine_aside(cfg: Config, mnt: Path, state: dict, extras: list[tuple[str, Path | bytes]]) -> dict[str, Path]:
+    """Before the theme on the stick is replaced: the stick's own icons and splash (from some
+    PC's byo/) stay when this PC brings none and wasn't the one that put them there, so updating
+    from a second PC doesn't swap them for the stock ones. Moves those out of the way and
+    returns them (name under mine/ -> where it is); records in `state` whose each kind is."""
+    me, mine = cfg.pc_id(), mnt / THEME_SRC / "mine"
+    by = dict(state.get("mine_by") or {})
+    kept: dict[str, Path] = {}
+    for kind, sub in (("icons", "icons"), ("splash", "splash.png")):
+        if any(rel.startswith(f"{THEME_SRC}/mine/{sub}") for rel, _ in extras):
+            by[kind] = me                           # this PC brings its own
+        elif (mine / sub).exists() and by.get(kind) != me:
+            aside = mnt / STATE_DIR / "mine.keep" / sub
+            if aside.is_dir():                      # left by a run that was cut short
+                shutil.rmtree(aside)
+            else:
+                aside.unlink(missing_ok=True)
+            aside.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(mine / sub, aside)
+            kept[sub] = aside
+            info(f"keeping the stick's own {'icons' if kind == 'icons' else 'splash'}: this PC has none of its own")
+        else:
+            by.pop(kind, None)                      # gone, or this PC's own that it no longer has
+    state["mine_by"] = by
+    return kept
 
 
 def _finish(mnt: Path, state_dir: Path, files: set[str], app_state: dict, vjson: Path, extra: dict) -> None:
@@ -1781,7 +1817,7 @@ def cmd_sync(cfg: Config, args) -> int:
     tools = {**{rel: n for rel, n in (state.get("tools") or {}).items() if rel in kept},
              **{p["rel"]: p["name"] for p in placed}}
     _finish(mnt, state_dir, want_files | set(kept), app_state, vjson, {
-        "images": images, "tools": tools,
+        "images": images, "tools": tools, "mine_by": state.get("mine_by") or {},
         **_put_by(state, me, want_files, wrote, kept, {t["name"] for t, _, _ in apps}, wrote_apps, kept_apps)})
     ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
     return 0
@@ -2159,7 +2195,7 @@ def cmd_unpack(cfg: Config, args) -> int:
     tools = {**{rel: n for rel, n in (state.get("tools") or {}).items() if rel in kept},
              **{i["rel"]: i["name"] for i in meta["isos"] if i.get("name")}}
     _finish(mnt, state_dir, want_files | set(kept), app_state, vjson, {
-        "pack": meta["created"], "tools": tools,
+        "pack": meta["created"], "tools": tools, "mine_by": state.get("mine_by") or {},
         **_put_by(state, me, want_files, {i["rel"] for i in todo}, kept, set(meta["apps"]), wrote_apps, kept_apps)})
     ok(f"Stick is up to date from the pack: {len(meta['isos'])} boot image(s), {len(meta['apps'])} app(s).")
     return 0
