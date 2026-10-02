@@ -1588,7 +1588,8 @@ def cmd_sync(cfg: Config, args) -> int:
         new = root / f".{t['name']}.new"
         shutil.rmtree(new, ignore_errors=True)
         new.mkdir(parents=True)
-        if zipfile.is_zipfile(src) and t.get("platform") != "mac":
+        unzip = zipfile.is_zipfile(src) and t.get("platform") != "mac"
+        if unzip:
             with zipfile.ZipFile(src) as zf:
                 zf.extractall(new, members=_safe_zip_members(zf))
         else:
@@ -1597,7 +1598,7 @@ def cmd_sync(cfg: Config, args) -> int:
             shutil.rmtree(dst)
         os.replace(new, dst)
         app_state[t["name"]] = entry["version"]
-        ok(f"{t['title']} unpacked")
+        ok(f"{t['title']} {'unpacked' if unzip else 'copied'}")
 
     enabled_apps = {t["name"] for t, _, _ in apps}
     for name in [n for n in app_state if n not in enabled_apps]:
