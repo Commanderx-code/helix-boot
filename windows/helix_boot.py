@@ -645,7 +645,9 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     cr.look_changes(mnt)                       # an older stick is refused here, before a window opens
     win = tk.Toplevel(parent) if parent else tk.Tk()
     win.title(f"{APP}: the look of {mnt}")
-    win.minsize(700, 640)
+    # The preview sets the window's height: a smaller one where the screen is short (768 px laptops)
+    preview_size = (672, 378) if win.winfo_screenheight() >= 900 else (480, 270)
+    win.minsize(preview_size[0] + 40, preview_size[1] + 270)
     frm = ttk.Frame(win, padding=14)
     frm.pack(fill="both", expand=True)
     themes = {t["title"]: t for t in report["themes"]}
@@ -688,7 +690,7 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     ttk.Label(dimmer, text="Darken it").pack(side="left")
     scale = ttk.Scale(dimmer, from_=0, to=90, variable=dim, length=220)
     scale.pack(side="left", padx=8)
-    dim_text = ttk.Label(dimmer, width=24)
+    dim_text = ttk.Label(dimmer, width=30)
     dim_text.pack(side="left")
 
     ttk.Label(frm, text="Splash").grid(row=5, column=0, sticky="w", pady=4)
@@ -744,7 +746,7 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
                 return
             (new_look, pictures), darken = job
             try:
-                png = cr.look_preview(cfg, mnt, new_look, cfg.cache / "look-window.png", pictures, darken, (672, 378))
+                png = cr.look_preview(cfg, mnt, new_look, cfg.cache / "look-window.png", pictures, darken, preview_size)
                 q.put(("preview", str(png)))
             except Exception as e:  # noqa: BLE001 — shown in the window
                 q.put(("nopreview", str(e)))

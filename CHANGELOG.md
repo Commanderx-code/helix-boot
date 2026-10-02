@@ -11,6 +11,8 @@ tagged releases also publish the Windows app.
   recognised: the Windows app showed it as not having Ventoy, so **Look…** and
   **Update** refused it, and `refresh.sh` / `theme.sh` didn't find it. A stick
   is now known by Ventoy's own `VTOYEFI` partition, whatever the other is called.
+- The Look window fits a short screen (a 1366×768 laptop, a small VM window): its
+  preview is smaller there, so the buttons no longer end up under the taskbar.
 
 ## [0.6.1] - 2026-10-02
 
