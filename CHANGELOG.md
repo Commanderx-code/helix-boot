@@ -11,6 +11,8 @@ tagged releases also publish the Windows app.
   `docs/artwork/helix-icons/` is rebuilt from it, Super GRUB2 Disk has the
   collection's icon, and the rest of the collection (51 icons for tools that
   aren't shipped, and spare variants) is in `docs/artwork/helix-icons/more/`.
+- Windows 10 Recovery and Windows 11 Recovery, two tools people add themselves,
+  have the collection's recovery icon in the default set.
 
 ### Removed
 - The `classic` icon pack and its source artwork (`docs/artwork/tool-icons/`).
