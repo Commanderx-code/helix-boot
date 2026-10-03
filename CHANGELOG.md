@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-10-03
+
 ### Changed
 - The HELIXBOOT icon collection is the one icon set. Every master in
   `docs/artwork/helix-icons/` is rebuilt from it, Super GRUB2 Disk has the
@@ -449,7 +451,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.6...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.7...HEAD
+[0.6.7]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.3...v0.6.4
