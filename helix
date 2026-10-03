@@ -2951,8 +2951,9 @@ def _desktop_image(theme: Path) -> str:
 
 # The hotkey row of the Helix themes shows an icon per key. Two of Ventoy's keys can do something
 # more useful on a rescue stick than Language and Help: L opens a power menu, F1 starts
-# Memtest86+. That takes a hook in Ventoy's boot script (`helix splash`, Linux only), so the icons
-# and what the keys do follow KEYS_HOOK: without it the row shows Language and Help, as they are.
+# Memtest86+. That takes a hook in Ventoy's boot script (`helix splash`; the Windows app does the
+# same), so the icons and what the keys do follow KEYS_HOOK: without it, on a stick whose script
+# couldn't be changed, the row shows Language and Help, as they are.
 def set_keys_hook(mnt: Path, on: bool) -> bool:
     """Note on the stick whether its Ventoy has the hook. True if that changed."""
     marker = mnt / KEYS_HOOK
@@ -2963,6 +2964,13 @@ def set_keys_hook(mnt: Path, on: bool) -> bool:
     else:
         marker.unlink()
     return True
+
+
+def forget_keys_hook(cfg: Config, mnt: Path) -> None:
+    """The hook is gone, or couldn't be put there: the menu's row shows Ventoy's own keys again."""
+    if set_keys_hook(mnt, False):
+        _apply_look(cfg, mnt)
+        _flush_volume(mnt)
 
 
 def _keys_cfg(mnt: Path) -> tuple[str, str]:
@@ -3527,7 +3535,10 @@ def cmd_splash(cfg: Config, args) -> int:
         info(f"would {'set the splash to ' + str(seconds) + ' s' if shown != 'none' else 'remove the splash'}")
         return 0
     tmp = script.with_name("grub.cfg.helix-boot")
-    tmp.write_bytes(text.encode("utf-8"))
+    with open(tmp, "wb") as f:               # on the stick for good before it takes the script's place
+        f.write(text.encode("utf-8"))
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, script)
     ok(f"Splash: {seconds} s before the Ventoy menu" if shown != "none" else "Splash removed")
     tell_stick()

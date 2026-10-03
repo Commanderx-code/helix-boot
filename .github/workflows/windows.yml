@@ -76,6 +76,30 @@ jobs:
           }
           Get-ChildItem -Recurse "$env:RUNNER_TEMP\stick\ISO" | Select-Object FullName, Length
 
+          # Ventoy's boot script, changed as on Linux. Ventoy's own partition has no drive letter, so a
+          # virtual disk with a letterless VTOYEFI volume stands in for it, reached by its volume id.
+          $vhd = "$env:RUNNER_TEMP\vtoyefi.vhd"
+          Set-Content "$env:RUNNER_TEMP\diskpart.txt" -Encoding ascii -Value @(
+            "create vdisk file=`"$vhd`" maximum=64 type=fixed", "attach vdisk", "create partition primary",
+            "format fs=fat label=VTOYEFI quick")
+          diskpart /s "$env:RUNNER_TEMP\diskpart.txt"
+          if ($LASTEXITCODE) { throw "diskpart couldn't make the virtual disk" }
+          $vol = Get-Volume | Where-Object FileSystemLabel -eq 'VTOYEFI' | Select-Object -First 1
+          if (-not $vol) { throw "Windows doesn't show the VTOYEFI volume" }
+          if ($vol.DriveLetter) {
+            Get-Partition -DriveLetter $vol.DriveLetter | Remove-PartitionAccessPath -AccessPath "$($vol.DriveLetter):\"
+          }
+          $efi = $vol.Path                                    # \\?\Volume{...}\
+          [IO.Directory]::CreateDirectory("${efi}grub") | Out-Null
+          [IO.File]::WriteAllText("${efi}grub\grub.cfg", (@(
+            "function legacy_iso_memdisk {", "}", "function uefi_iso_memdisk {", "}", 'set VTOY_HELP_CMD="a"',
+            'set VTOY_LANG_CMD="b"', "#clear all input key before show main menu", "vt_clear_key", "") -join "`n"))
+          Run "--sync-to $env:RUNNER_TEMP\stick --boot-script $efi"
+          $script = [IO.File]::ReadAllText("${efi}grub\grub.cfg")
+          if ($script -notmatch "helix-boot splash: begin" -or $script -notmatch "helix-keys.cfg") { throw "Ventoy's boot script wasn't changed" }
+          if (-not (Test-Path "$env:RUNNER_TEMP\stick\ventoy\helix-keys.cfg")) { throw "the keys' script isn't on the stick" }
+          if ((Get-Content -Raw "$env:RUNNER_TEMP\stick\ventoy\theme\theme.txt") -notmatch "key_power.png") { throw "the menu doesn't show the power key" }
+
           # The stick's look: a preset with the icons off, a preview drawn by the bundled Pillow, the window
           Run "--look $env:RUNNER_TEMP\stick --theme midnight --icons off"
           $theme = Get-Content -Raw "$env:RUNNER_TEMP\stick\ventoy\theme\theme.txt"

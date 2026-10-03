@@ -258,6 +258,30 @@ class TestFlows(unittest.TestCase):
             self.assertIn("check_for_updates = false", app.updates_notice(cfg))
         self.assertEqual(asked, [True])               # switched off: nothing is asked of any site
 
+    def test_boot_script_is_changed_like_on_linux(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            efi, stick = Path(tmp) / "efi", Path(tmp) / "stick"
+            (efi / "grub").mkdir(parents=True)
+            (stick / app.cr.STATE_DIR).mkdir(parents=True)
+            script = efi / "grub" / "grub.cfg"
+            script.write_text("function legacy_iso_memdisk {\n}\nfunction uefi_iso_memdisk {\n}\n"
+                              'set VTOY_HELP_CMD="x"\nset VTOY_LANG_CMD="y"\n'
+                              "#clear all input key before show main menu\nvt_clear_key\n")
+            asked = []
+            run = lambda ps: asked.append(ps) or f"{efi}\n"                       # noqa: E731
+            cfg = mock.Mock(settings={"theme": "theme"})
+            with redirect_stdout(io.StringIO()) as out, mock.patch.object(app, "config", lambda: cfg), \
+                    mock.patch.object(app.cr, "_apply_look"), mock.patch.object(app.cr, "_flush_volume"):
+                self.assertTrue(app.boot_script(str(stick), disk_no=3, run=run))
+                self.assertIn("-DiskNumber 3", asked[0])
+                self.assertIn(app.cr.SPLASH_BEGIN, script.read_text())
+                self.assertTrue((stick / app.cr.KEYS_HOOK).is_file())
+                self.assertIn("L opens the power menu", out.getvalue())
+                # Windows doesn't show Ventoy's partition: nothing fails, and the stick is told the keys are Ventoy's
+                self.assertFalse(app.boot_script(str(stick), disk_no=3, run=lambda ps: "\n"))
+                self.assertIn("stay Ventoy's Language and Help", out.getvalue())
+                self.assertFalse((stick / app.cr.KEYS_HOOK).exists())
+
     def test_check_stick(self):
         good = {"damaged": [], "missing": [], "changed": {}, "checked": 9, "unrecorded": [], "images": 3,
                 "apps": 2, "menu": None}

@@ -358,6 +358,7 @@ def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None,
         unpack(cfg, letter, pack, init=True)
     else:
         sync(cfg, letter, init=True)
+    boot_script(letter, disk_no=disk_no, run=run)
     return letter
 
 
@@ -381,12 +382,11 @@ def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda
         print(f"\nUpdating Ventoy on disk {disk_no} (your files are kept) …")
         ventoy(ventoy_command(vdir, "/U", disk_no, secure_boot=secure_boot), vdir, progress)
     letter = wait_for_ventoy_letter(disk_no, run)
-    if upgrade_ventoy:      # Ventoy's boot script is its own again: the L and F1 keys are Language and Help
-        cr.set_keys_hook(Path(letter), False)
     if pack:
         unpack(cfg, letter, pack, init=True)
     else:
         sync(cfg, letter, init=True)
+    boot_script(letter, disk_no=disk_no, run=run)      # again after a Ventoy upgrade, which replaces it
     return letter
 
 
@@ -397,6 +397,34 @@ def updates_notice(cfg, refresh: bool = False) -> str:
     if cfg.settings.get("check_for_updates", True) is False:
         return "Not looking for newer versions of the tools (check_for_updates = false in local.toml)."
     return cr.updates_text(cr.tool_updates(cfg, refresh=refresh))
+
+
+# Ventoy's own small partition has no drive letter, but Windows knows it as a volume (that is how
+# a Ventoy stick is recognised above), and a volume's files can be reached by its id.
+EFI_PS = ("(Get-Partition -DiskNumber {n} | Get-Volume | Where-Object FileSystemLabel -eq 'VTOYEFI' | "
+          "Select-Object -First 1).Path")
+
+
+def boot_script(target: str, efi: str | None = None, disk_no: int | None = None, run=powershell) -> bool:
+    """The splash before the menu and what the L and F1 keys do: a few lines in Ventoy's own boot
+    script, as install.sh and refresh.sh add on Linux. `target` is the stick's drive; `efi` Ventoy's
+    partition (found from the disk's number if not given). Never fatal: a stick it can't be done on
+    starts as Ventoy does, and its menu shows the keys as Ventoy has them. False then."""
+    cfg = config()
+    try:
+        efi = efi or run(EFI_PS.format(n=int(disk_no))).strip()
+        if not efi:
+            raise RescueError("Windows doesn't show Ventoy's own partition on this disk")
+        if cr.cmd_splash(cfg, ns(efi=efi, remove=False, dry_run=False, stick=target)):
+            raise RescueError("Ventoy's boot script couldn't be changed")
+        return True
+    except (cr.RescueError, OSError, ValueError) as e:
+        print(f"! no splash, and L and F1 stay Ventoy's Language and Help: {e}")
+        try:
+            cr.forget_keys_hook(cfg, Path(target))
+        except (cr.RescueError, OSError):
+            pass
+        return False
 
 
 def check(target: str, progress=lambda pct: None) -> str:
@@ -1059,6 +1087,7 @@ def cli(argv: list[str]) -> int:
     ap.add_argument("--import-look", metavar="ZIP", help="with --look: put a saved look on the stick")
     ap.add_argument("--selftest-look", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--check", metavar="DRIVE", help="read a stick back and find damaged or missing files")
+    ap.add_argument("--boot-script", metavar="VOLUME", help=argparse.SUPPRESS)   # with --sync-to: Ventoy's partition
     ap.add_argument("--updates", action="store_true", help="say which tools have newer versions than this PC has")
     ap.add_argument("--yes", action="store_true", help="confirm --install")
     ap.add_argument("--mbr", action="store_true", help="MBR instead of GPT")
@@ -1096,6 +1125,8 @@ def cli(argv: list[str]) -> int:
             return 0 if fetch(config(), a.fetch) else 1
         elif a.sync_to:
             sync(config(), a.sync_to, init=a.init)
+            if a.boot_script and not boot_script(a.sync_to, efi=a.boot_script):
+                return 1
         elif a.unpack_to:
             if not a.pack:
                 raise RescueError("--unpack-to needs --pack PACK.zip")

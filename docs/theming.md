@@ -106,6 +106,8 @@ uses the committed GRUB fonts and needs only Pillow and the DejaVu TTFs.
   A theme can't change what a key does, so `helix splash` adds a hook to
   Ventoy's boot script (with the splash) that runs `ventoy/helix-keys.cfg`
   from the stick, and notes on the stick that it did (`.helix-boot/keys-hook`).
+  The Windows app does the same on Install and Update: Ventoy's partition has
+  no drive letter there, so it reaches the script by the volume's id.
   With that note, the look is built with `key_power.png` and `key_mem.png` in
   place of `key_lang.png` and `key_help.png`, and the two scripts are written
   (`helix-keys.cfg`, `helix-power.cfg`). Without it, or on a theme with

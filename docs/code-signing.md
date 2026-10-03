@@ -58,6 +58,8 @@ identifier of yours. If you set a `GITHUB_TOKEN` yourself, it is sent to
   confirm. Only USB and SD disks are offered, never the disk Windows runs from.
 - **Update**, **Look…** and **Check stick** write only to the stick you pick.
   Update first shows what it will copy, remove and keep, and asks.
+- Install and Update also add a few marked lines to Ventoy's boot script on
+  the stick's own small partition, for the splash and two menu keys.
 - Downloads are kept in `%LOCALAPPDATA%\HelixBoot`. A log, your `local.toml`
   and your `byo` folder sit next to the `.exe`.
 - It installs nothing into Windows and changes no Windows settings.

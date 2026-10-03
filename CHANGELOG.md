@@ -13,10 +13,12 @@ tagged releases also publish the Windows app.
   Ventoy's line.
 - On those themes **L opens a power menu** (reboot, power off, firmware setup)
   and **F1 starts Memtest86+**, in place of Ventoy's Language and Help. This
-  needs a hook in Ventoy's boot script, which `install.sh` and `refresh.sh`
-  add next to the splash. A stick made with the Windows app doesn't have the
-  hook until it is refreshed once from Linux; its row shows Language and Help,
-  which is what the keys do there.
+  needs a hook in Ventoy's boot script, which `install.sh`, `refresh.sh` and
+  the Windows app add next to the splash. Where it can't be added, the row
+  shows Language and Help, which is what the keys do there.
+- **The Windows app adds the splash** (and that hook) to Ventoy's boot script
+  on Install and Update, as the Linux scripts do. Until now a stick made on
+  Windows had no splash until it was refreshed from Linux.
 - `HelixBoot.exe` carries its product name and version (Properties > Details).
 - `check_for_updates = false` under `[settings]` in `local.toml` stops the
   Windows app looking for newer versions of the tools when it starts.
