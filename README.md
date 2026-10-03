@@ -293,7 +293,11 @@ A stick is recognised whatever you have named its main partition: it is known
 by Ventoy's own small `VTOYEFI` partition.
 
 It uses the same engine as the Linux scripts: the same tool list, checksums,
-theme and menu. Your `local.toml` and `byo/` folder live next to the `.exe`, and
+theme and menu. One thing only the Linux scripts can do is change Ventoy's
+own boot script, for the splash and for the two keys in the menu's bottom row
+that open a power menu (L) and start Memtest86+ (F1). On a stick made with
+the app those keys are Ventoy's Language and Help, and the row says so, until
+it is refreshed once from Linux. Your `local.toml` and `byo/` folder live next to the `.exe`, and
 downloads are cached in `%LOCALAPPDATA%\HelixBoot`. The command line
 works too: `HelixBoot.exe --help`.
 

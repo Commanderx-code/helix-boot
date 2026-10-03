@@ -62,6 +62,9 @@ BASE_JSON = f"{STATE_DIR}/ventoy.base.json"   # the boot menu before the look is
 LOOK_FILE = f"{STATE_DIR}/look.json"          # the choice
 LOOK_DIR = f"{STATE_DIR}/look"                # your own background.png / splash.png, set on the stick
 LOOK_DEFAULT = {"theme": "default", "icons": "auto", "background": "theme", "splash": "auto"}
+KEYS_HOOK = f"{STATE_DIR}/keys-hook"          # there: this stick's Ventoy runs KEYS_CFG (`helix splash --stick`)
+KEYS_CFG = "ventoy/helix-keys.cfg"            # what the L and F1 keys do instead: a power menu, Memtest86+
+POWER_CFG = "ventoy/helix-power.cfg"          # that power menu
 HASHES = f"{STATE_DIR}/hashes.json"           # every app file's sha256 as it was put on (`helix verify`)
 # Before the rename to Helix Boot: still written or read, so older sticks, launchers and
 # Lazarus PE builds keep working
@@ -2634,27 +2637,33 @@ def _splash_block(seconds: int) -> str:
     # GRUB's only timer counts whole seconds, so the bar is paced by drawing: each frame takes
     # about 1/20 s to load and show, and is drawn `seconds` times. A slow PC just takes longer.
     frames = " ".join(f"{k:02d}" for k in range(SPLASH_FRAMES + 1)) + f" {SPLASH_FRAMES:02d}" * 2
+    splash = ("# Its picture for a moment before the menu, with a loading bar when ventoy/theme/splash/\n"
+              "# has the frames. ventoy/theme/splash.png on the stick; remove it and this does nothing.\n"
+              'if [ "$vtoy_display_mode" != "CLI" -a -f "$vtoy_iso_part/ventoy/theme/splash.png" ]; then\n'
+              '    set helix_splash="$vtoy_iso_part/ventoy/theme/splash"\n'
+              f'    if [ -f "$helix_splash/{SPLASH_FRAMES:02d}.jpg" ]; then\n'
+              f"        for f in {frames}; do\n"
+              f"            for r in {' '.join(str(i + 1) for i in range(seconds))}; do\n"
+              '                background_image -m stretch "$helix_splash/$f.jpg"\n'
+              "                clear\n"
+              "            done\n"
+              "        done\n"
+              "    else\n"
+              '        background_image -m stretch "$vtoy_iso_part/ventoy/theme/splash.png"\n'
+              "        clear\n"
+              f"        sleep --interruptible {seconds}\n"
+              "    fi\n"
+              "    background_image\n"
+              "    unset helix_splash\n"
+              "fi\n") if seconds else ""
     return (f"{SPLASH_BEGIN}\n"
-            "# Added by Helix Boot (helix splash): its picture for a moment before the menu, with a\n"
-            "# loading bar when ventoy/theme/splash/ has the frames. ventoy/theme/splash.png on the\n"
-            "# stick; remove it and this does nothing.\n"
-            'if [ "$vtoy_display_mode" != "CLI" -a -f "$vtoy_iso_part/ventoy/theme/splash.png" ]; then\n'
-            '    set helix_splash="$vtoy_iso_part/ventoy/theme/splash"\n'
-            f'    if [ -f "$helix_splash/{SPLASH_FRAMES:02d}.jpg" ]; then\n'
-            f"        for f in {frames}; do\n"
-            f"            for r in {' '.join(str(i + 1) for i in range(seconds))}; do\n"
-            '                background_image -m stretch "$helix_splash/$f.jpg"\n'
-            "                clear\n"
-            "            done\n"
-            "        done\n"
-            "    else\n"
-            '        background_image -m stretch "$vtoy_iso_part/ventoy/theme/splash.png"\n'
-            "        clear\n"
-            f"        sleep --interruptible {seconds}\n"
-            "    fi\n"
-            "    background_image\n"
-            "    unset helix_splash\n"
+            "# Added by Helix Boot (helix splash).\n"
+            f"# What the L and F1 keys do, when the stick's theme says so ({KEYS_CFG} there;\n"
+            "# remove it and they are Ventoy's own again).\n"
+            f'if [ -f "$vtoy_iso_part/{KEYS_CFG}" ]; then\n'
+            f'    source "$vtoy_iso_part/{KEYS_CFG}"\n'
             "fi\n"
+            f"{splash}"
             f"{SPLASH_END}\n\n")
 
 
@@ -2858,6 +2867,10 @@ def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = Tr
                 lay(layer, new, skip=apart)
         if look["background"] == "custom" and (mnt / LOOK_DIR / "background.png").is_file():
             shutil.copy2(mnt / LOOK_DIR / "background.png", new / _desktop_image(new))
+        text = (new / "theme.txt").read_text(encoding="utf-8")
+        if (mnt / KEYS_HOOK).is_file() and "key_lang.png" in text and (new / "key_power.png").is_file():
+            text = text.replace("key_lang.png", "key_power.png").replace("key_help.png", "key_mem.png")
+            (new / "theme.txt").write_text(text, encoding="utf-8")   # L: the power menu, F1: Memtest86+
         if icons == "off":      # no gap where the icons were
             text = (new / "theme.txt").read_text(encoding="utf-8")
             text = re.sub(r"^(\s*(?:icon_width|icon_height|item_icon_space)\s*=\s*)\d+", r"\g<1>0", text, flags=re.M)
@@ -2912,6 +2925,72 @@ def _desktop_image(theme: Path) -> str:
     return name.group(1) if name else "background.png"
 
 
+# The hotkey row of the Helix themes shows an icon per key. Two of Ventoy's keys can do something
+# more useful on a rescue stick than Language and Help: L opens a power menu, F1 starts
+# Memtest86+. That takes a hook in Ventoy's boot script (`helix splash`, Linux only), so the icons
+# and what the keys do follow KEYS_HOOK: without it the row shows Language and Help, as they are.
+def set_keys_hook(mnt: Path, on: bool) -> bool:
+    """Note on the stick whether its Ventoy has the hook. True if that changed."""
+    marker = mnt / KEYS_HOOK
+    if on == marker.is_file() or not (mnt / STATE_DIR).is_dir():
+        return False
+    if on:
+        marker.write_text("Ventoy's boot script on this stick runs ventoy/helix-keys.cfg.\n", encoding="utf-8")
+    else:
+        marker.unlink()
+    return True
+
+
+def _keys_cfg(mnt: Path) -> tuple[str, str]:
+    """The two scripts Ventoy runs for the keys: KEYS_CFG and POWER_CFG."""
+    try:
+        doc = json.loads((mnt / BASE_JSON).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        doc = {}
+    stems = [c["key"] for c in doc.get("menu_class", []) if c.get("class") == "memtest86plus" and "key" in c]
+    image = next((a["image"] for a in doc.get("menu_alias", []) if "image" in a
+                  and any(k in a["image"].rpartition("/")[2] for k in stems)
+                  and not re.search(r'["$\\\n]', a["image"])), "")
+    keys = ("# Written by Helix Boot with the theme: what the L and F1 keys do on this stick.\n"
+            "function helix_power {\n"
+            f"    configfile $vtoy_iso_part/{POWER_CFG}\n"
+            "}\n"
+            "function helix_memtest {\n"
+            f'    if [ -n "{image}" -a -f "$vtoy_iso_part{image}" ]; then\n'
+            '        if [ "$grub_platform" = "pc" ]; then\n'
+            f'            legacy_iso_memdisk $vtoy_iso_part "{image}"\n'
+            "        else\n"
+            f'            uefi_iso_memdisk $vtoy_iso_part "{image}"\n'
+            "        fi\n"
+            "    else\n"
+            '        echo "Memtest86+ is not on this stick."\n'
+            "        sleep 3\n"
+            "    fi\n"
+            "}\n"
+            'set VTOY_LANG_CMD="helix_power"\n'
+            'set VTOY_HELP_CMD="helix_memtest"\n')
+    power = ("# Written by Helix Boot with the theme: the menu the L key opens.\n"
+             'menuentry "$VTLANG_POWER_REBOOT" --class=power-reboot {\n'
+             "    echo -e '\\n\\nSystem is rebooting ... \\n'\n"
+             "    sleep 1\n"
+             "    reboot\n"
+             "}\n"
+             'menuentry "$VTLANG_POWER_HALT" --class=power-halt {\n'
+             "    echo -e '\\n\\nSystem is halting ... \\n'\n"
+             "    sleep 1\n"
+             "    halt\n"
+             "}\n"
+             'if [ "$grub_platform" != "pc" ]; then\n'
+             '    menuentry "$VTLANG_POWER_BOOT_EFIFW" --class=power-setup {\n'
+             "        fwsetup\n"
+             "    }\n"
+             "fi\n"
+             'menuentry "$VTLANG_RETURN_PREVIOUS" --class=vtoyret VTOY_RET {\n'
+             '    echo "Return ..."\n'
+             "}\n")
+    return keys, power
+
+
 def _apply_look(cfg: Config, mnt: Path, changed: bool = True) -> None:
     """Build ventoy/theme and ventoy/ventoy.json from the theme on the stick and its look.
     `changed` False: what they are built from is as it was, so only rebuild if the look, this
@@ -2921,7 +3000,8 @@ def _apply_look(cfg: Config, mnt: Path, changed: bool = True) -> None:
     out = mnt / "ventoy" / "theme"
     (mnt / "ventoy").mkdir(exist_ok=True)
     look = _look(mnt)
-    stamp = {"look": look, "helix": __version__, "pillow": importlib.util.find_spec("PIL") is not None}
+    stamp = {"look": look, "helix": __version__, "pillow": importlib.util.find_spec("PIL") is not None,
+             "keys": (mnt / KEYS_HOOK).is_file()}
     built = mnt / STATE_DIR / "built.json"
     try:
         same = json.loads(built.read_text(encoding="utf-8")) == stamp
@@ -2939,6 +3019,13 @@ def _apply_look(cfg: Config, mnt: Path, changed: bool = True) -> None:
     else:                          # no theme on the stick, or it and the splash are off
         new.rmdir()
     (mnt / "ventoy" / "ventoy.json").write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    theme_txt = out / "theme.txt"       # the keys do what the row built into the theme shows
+    rebound = theme_txt.is_file() and "key_power.png" in theme_txt.read_text(encoding="utf-8")
+    for rel, text in zip((KEYS_CFG, POWER_CFG), _keys_cfg(mnt) if rebound else ("", "")):
+        if rebound:
+            (mnt / rel).write_text(text, encoding="utf-8")
+        else:
+            (mnt / rel).unlink(missing_ok=True)
     built.write_text(json.dumps(stamp) + "\n", encoding="utf-8")
 
 
@@ -3372,10 +3459,12 @@ def cmd_theme(cfg: Config, args) -> int:
 
 
 def cmd_splash(cfg: Config, args) -> int:
-    """Show the theme's splash.png for a moment before the Ventoy menu. Ventoy has no setting
-    for that, so this adds a few lines to its own boot script on the VTOYEFI partition (marked,
-    and replaced or removed cleanly on the next run). A Ventoy install or upgrade rewrites that
-    script; install.sh and refresh.sh run this afterwards."""
+    """Show the theme's splash.png for a moment before the Ventoy menu, and let the stick's theme
+    say what the L and F1 keys do. Ventoy has no setting for either, so this adds a few lines to
+    its own boot script on the VTOYEFI partition (marked, and replaced or removed cleanly on the
+    next run). A Ventoy install or upgrade rewrites that script; install.sh and refresh.sh run
+    this afterwards. With --stick, the stick is told whether the keys' hook is there, so its
+    menu shows what they really do."""
     efi = Path(args.efi).expanduser()
     script = efi / "grub" / "grub.cfg"
     if not script.is_file():
@@ -3388,22 +3477,36 @@ def cmd_splash(cfg: Config, args) -> int:
         raise RescueError("splash_seconds in local.toml must be a whole number of seconds") from None
     if not 0 <= seconds <= 10:
         raise RescueError("splash_seconds must be between 0 (no splash) and 10")
-    wanted = seconds > 0 and bool(cfg.settings.get("theme")) and not args.remove
-    if wanted:
-        if text.count(SPLASH_ANCHOR) != 1:   # a Ventoy this doesn't know: leave its boot script alone
-            warn("this Ventoy's boot script isn't laid out as expected, so no splash was added")
-            return 0
+    wanted = bool(cfg.settings.get("theme")) and not args.remove
+    known = text.count(SPLASH_ANCHOR) == 1
+    if wanted and known:
         text = text.replace(SPLASH_ANCHOR, _splash_block(seconds) + SPLASH_ANCHOR)
+    elif wanted:                             # a Ventoy this doesn't know: leave its boot script alone
+        warn("this Ventoy's boot script isn't laid out as expected, so no splash was added")
+    # The keys need what this Ventoy's script is known to have: its own way to start an ISO from memory
+    keys = wanted and known and all(part in text for part in (
+        "function legacy_iso_memdisk", "function uefi_iso_memdisk", "VTOY_LANG_CMD", "VTOY_HELP_CMD"))
+    stick = Path(args.stick).expanduser() if getattr(args, "stick", None) else None
+
+    def tell_stick() -> None:
+        if stick and not args.dry_run and set_keys_hook(stick, keys):
+            _apply_look(cfg, stick)          # the menu's hotkey row, to match
+            _flush_volume(stick)
+            ok("Keys: L opens the power menu, F1 starts Memtest86+" if keys else "Keys: Ventoy's own again")
+
+    shown = f"{seconds} s before the menu" if seconds and wanted and known else "none"
     if text == before:
-        ok(f"Splash: {'already ' + str(seconds) + ' s before the menu' if wanted else 'none'}")
+        ok(f"Splash: {'already ' if shown != 'none' else ''}{shown}")
+        tell_stick()
         return 0
     if args.dry_run:
-        info(f"would {'set the splash to ' + str(seconds) + ' s' if wanted else 'remove the splash'}")
+        info(f"would {'set the splash to ' + str(seconds) + ' s' if shown != 'none' else 'remove the splash'}")
         return 0
     tmp = script.with_name("grub.cfg.helix-boot")
     tmp.write_bytes(text.encode("utf-8"))
     os.replace(tmp, script)
-    ok(f"Splash: {seconds} s before the Ventoy menu" if wanted else "Splash removed")
+    ok(f"Splash: {seconds} s before the Ventoy menu" if shown != "none" else "Splash removed")
+    tell_stick()
     return 0
 
 
@@ -3475,6 +3578,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("efi", help="mount point of the stick's VTOYEFI partition")
     p.add_argument("--remove", action="store_true", help="take the splash out again")
     p.add_argument("--dry-run", action="store_true", help="show what would change")
+    p.add_argument("--stick", metavar="MOUNT", help="the stick's data partition: its menu then shows what the "
+                                                    "L and F1 keys do (a power menu, Memtest86+)")
     p.set_defaults(fn=cmd_splash)
 
     p = sub.add_parser("theme", help="show or change a stick's look: theme, icons, background, splash")

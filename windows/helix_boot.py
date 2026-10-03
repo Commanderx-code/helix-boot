@@ -380,6 +380,8 @@ def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda
         print(f"\nUpdating Ventoy on disk {disk_no} (your files are kept) …")
         ventoy(ventoy_command(vdir, "/U", disk_no, secure_boot=secure_boot), vdir, progress)
     letter = wait_for_ventoy_letter(disk_no, run)
+    if upgrade_ventoy:      # Ventoy's boot script is its own again: the L and F1 keys are Language and Help
+        cr.set_keys_hook(Path(letter), False)
     if pack:
         unpack(cfg, letter, pack, init=True)
     else:

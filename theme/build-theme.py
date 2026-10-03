@@ -437,6 +437,9 @@ KEYS = [  # the hotkey bar at the bottom of the menu: (file, key, what it does, 
     ("local", "F4", "Local boot", "more/hdd.png"),
     ("tools", "F5", "Tools", "more/ventoy.png"),
     ("menu", "F6", "Menu", "more/boot.png"),
+    # On a stick whose Ventoy has the keys' hook (`helix splash --stick`), L and F1 do these instead
+    ("power", "L", "Power menu", "power-halt.png"),
+    ("mem", "F1", "Memtest86+", "more/mem.png"),
 ]
 KEY_ICON = 32
 

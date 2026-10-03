@@ -11,6 +11,12 @@ tagged releases also publish the Windows app.
   (a folder for F2 Browse, a hard disk for F4 Local boot, …), in place of
   Ventoy's line of words. On the Helix themes; Standby and Poly dark keep
   Ventoy's line.
+- On those themes **L opens a power menu** (reboot, power off, firmware setup)
+  and **F1 starts Memtest86+**, in place of Ventoy's Language and Help. This
+  needs a hook in Ventoy's boot script, which `install.sh` and `refresh.sh`
+  add next to the splash. A stick made with the Windows app doesn't have the
+  hook until it is refreshed once from Linux; its row shows Language and Help,
+  which is what the keys do there.
 - `HelixBoot.exe` carries its product name and version (Properties > Details).
 - `check_for_updates = false` under `[settings]` in `local.toml` stops the
   Windows app looking for newer versions of the tools when it starts.

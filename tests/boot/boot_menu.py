@@ -221,6 +221,15 @@ def check_theme(cr, cfg, stick: Path, disk: Path, theme: str, firmware: str, out
             problems.append(f"{name}: opening a category lost the theme (see {name}-folder.png)")
         if difference(folder, main, menu) < 0.5:
             problems.append(f"{name}: Enter on a category didn't open it (see {name}-folder.png)")
+        if "key_power.png" in (built / "theme.txt").read_text(encoding="utf-8"):   # the row says L is the power menu
+            vm.key("esc")
+            time.sleep(1.5 * SLOW)
+            back = vm.shot(out / f"{name}-power.png")
+            vm.key("l")
+            time.sleep(2 * SLOW)
+            power = vm.shot(out / f"{name}-power.png")
+            if difference(power, background, clear) >= 12 or difference(power, back, menu) < 0.5:
+                problems.append(f"{name}: L didn't open the power menu (see {name}-power.png)")
     finally:
         vm.close()
     return problems
@@ -244,6 +253,7 @@ def main() -> int:
         cfg = cr.Config(repo=work / "user", assets=ROOT)
         disk, stick = build_disk(cr, cfg, work), work / "stick"
         fake_stick(cr, cfg, stick)
+        cr.set_keys_hook(stick, True)                                 # as `helix splash --stick` does on a real one
         themes = args.themes.split(",") if args.themes else [t["id"] for t in cr.look_report(stick)["themes"]
                                                              if t["id"] != "off"]
         firmwares = ["uefi", "bios"] if args.firmware == "both" else [args.firmware]
@@ -254,7 +264,8 @@ def main() -> int:
                 found = check_theme(cr, cfg, stick, disk, theme, firmware, args.out, work)
                 print(f"  {'FAIL' if found else 'ok  '} {theme} ({firmware})")
                 problems += found
-    shots = sorted(args.out.glob("*-main.png")) + sorted(args.out.glob("*-folder.png"))
+    shots = sorted(args.out.glob("*-main.png")) + sorted(args.out.glob("*-folder.png")) \
+        + sorted(args.out.glob("*-power.png"))
     if shots:                                                         # one picture of them all
         cols = 4
         sheet = Image.new("RGB", (cols * 480, -(-len(shots) // cols) * 270))

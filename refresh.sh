@@ -108,7 +108,7 @@ fi
 # The splash before the Ventoy menu (again after a Ventoy upgrade, which replaces it)
 if [[ -n $part && " ${sync_args[*]} " != *" --dry-run "* ]]; then
   disk=$(lsblk -no PKNAME "${part%%\[*}" 2>/dev/null | head -n1) || disk=''   # a folder isn't always on a partition
-  if [[ -n $disk ]]; then apply_splash "/dev/$disk"; fi
+  if [[ -n $disk ]]; then apply_splash "/dev/$disk" "$mnt"; fi
 fi
 
 if ((eject)) && [[ -n $part ]]; then

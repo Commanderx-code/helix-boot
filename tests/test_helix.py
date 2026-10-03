@@ -900,11 +900,63 @@ class TestFetchAndSync(Base):
         (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\nsplash_seconds = 0\n')
         self.cfg = cr.Config(repo=self.repo)
         self.splash(efi)
-        self.assertEqual(script.read_text(encoding="utf-8"), original)
+        none = script.read_text(encoding="utf-8")               # no splash, but the keys' hook stays
+        self.assertNotIn("background_image", none)
+        self.assertIn(f'source "$vtoy_iso_part/{cr.KEYS_CFG}"', none)
+        self.assertEqual(none.replace(none[none.index(cr.SPLASH_BEGIN):none.index(cr.SPLASH_END)]
+                                      + cr.SPLASH_END + "\n\n", ""), original)
         (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\nsplash_seconds = 99\n')
         self.cfg = cr.Config(repo=self.repo)
         with self.assertRaisesRegex(cr.RescueError, "between 0"):
             self.splash(efi)
+
+    def test_the_l_and_f1_keys_follow_the_hook_in_ventoys_boot_script(self):
+        # A theme with a hotkey row, and both pairs of icons for its first two keys
+        theme = self.repo / "theme"
+        (theme / "icons").mkdir(parents=True)
+        (theme / "theme.txt").write_text('desktop-image: "background.png"\n'
+                                         '+ image { file = "key_lang.png" }\n+ image { file = "key_help.png" }\n')
+        for name in ("background", "splash", "key_lang", "key_help", "key_power", "key_mem"):
+            (theme / f"{name}.png").write_bytes(name.encode())
+        (theme / "icons/memtest86plus.png").write_bytes(b"icon")
+        (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("memtest86plus")
+        self.assertEqual(self.sync()[0], 0)
+        built, keys = self.stick / "ventoy/theme/theme.txt", self.stick / cr.KEYS_CFG
+        self.assertIn("key_lang.png", built.read_text())                # as Ventoy has them: Language, Help
+        self.assertFalse(keys.exists() or (self.stick / cr.POWER_CFG).exists())
+
+        efi = self.tmp / "VTOYEFI"
+        (efi / "grub").mkdir(parents=True)
+        script = efi / "grub" / "grub.cfg"
+        ventoy = ("function legacy_iso_memdisk {\n}\nfunction uefi_iso_memdisk {\n}\n"
+                  'set VTOY_HELP_CMD="ventoy_show_help"\nset VTOY_LANG_CMD="ventoy_language"\n'
+                  "#clear all input key before show main menu\nvt_clear_key\n")
+        script.write_text(ventoy)
+        rc, out = self.splash(efi, stick=str(self.stick))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("L opens the power menu", out)
+        self.assertIn(f'source "$vtoy_iso_part/{cr.KEYS_CFG}"', script.read_text())
+        self.assertTrue((self.stick / cr.KEYS_HOOK).is_file())
+        self.assertIn("key_power.png", built.read_text())               # the row shows what the keys do now
+        self.assertIn("key_mem.png", built.read_text())
+        self.assertNotIn("key_lang.png", built.read_text())
+        text = keys.read_text()
+        self.assertIn('uefi_iso_memdisk $vtoy_iso_part "/ISO/5-Diagnostics/memtest.iso"', text)
+        self.assertIn('set VTOY_LANG_CMD="helix_power"', text)
+        self.assertIn("reboot", (self.stick / cr.POWER_CFG).read_text())
+        self.assertEqual(self.sync(init=False)[0], 0)                   # a refresh keeps it so
+        self.assertIn("key_power.png", built.read_text())
+        self.assertTrue(keys.is_file())
+        self.assertNotIn("Keys:", self.splash(efi, stick=str(self.stick))[1])   # again: nothing to say
+
+        # A Ventoy whose boot script lacks what the keys call: the hook isn't counted, the row says so
+        script.write_text("#clear all input key before show main menu\nvt_clear_key\n")
+        rc, out = self.splash(efi, stick=str(self.stick))
+        self.assertIn("Ventoy's own again", out)
+        self.assertIn("key_lang.png", built.read_text())
+        self.assertFalse(keys.exists() or (self.stick / cr.POWER_CFG).exists() or (self.stick / cr.KEYS_HOOK).exists())
 
     def test_splash_leaves_an_unknown_ventoy_alone(self):
         (self.repo / "local.toml").write_text('[settings]\ntheme = "theme"\n')

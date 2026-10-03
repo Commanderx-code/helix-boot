@@ -117,15 +117,19 @@ first_partition() {
 }
 
 # Mount a partition as the current user and print the mount point.
-# Helix Boot's splash before the Ventoy menu: `helix splash` adds it to Ventoy's own boot
-# script on the VTOYEFI partition. Never fails the run: without it, Ventoy starts as usual.
-apply_splash() {  # apply_splash <disk>
-  local efi mnt
+# Helix Boot's splash before the Ventoy menu, and what the L and F1 keys do: `helix splash` adds
+# both to Ventoy's own boot script on the VTOYEFI partition. Given the stick's data partition
+# (mounted), its menu is told, so its hotkey row shows what the keys really do. Never fails the
+# run: without it, Ventoy starts as usual.
+apply_splash() {  # apply_splash <disk> [mount point of its data partition]
+  local efi efi_mnt
+  local -a stick=()
+  if [[ -n ${2:-} && -d $2 ]]; then stick=(--stick "$2"); fi
   efi=$(lsblk -lnpo NAME,LABEL "$1" 2>/dev/null | awk '$2=="VTOYEFI" { print $1; exit }') || efi=''
   if [[ -z $efi ]]; then warn "no VTOYEFI partition on ${1:-that disk}, so no splash"; return 0; fi
-  mnt=$(mount_part "$efi" 2>/dev/null) || mnt=''
-  if [[ -z $mnt ]]; then warn "couldn't mount $efi, so no splash"; return 0; fi
-  "$HELIX" splash "$mnt" || warn "couldn't add the splash; Ventoy starts without it"
+  efi_mnt=$(mount_part "$efi" 2>/dev/null) || efi_mnt=''
+  if [[ -z $efi_mnt ]]; then warn "couldn't mount $efi, so no splash"; return 0; fi
+  "$HELIX" splash "$efi_mnt" "${stick[@]}" || warn "couldn't add the splash; Ventoy starts without it"
   unmount_part "$efi" 2>/dev/null || true
 }
 
