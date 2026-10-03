@@ -43,6 +43,7 @@ import ctypes  # noqa: F401
 import email.utils  # noqa: F401
 import hashlib  # noqa: F401
 import html  # noqa: F401
+import http.client  # noqa: F401
 import re  # noqa: F401
 import struct  # noqa: F401
 import tarfile  # noqa: F401

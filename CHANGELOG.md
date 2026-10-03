@@ -23,6 +23,11 @@ tagged releases also publish the Windows app.
 - A [code signing policy](docs/code-signing.md), with a privacy policy: what
   the app contacts, what it changes on your PC, and how to remove it.
 
+### Fixed
+- A download that stalled part-way (a timeout or a dropped connection while
+  reading) stopped the whole fetch with a raw error. It is now resumed from
+  where it stopped, a few times, before giving up with a plain message.
+
 ## [0.6.7] - 2026-10-03
 
 ### Changed

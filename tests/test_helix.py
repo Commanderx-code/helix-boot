@@ -2237,6 +2237,44 @@ class TestDownloadRetry(unittest.TestCase):
             with redirect_stderr(io.StringIO()):
                 cr.download(f"{BASE}/retry/missing.iso", self.tmp / "missing.iso")
 
+    def test_a_download_that_stalls_is_resumed(self):
+        whole, asked = b"0123456789" * 5, []
+
+        class Reply:                                     # hands over 20 bytes, then the line goes quiet
+            def __init__(self, start, stall):
+                self.data, self.stall, self.status = whole[start:], stall, 206 if start else 200
+                self.headers = {"Content-Length": str(len(whole) - start)}
+                self.given = 0
+
+            def read(self, n):
+                if self.stall and self.given:
+                    raise TimeoutError("The read operation timed out")
+                chunk, self.data = self.data[:20], self.data[20:]
+                self.given += len(chunk)
+                return chunk
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def urlopen(req, timeout=None):
+            start = int((req.get_header("Range") or "bytes=0-")[6:-1])
+            asked.append(start)
+            return Reply(start, stall=len(asked) < 3)
+
+        with unittest.mock.patch.object(cr.urllib.request, "urlopen", urlopen), \
+                unittest.mock.patch.object(cr, "RETRY_DELAYS", (0, 0, 0)), redirect_stderr(io.StringIO()) as err:
+            cr.download("https://example.invalid/tool.iso", self.tmp / "tool.iso")
+            self.assertEqual((self.tmp / "tool.iso").read_bytes(), whole)
+            self.assertEqual(asked, [0, 20, 40])         # each try picks up where the last one stopped
+            self.assertIn("resuming", err.getvalue())
+            asked.clear()
+            with unittest.mock.patch.object(cr, "RETRY_DELAYS", ()):
+                with self.assertRaisesRegex(cr.RescueError, "stalled 1 times"):
+                    cr.download("https://example.invalid/tool.iso", self.tmp / "other.iso")
+
 
 class TestPortability(unittest.TestCase):
     def test_loads_without_a_console(self):

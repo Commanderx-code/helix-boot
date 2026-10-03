@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import http.client
 import html
 import importlib.util
 import json
@@ -392,12 +393,28 @@ class Progress:
 RETRY_DELAYS = (2, 5, 10)  # seconds to wait before each retry of a failed request
 
 
+class _Stalled(Exception):
+    """A download that stopped part-way: a timeout or a dropped connection while reading."""
+
+
 def download(url: str, dest: Path) -> None:
     """Download to dest, resuming a previous .part file when the server allows it.
 
     Server errors (5xx), timeouts and dropped connections are retried a few
-    times: release hosts like GitHub's return the odd transient 500.
+    times: release hosts like GitHub's return the odd transient 500. One that
+    stalls part-way is picked up again from where it stopped.
     """
+    for attempt, delay in enumerate((*RETRY_DELAYS, None)):
+        try:
+            return _download_once(url, dest)
+        except _Stalled as e:
+            if delay is None:
+                raise RescueError(f"download stalled {attempt + 1} times ({e}); run fetch again to resume") from None
+            warn(f"download stalled ({e}) — resuming in {delay}s")
+            time.sleep(delay)
+
+
+def _download_once(url: str, dest: Path) -> None:
     part = dest.with_name(dest.name + ".part")
     have = part.stat().st_size if part.exists() else 0
     headers = {"Range": f"bytes={have}-"} if have else {}
@@ -428,7 +445,14 @@ def download(url: str, dest: Path) -> None:
         done, last, start = have, 0.0, time.monotonic()
         tty = _isatty(sys.stderr)
         with open(part, "ab" if resumed else "wb") as f:
-            while chunk := resp.read(1 << 20):
+            while True:
+                try:
+                    chunk = resp.read(1 << 20)
+                except (TimeoutError, ConnectionError, http.client.HTTPException) as e:
+                    f.flush()               # what arrived stays in the .part file, to resume from
+                    raise _Stalled(str(e) or e.__class__.__name__) from None
+                if not chunk:
+                    break
                 f.write(chunk)
                 done += len(chunk)
                 now = time.monotonic()
