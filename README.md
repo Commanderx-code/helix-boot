@@ -597,7 +597,7 @@ ventoy/theme/       the look in use, built from .helix-boot (rebuilt on every re
 - [x] Helix Boot on the stick itself, an update summary, and a boot test of every theme in CI (0.6.4)
 - [x] A review of everything since 0.5.3, and its fixes (0.6.5)
 - [x] Checking a stick for damage, saved looks, newer-version notices in the app,
-      and checksums and build attestations on every release
+      and checksums and build attestations on every release (0.6.6)
 
 ## Contributing
 

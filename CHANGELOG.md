@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-10-02
+
 ### Added
 - **Checking a stick:** `./check.sh`, `helix verify`, and **Check stick** in the
   Windows app (also in `HelixBoot.sh`'s menu). They read every boot image and
@@ -431,7 +433,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.5...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.6...HEAD
+[0.6.6]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.2...v0.6.3
