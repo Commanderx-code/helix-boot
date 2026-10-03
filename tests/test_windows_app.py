@@ -248,6 +248,16 @@ class TestFlows(unittest.TestCase):
         self.assertEqual(set(seen) - {"window"}, {"stick", "theme", "icons", "background", "dim", "splash", "reset",
                                                   "preview", "menu", "json", "export", "import_"})
 
+    def test_the_update_notice_can_be_switched_off(self):
+        asked = []
+        found = {"checked": "2026-10-03T10:00", "fetched": 3, "failed": 0, "newer": [{"title": "SystemRescue"}]}
+        cfg = mock.Mock(settings={})
+        with mock.patch.object(app.cr, "tool_updates", lambda c, refresh=False: asked.append(refresh) or found):
+            self.assertIn("Newer versions of 1 tool(s) are out: SystemRescue", app.updates_notice(cfg, True))
+            cfg.settings = {"check_for_updates": False}
+            self.assertIn("check_for_updates = false", app.updates_notice(cfg))
+        self.assertEqual(asked, [True])               # switched off: nothing is asked of any site
+
     def test_check_stick(self):
         good = {"damaged": [], "missing": [], "changed": {}, "checked": 9, "unrecorded": [], "images": 3,
                 "apps": 2, "menu": None}

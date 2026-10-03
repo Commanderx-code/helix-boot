@@ -469,6 +469,36 @@ byo = true
 path = "byo/lockpick.iso"
 description = "Windows password removal. No official download to verify; supply the ISO yourself."
 
+[[tool]]
+name = "windows-login-unlocker"
+title = "Windows Login Unlocker"
+kind = "iso"
+category = "password"
+source = "local"
+byo = true
+path = "byo/Windows Login Unlocker.iso"
+description = "Windows password removal. No official download to verify; supply the ISO yourself."
+
+[[tool]]
+name = "pcunlocker"
+title = "pcunlocker"
+kind = "iso"
+category = "password"
+source = "local"
+byo = true
+path = "byo/pcunlocker.iso"
+description = "Windows password removal. No official download to verify; supply the ISO yourself."
+
+[[tool]]
+name = "pcunlocker-bitlocker"
+title = "pcunlocker-bitlocker"
+kind = "iso"
+category = "password"
+source = "local"
+byo = true
+path = "byo/pcunlocker-bitlocker.iso"
+description = "Windows password removal. No official download to verify; supply the ISO yourself."
+
 # ── PortableApps.com Platform ─────────────────────────────────────────────
 # Start.exe and PortableApps\ at the root of the stick, like MediCat. It goes on
 # once; after that you add apps from its App Store and it updates them (and

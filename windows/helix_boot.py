@@ -387,6 +387,15 @@ def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda
     return letter
 
 
+def updates_notice(cfg, refresh: bool = False) -> str:
+    """The line under the app's title: which tools have newer versions than this PC has.
+    Looking that up asks GitHub and the tools' own sites for their latest version numbers,
+    so `check_for_updates = false` under [settings] in local.toml turns it off."""
+    if cfg.settings.get("check_for_updates", True) is False:
+        return "Not looking for newer versions of the tools (check_for_updates = false in local.toml)."
+    return cr.updates_text(cr.tool_updates(cfg, refresh=refresh))
+
+
 def check(target: str, progress=lambda pct: None) -> str:
     """Read a stick back and compare it with what was put on it. Needs no downloads.
     Returns what it found; raises RescueError when something is damaged or missing."""
@@ -643,7 +652,7 @@ def gui(selftest: bool = False) -> int:
         look upstream every 6 hours; the rest of the time, from the last look)."""
         def job():
             try:
-                q.put(("news", cr.updates_text(cr.tool_updates(config(), refresh=refresh))))
+                q.put(("news", updates_notice(config(), refresh)))
             except Exception as e:  # noqa: BLE001 — offline, or GitHub said no; only a notice
                 q.put(("news", f"Couldn't look for newer versions of the tools ({e})."))
         threading.Thread(target=job, daemon=True).start()
@@ -1075,7 +1084,7 @@ def cli(argv: list[str]) -> int:
             check(a.check)
             return 0
         if a.updates:
-            print(cr.updates_text(cr.tool_updates(config(), refresh=True)))
+            print(updates_notice(config(), refresh=True))
             return 0
         if a.list:
             disks = all_disks() if a.all else usb_disks()

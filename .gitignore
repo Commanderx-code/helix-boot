@@ -17,3 +17,4 @@ commander-rescue-*.zip.part
 
 # screenshots from tests/boot/boot_menu.py
 tests/boot/out/
+windows/version-info.txt
