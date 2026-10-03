@@ -264,9 +264,9 @@ class TestFlows(unittest.TestCase):
             (efi / "grub").mkdir(parents=True)
             (stick / app.cr.STATE_DIR).mkdir(parents=True)
             script = efi / "grub" / "grub.cfg"
-            script.write_text("function legacy_iso_memdisk {\n}\nfunction uefi_iso_memdisk {\n}\n"
-                              'set VTOY_HELP_CMD="x"\nset VTOY_LANG_CMD="y"\n'
-                              "#clear all input key before show main menu\nvt_clear_key\n")
+            script.write_bytes(b"function legacy_iso_memdisk {\n}\nfunction uefi_iso_memdisk {\n}\n"   # LF, as Ventoy's is
+                               b'set VTOY_HELP_CMD="x"\nset VTOY_LANG_CMD="y"\n'
+                               b"#clear all input key before show main menu\nvt_clear_key\n")
             asked = []
             run = lambda ps: asked.append(ps) or f"{efi}\n"                       # noqa: E731
             cfg = mock.Mock(settings={"theme": "theme"})
@@ -274,7 +274,7 @@ class TestFlows(unittest.TestCase):
                     mock.patch.object(app.cr, "_apply_look"), mock.patch.object(app.cr, "_flush_volume"):
                 self.assertTrue(app.boot_script(str(stick), disk_no=3, run=run))
                 self.assertIn("-DiskNumber 3", asked[0])
-                self.assertIn(app.cr.SPLASH_BEGIN, script.read_text())
+                self.assertIn(app.cr.SPLASH_BEGIN, script.read_text(encoding="utf-8"))
                 self.assertTrue((stick / app.cr.KEYS_HOOK).is_file())
                 self.assertIn("L opens the power menu", out.getvalue())
                 # Windows doesn't show Ventoy's partition: nothing fails, and the stick is told the keys are Ventoy's
