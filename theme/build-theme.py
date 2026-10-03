@@ -429,12 +429,12 @@ def icons() -> None:
         canvas.save(out / src.name, optimize=True)
 
 
-KEYS = [  # the hotkey bar at the bottom of the menu: (file, key, word, master in helix-icons/ or None to draw it)
+KEYS = [  # the hotkey bar at the bottom of the menu: (file, key, what it does, master in helix-icons/ or None to draw it)
     ("lang", "L", "Language", None),
     ("help", "F1", "Help", None),
     ("browse", "F2", "Browse", "vtoydir.png"),
-    ("tree", "F3", "Tree", None),
-    ("local", "F4", "Local", "more/hdd.png"),
+    ("tree", "F3", "Tree view", None),
+    ("local", "F4", "Local boot", "more/hdd.png"),
     ("tools", "F5", "Tools", "more/ventoy.png"),
     ("menu", "F6", "Menu", "more/boot.png"),
 ]

@@ -7,7 +7,7 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
-- The boot menu's hotkeys are a row of icons, each with its key and a word
+- The boot menu's hotkeys are a row of icons, each with its key above it
   (a folder for F2 Browse, a hard disk for F4 Local boot, …), in place of
   Ventoy's line of words. On the Helix themes; Standby and Poly dark keep
   Ventoy's line.
