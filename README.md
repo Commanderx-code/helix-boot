@@ -60,18 +60,27 @@ Keep it current later:
 ./refresh.sh                    # update the stick in place
 ./refresh.sh --upgrade-ventoy   # …and the Ventoy boot loader too
 ./theme.sh --menu               # change how the boot menu looks
+./check.sh                      # read the stick back: any damaged or missing files?
 ```
 
 **Linux, one file.** Or skip the clone: download **`HelixBoot.sh`** from
 [Releases](https://github.com/Commanderx-code/helix-boot/releases), put it in a
 folder of its own, then `chmod +x HelixBoot.sh && ./HelixBoot.sh`. A menu offers
-Install, Update, Change a stick's look and Check; `./HelixBoot.sh --help` lists the rest. Your
+Install, Update, Change a stick's look, Check for tool updates and Check a stick
+for damage; `./HelixBoot.sh --help` lists the rest. Your
 `local.toml` and `byo/` folder live next to it, and a pack beside it is used
 with no downloads.
 
 **Windows.** Download **`HelixBoot.exe`** from
 [Releases](https://github.com/Commanderx-code/helix-boot/releases), put it
 in a folder of its own and run it (see [below](#windows-app)).
+
+**Checking a download.** Every release has a `SHA256SUMS` file, and GitHub
+records that the files were built from this repository by its own workflow.
+To check, run `sha256sum -c SHA256SUMS` (on Windows,
+`Get-FileHash HelixBoot.exe` and compare). With the GitHub CLI you can also run
+`gh attestation verify HelixBoot.exe --repo Commanderx-code/helix-boot`.
+Windows SmartScreen may still warn, because the `.exe` isn't code-signed.
 
 **From a stick.** Every Helix Boot stick carries both apps in its `HelixBoot`
 folder, so a stick can be updated, or its look changed, from any PC: run
@@ -265,6 +274,15 @@ to the disk.
 3. **Look…** changes the selected stick's look: a preset theme, the
    icons, your own background (with a slider to darken it) and splash, with a
    preview of the boot menu. Nothing changes until **Apply to the stick**.
+   **Save look…** keeps the look, with your own pictures and icons, in a small
+   zip. **Load look…** puts it back, or onto another stick.
+4. **Check stick** reads the whole stick back and compares every boot image and
+   app with what was put there, so it finds a stick that's going bad. It needs
+   no downloads. The next Update copies again whatever it finds damaged.
+
+Under the title the app says whether newer versions of your tools are out. It
+looks at most every 6 hours, because GitHub limits how often a PC that isn't
+signed in may ask.
 
 A stick is recognised whatever you have named its main partition: it is known
 by Ventoy's own small `VTOYEFI` partition.
@@ -280,7 +298,9 @@ files are in the `byo` folder beside the `.exe`. *A pack* copies everything
 from a pack zip with no downloads, your own tools included, and a pack next to
 the `.exe` is chosen for you. From the command line, add
 `--pack helix-boot-<date>.zip` to `--install` or `--update`; `--look E:\`
-opens the Look window, or changes the look with `--theme`, `--icons` and so on.
+opens the Look window, or changes the look with `--theme`, `--icons` and so on
+(`--export-look` / `--import-look` save and load one). `--check E:\` checks a
+stick, and `--updates` lists the tools with newer versions.
 
 ## Lazarus PE
 
@@ -327,10 +347,12 @@ standard-library Python script:
 | `helix sync <mount> [--dry-run] [--verify] [--prune-unknown]` | copies the cache to a Ventoy stick, replaces old versions, writes the menu; `--dry-run` ends with what it would copy, remove and keep |
 | `helix pack [file.zip]` | the whole stick, your own tools and Ventoy in one zip |
 | `helix unpack <pack.zip> <mount> [--dry-run] [--verify] [--prune-unknown]` | fills a Ventoy stick from a pack, no downloads |
-| `helix theme <mount> [--theme ID] [--icons ID] [--background PIC] [--splash PIC] [--menu] [--preview FILE]` | shows or changes a stick's look ([themes](#the-boot-menus-look)) |
+| `helix theme <mount> [--theme ID] [--icons ID] [--background PIC] [--splash PIC] [--menu] [--preview FILE]` | shows or changes a stick's look ([themes](#the-boot-menus-look)); `--export ZIP` / `--import ZIP` save and load it |
+| `helix verify <mount> [--json]` | reads the stick back and finds damaged or missing files, no downloads ([checking a stick](#checking-a-stick)) |
 | `helix splash <VTOYEFI mount>` | adds the splash to Ventoy's boot script (`install.sh` and `refresh.sh` run it) |
 
-`theme.sh` wraps `helix theme` the same way: it finds and mounts the stick first.
+`theme.sh` and `check.sh` wrap `helix theme` and `helix verify` the same way:
+they find and mount the stick first.
 Pillow is the one optional extra: with it the engine draws previews, the
 splash's loading bar and greyscale icons, and resizes your pictures; without it
 those are skipped and everything else works.
@@ -348,6 +370,24 @@ that yields a hash is used; a mismatch deletes the file and stops:
    different hash is refused as possible tampering.
 
 If no strategy works, the tool is refused rather than silently used.
+
+### Checking a stick
+
+Cheap USB sticks can go bad without warning: a file reads back wrong, and a
+tool fails to boot just when you need it. `./check.sh` (or **Check stick** in
+the app) reads every boot image and app back off the stick. It compares them
+with the checksums recorded when they were copied. Those come from the download
+or the pack, never from the stick itself. It needs no cache and no internet,
+so any PC can check any Helix Boot stick. It takes about as long as copying
+the stick.
+
+A damaged image is noted on the stick, and the next update copies it again,
+even a quick one. An app file that differs is reported separately, because
+some tools save their settings in their own folder. If a fresh copy goes bad
+again, replace the stick.
+
+Apps copied by Helix Boot 0.6.5 or older aren't recorded yet. The next update
+records them.
 
 ### Safety
 
@@ -414,10 +454,18 @@ choice is kept on the stick, so a refresh doesn't undo it:
 ./theme.sh --splash ~/pic.png               # your own picture before the menu (--splash off: none)
 ./theme.sh --preview out.png --theme ember  # a picture of how it would look; the stick is untouched
 ./theme.sh --reset                          # back to the default look
+./theme.sh --export my-look.zip             # save the look, with your own pictures and icons
+./theme.sh --import my-look.zip             # put it on this stick, or a new one
 ```
 
+A saved look holds only the choices and pictures, so it's small. Keep one in
+case the stick is lost. Loading it onto a stick that lacks its theme uses the
+default theme and says so. Its icons and splash stay on the stick through
+updates, unless the updating PC has its own in `byo/`.
+
 On Windows it is the app's **Look…** button, with a live preview, or
-`HelixBoot.exe --look E:\ --theme midnight`. `HelixBoot.sh` has it in its menu
+`HelixBoot.exe --look E:\ --theme midnight`. Its **Save look…** and
+**Load look…** buttons save and load a look. `HelixBoot.sh` has it in its menu
 as **Change a stick's look**.
 
 ![The Midnight, Ember, Terminal and Slate presets](docs/themes.jpg)
@@ -548,6 +596,8 @@ ventoy/theme/       the look in use, built from .helix-boot (rebuilt on every re
 - [x] New default icons (0.6.3)
 - [x] Helix Boot on the stick itself, an update summary, and a boot test of every theme in CI (0.6.4)
 - [x] A review of everything since 0.5.3, and its fixes (0.6.5)
+- [x] Checking a stick for damage, saved looks, newer-version notices in the app,
+      and checksums and build attestations on every release
 
 ## Contributing
 

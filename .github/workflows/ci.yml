@@ -28,7 +28,7 @@ jobs:
       - name: Shellcheck
         run: |
           # gcc format → annotations on the exact line
-          shellcheck -x -f gcc install.sh refresh.sh theme.sh scripts/common.sh pe/vm/build-vm.sh \
+          shellcheck -x -f gcc install.sh refresh.sh theme.sh check.sh scripts/common.sh pe/vm/build-vm.sh \
             linux/build.sh linux/HelixBoot.sh.in \
             | sed -E 's/^([^:]+):([0-9]+):([0-9]+): (error|warning|note): (.*)$/::\4 file=\1,line=\2,col=\3::\5/; s/^::note /::notice /'
           exit "${PIPESTATUS[0]}"

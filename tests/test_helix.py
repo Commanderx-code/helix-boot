@@ -394,6 +394,76 @@ class TestFetchAndSync(Base):
         self.assertTrue((self.stick / "ISO/2-Rescue/systemrescue-12.03-amd64.iso").exists())
         self.assertTrue(mine.exists())
 
+    def test_tool_updates_for_the_app(self):
+        found = cr.tool_updates(self.cfg)
+        self.assertEqual((found["fetched"], found["newer"]), (0, []))
+        self.assertIn("Nothing is downloaded", cr.updates_text(found))
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertIn("Every tool is at its latest version", cr.updates_text(cr.tool_updates(self.cfg)))
+
+        new = b"systemrescue 12.03 iso"                                  # upstream moves on …
+        put("dl/systemrescuecd/sysresccd-x86/12.03/systemrescue-12.03-amd64.iso.sha512",
+            f"{sha(new, 'sha512')}  systemrescue-12.03-amd64.iso\n")
+        sf_feed("systemrescuecd", "/sysresccd-x86", [
+            ("/sysresccd-x86/12.03/systemrescue-12.03-amd64.iso", new, "Mon, 01 Sep 2025 10:00:00 UT"),
+        ])
+        self.assertEqual(cr.tool_updates(self.cfg)["newer"], [])        # … but it looked less than 6 hours ago
+        found = cr.tool_updates(self.cfg, refresh=True)
+        self.assertEqual(found["newer"], [{"name": "systemrescue", "title": "SystemRescue", "have": "12.02",
+                                           "latest": "12.03"}])
+        self.assertIn("Newer versions of 1 tool(s) are out: SystemRescue", cr.updates_text(found))
+        self.assertEqual(self.fetch("systemrescue")[0], 0)              # fetched: no longer newer, no new look
+        self.assertEqual(cr.tool_updates(self.cfg)["newer"], [])
+
+    def verify(self):
+        return self.run_quiet(cr.cmd_verify, self.cfg, type("A", (), {"target": str(self.stick), "json": False})())
+
+    def test_verify_finds_damage_and_the_next_update_repairs_it(self):
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync(verify=False)[0], 0)
+        rc, out = self.verify()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Everything checks out", out)
+        self.assertIn("1 app(s)", out)
+
+        iso = self.stick / "ISO/2-Rescue/systemrescue-12.02-amd64.iso"
+        iso.write_bytes(b"systemrescue 12.02 isX")             # same size, one bad byte: what a failing stick does
+        exe = self.stick / "Apps/sysinternals/procexp64.exe"
+        exe.write_bytes(b"MZ procexX")
+        (self.stick / "Apps/sysinternals/Eula.txt").unlink()
+        rc, out = self.verify()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("1 boot image(s) are damaged", out)
+        self.assertIn("systemrescue-12.02-amd64.iso", out)
+        self.assertIn("Apps/sysinternals/Eula.txt", out)
+        self.assertIn("sysinternals: 1 file(s) differ", out)
+        state = json.loads((self.stick / cr.STATE_DIR / "state.json").read_text())
+        self.assertEqual(state["damaged"], {"images": ["ISO/2-Rescue/systemrescue-12.02-amd64.iso"],
+                                            "apps": ["sysinternals"]})
+
+        # A quick update (no --verify) would have trusted the size and the record: now it copies them again
+        rc, out = self.sync(init=False, verify=False)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(iso.read_bytes(), self.sr_new)
+        self.assertEqual(exe.read_bytes(), b"MZ procexp")
+        self.assertNotIn("damaged", json.loads((self.stick / cr.STATE_DIR / "state.json").read_text()))
+        rc, out = self.verify()
+        self.assertEqual(rc, 0, out)
+
+    def test_verify_a_stick_from_an_older_helix_boot(self):
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync()[0], 0)
+        (self.stick / cr.HASHES).unlink()                       # apps copied before they were recorded
+        rc, out = self.verify()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("1 app(s) were copied by an older Helix Boot", out)
+        self.assertEqual(self.sync(init=False, verify=False)[0], 0)   # recorded from the download, not the stick
+        self.assertNotIn("older Helix Boot", self.verify()[1])
+
+    def test_verify_refuses_a_stick_helix_boot_never_filled(self):
+        with self.assertRaises(cr.RescueError):
+            self.verify()
+
     def test_updating_from_a_second_pc_keeps_what_it_doesnt_have(self):
         # This PC: the usual tools plus one of its own, and its own app
         (self.repo / "byo").mkdir()
@@ -973,7 +1043,7 @@ class TestFetchAndSync(Base):
 
     def look(self, **kw):
         args = dict(stick=str(self.stick), theme=None, icons=None, background=None, dim=0, splash=None,
-                    reset=False, json=False, menu=False, preview=None)
+                    reset=False, json=False, menu=False, preview=None, export=None, import_=None)
         args.update(kw)
         return self.run_quiet(cr.cmd_theme, self.cfg, type("A", (), args)())
 
@@ -1078,6 +1148,58 @@ class TestFetchAndSync(Base):
         self.assertFalse((built / "splash.png").exists())
         self.look(theme="off", splash="auto")                            # your own picture still shows
         self.assertEqual(sorted(f.name for f in built.iterdir()), ["splash.png"])
+
+    def test_a_saved_look_goes_onto_another_stick(self):
+        png = b"\x89PNG\r\n\x1a\n"
+        (self.repo / "byo/icons").mkdir(parents=True)
+        (self.repo / "byo/icons/vtoydir.png").write_bytes(png + b"my folder icon")
+        (self.repo / "byo/splash.png").write_bytes(png + b"my splash")
+        built, menu = self.themed_repo()
+        self.look(theme="night", icons="badges")
+        saved = self.tmp / "my-look"
+        rc, out = self.look(export=str(saved))
+        self.assertEqual(rc, 0, out)
+        with zipfile.ZipFile(self.tmp / "my-look.zip") as zf:              # .zip added
+            self.assertEqual(sorted(zf.namelist()), [cr.LOOK_SAVE, "mine/icons/vtoydir.png", "mine/splash.png"])
+
+        # Another stick, filled from a PC without those icons, gets the look and keeps it on updates
+        shutil.rmtree(self.repo / "byo/icons")
+        (self.repo / "byo/splash.png").unlink()
+        self.cfg = cr.Config(repo=self.repo)
+        self.stick = self.tmp / "stick2"
+        self.stick.mkdir()
+        self.assertEqual(self.sync()[0], 0)
+        built = self.stick / "ventoy/theme"
+        rc, out = self.look(import_=str(self.tmp / "my-look.zip"))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((built / "background.png").read_bytes(), b"night background")
+        self.assertEqual((built / "icons/systemrescue.png").read_bytes(), b"badge")
+        self.assertEqual((built / "icons/vtoydir.png").read_bytes(), png + b"my folder icon")
+        self.assertEqual((built / "splash.png").read_bytes(), png + b"my splash")
+        self.assertEqual(self.sync(init=False)[0], 0)
+        self.assertEqual((built / "icons/vtoydir.png").read_bytes(), png + b"my folder icon")
+        self.assertEqual((built / "splash.png").read_bytes(), png + b"my splash")
+
+        # A look from a stick with a theme this one hasn't: the rest is used, the theme is the default
+        odd = self.tmp / "odd.zip"
+        with zipfile.ZipFile(odd, "w") as zf:
+            zf.writestr(cr.LOOK_SAVE, json.dumps({"look": {"theme": "faraway", "icons": "badges"}}))
+        rc, out = self.look(import_=str(odd))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("no theme 'faraway'", out)
+        self.assertEqual(cr._look(self.stick)["theme"], "default")
+        self.assertFalse((built / "splash.png").read_bytes().endswith(b"my splash"))   # replaced, not merged
+
+        for name, blob, why in (("../../evil.png", png, "isn't part of a look"), ("look/background.png", b"MZ", "isn't a PNG"),
+                                ("Apps/x.exe", b"MZ", "isn't part of a look")):
+            bad = self.tmp / "bad.zip"
+            with zipfile.ZipFile(bad, "w") as zf:
+                zf.writestr(cr.LOOK_SAVE, "{}")
+                zf.writestr(name, blob)
+            with self.assertRaisesRegex(cr.RescueError, why):
+                self.look(import_=str(bad))
+        with self.assertRaisesRegex(cr.RescueError, "isn't a saved Helix Boot look"):
+            self.look(import_=str(self.tmp / "my-look"))
 
     @unittest.skipUnless(importlib.util.find_spec("PIL"), "resizing a picture needs Pillow")
     def test_your_own_background(self):
@@ -1379,6 +1501,10 @@ class TestPack(Base):
         self.assertIn(b"licensed iso", self.tree(other)["ISO/2-Rescue/mine.iso"])
         state = json.loads((other / cr.STATE_DIR / "state.json").read_text())
         self.assertIn("ISO/2-Rescue/mine.iso", state["files"])
+        self.assertEqual(state["images"], json.loads((self.stick / cr.STATE_DIR / "state.json").read_text())["images"])
+        rc, out = self.run_quiet(cr.cmd_verify, self.cfg, type("A", (), {"target": str(other), "json": False})())
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Everything checks out", out)
         self.assertEqual(state["apps"], {"sysinternals": cr.load_lock(self.cfg)["sysinternals"]["version"]})
         # a second run copies nothing, and a later sync (refresh.sh) sees the stick as its own
         rc, out = self.unpack(pack, other)
@@ -1674,7 +1800,7 @@ class TestPack(Base):
                     zf.extract(m, away)
                     os.chmod(away / m.filename, (m.external_attr >> 16) & 0o777 or 0o644)
         inst = away / "installer"
-        for f in ("helix", "install.sh", "refresh.sh", "theme.sh"):
+        for f in ("helix", "install.sh", "refresh.sh", "theme.sh", "check.sh"):
             self.assertTrue(os.access(inst / f, os.X_OK), f)
         self.assertIn(pack.name, (inst / "README.txt").read_text())
         found = subprocess.run(["bash", "-c", f'source "{inst}/scripts/common.sh"; bundled_pack "{inst}"'],
@@ -2134,7 +2260,7 @@ class TestShellHelpers(unittest.TestCase):
             capture_output=True, text=True, check=True,
         ).stdout.split()
         used = set()  # commands the shell scripts pipe into
-        for f in ("install.sh", "refresh.sh", "theme.sh", "scripts/common.sh", "pe/vm/build-vm.sh", "pe/fix-bootmgr.sh"):
+        for f in ("install.sh", "refresh.sh", "theme.sh", "check.sh", "scripts/common.sh", "pe/vm/build-vm.sh", "pe/fix-bootmgr.sh"):
             used |= set(re.findall(r"(?<!\|)\|(?!\|)\s*([a-z][\w.-]*)", (ROOT / f).read_text()))
         self.assertIn("head", used)
         self.assertEqual(sorted(used & set(names)), [], "helper functions hide commands the scripts use")

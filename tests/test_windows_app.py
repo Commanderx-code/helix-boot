@@ -246,7 +246,22 @@ class TestFlows(unittest.TestCase):
             self.assertEqual(seen["window"], "E:\\")
         # every option `helix theme` takes is passed, so the engine never misses one
         self.assertEqual(set(seen) - {"window"}, {"stick", "theme", "icons", "background", "dim", "splash", "reset",
-                                                  "preview", "menu", "json"})
+                                                  "preview", "menu", "json", "export", "import_"})
+
+    def test_check_stick(self):
+        good = {"damaged": [], "missing": [], "changed": {}, "checked": 9, "unrecorded": [], "images": 3,
+                "apps": 2, "menu": None}
+        bad = {**good, "damaged": ["ISO/2-Rescue/x.iso"]}
+        seen = []
+        for found, fails in ((good, False), (bad, True)):
+            with redirect_stdout(io.StringIO()), \
+                    mock.patch.object(app.cr, "check_stick", lambda mnt, hook=None, f=found: seen.append(hook) or f):
+                if fails:
+                    with self.assertRaisesRegex(app.RescueError, "1 boot image\\(s\\) are damaged"):
+                        app.check("E:\\", progress=print)
+                else:
+                    self.assertIn("Everything checks out", app.check("E:\\", progress=print))
+        self.assertEqual(seen, [print, print])        # the window's progress bar follows the reading
 
 
 class TestFindPack(unittest.TestCase):

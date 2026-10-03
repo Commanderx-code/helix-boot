@@ -43,7 +43,7 @@ class TestLinuxInstaller(unittest.TestCase):
         apps = list((self.home / "data/helix-boot/app").iterdir())
         self.assertEqual(len(apps), 1)
         self.assertTrue(apps[0].name.startswith(f"{version}-"))
-        for f in ("helix", "install.sh", "refresh.sh", "theme.sh", "scripts/common.sh", "tools.toml", "theme/theme.txt",
+        for f in ("helix", "install.sh", "refresh.sh", "theme.sh", "check.sh", "scripts/common.sh", "tools.toml", "theme/theme.txt",
                   "theme/presets/midnight/theme.txt", "theme/icon-packs/badges/pack.toml",
                   "pe/launcher/HelixApps.cmd", "pe/launcher/FindStick.ps1", "pe/lazarus/LazarusLauncher.ps1"):
             self.assertTrue((apps[0] / f).is_file(), f)
@@ -65,6 +65,9 @@ class TestLinuxInstaller(unittest.TestCase):
         r = self.run_it("theme", "--help")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("Usage: ./theme.sh", r.stdout)
+        r = self.run_it("check", "--help")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Usage: ./check.sh", r.stdout)
         r = self.run_it("bogus")
         self.assertEqual(r.returncode, 1)
         self.assertIn("unknown command", r.stderr)

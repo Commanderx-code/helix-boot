@@ -80,6 +80,20 @@ jobs:
           if ((Get-Content -Raw "$env:RUNNER_TEMP\stick\ventoy\theme\theme.txt") -notmatch "Standby") { throw "off isn't Standby" }
           if (-not (Test-Path "$env:RUNNER_TEMP\stick\ventoy\theme\NanumMyeongjo-Regular18.pf2")) { throw "Standby's font is missing" }
           Run "--look $env:RUNNER_TEMP\stick --reset-look"
+          Run "--look $env:RUNNER_TEMP\stick --theme ember --icons badges"
+          Run "--look $env:RUNNER_TEMP\stick --export-look $env:RUNNER_TEMP\look.zip"   # put on stick2 below
+          Run "--look $env:RUNNER_TEMP\stick --reset-look"
+
+          # Reading the stick back: everything as it was put there; then one damaged image is found
+          Run "--check $env:RUNNER_TEMP\stick"
+          $iso = Get-ChildItem -Recurse -File "$env:RUNNER_TEMP\stick\ISO" | Select-Object -First 1
+          $bytes = [IO.File]::ReadAllBytes($iso.FullName); $bytes[0] = $bytes[0] -bxor 0xFF
+          [IO.File]::WriteAllBytes($iso.FullName, $bytes)
+          $p = Start-Process $exe -ArgumentList "--check $env:RUNNER_TEMP\stick" -PassThru -NoNewWindow -Wait
+          if ($p.ExitCode -ne 1) { throw "--check didn't notice a damaged image ($($p.ExitCode))" }
+          Run "--sync-to $env:RUNNER_TEMP\stick"                # copies it again
+          Run "--check $env:RUNNER_TEMP\stick"
+          Run "--updates"                                     # which tools have newer versions
 
           # A pack made from that cache, used by the real .exe: fills a stick offline, Ventoy included
           $env:HELIX_CACHE = "$env:LOCALAPPDATA\HelixBoot\cache"
@@ -97,6 +111,9 @@ jobs:
           $a = (Get-ChildItem -Recurse -File "$env:RUNNER_TEMP\stick\ISO").Name | Sort-Object
           $b = (Get-ChildItem -Recurse -File "$env:RUNNER_TEMP\stick2\ISO").Name | Sort-Object
           if (Compare-Object $a $b) { throw "the pack gave different boot images than the online sync" }
+          Run "--look $env:RUNNER_TEMP\stick2 --import-look $env:RUNNER_TEMP\look.zip"
+          if ((Get-Content -Raw "$env:RUNNER_TEMP\stick2\ventoy\theme\theme.txt") -notmatch "Ember") { throw "the saved look didn't load" }
+          Run "--check $env:RUNNER_TEMP\stick2"
 
           Copy-Item $pack $dir                                # a pack beside the app: the window finds it
           Run "--selftest-gui"                                # opens the window, closes it
@@ -132,6 +149,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      id-token: write       # the attestation below: signed with this run's identity
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -142,6 +161,14 @@ jobs:
           path: dist
       - name: Build HelixBoot.sh (the one-file Linux installer)
         run: linux/build.sh dist/HelixBoot.sh
+      # Anyone can check a download: sha256sum -c SHA256SUMS, or
+      # gh attestation verify HelixBoot.exe --repo Commanderx-code/helix-boot (built here, from this commit)
+      - name: Checksums
+        run: cd dist && sha256sum HelixBoot.exe HelixBoot.sh > SHA256SUMS && cat SHA256SUMS
+      - name: Attest where the files were built
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-checksums: dist/SHA256SUMS
       - name: Publish the release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
@@ -152,3 +179,4 @@ jobs:
           files: |
             dist/HelixBoot.exe
             dist/HelixBoot.sh
+            dist/SHA256SUMS

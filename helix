@@ -62,6 +62,7 @@ BASE_JSON = f"{STATE_DIR}/ventoy.base.json"   # the boot menu before the look is
 LOOK_FILE = f"{STATE_DIR}/look.json"          # the choice
 LOOK_DIR = f"{STATE_DIR}/look"                # your own background.png / splash.png, set on the stick
 LOOK_DEFAULT = {"theme": "default", "icons": "auto", "background": "theme", "splash": "auto"}
+HASHES = f"{STATE_DIR}/hashes.json"           # every app file's sha256 as it was put on (`helix verify`)
 # Before the rename to Helix Boot: still written or read, so older sticks, launchers and
 # Lazarus PE builds keep working
 OLD_STATE_DIR = ".commander-rescue"
@@ -342,8 +343,9 @@ class Progress:
     job (bar, bytes, speed, ETA); otherwise just the current file. Silent unless stderr
     is a terminal, so logs and the Windows app stay clean."""
 
-    def __init__(self, total: int = 0):
+    def __init__(self, total: int = 0, hook=None):
         self.total, self.done = total, 0
+        self.hook = hook            # hook(percent): the Windows app's progress bar
         self.tty = _isatty(sys.stderr)
         self.start = self.last = time.monotonic()
         self.label, self.fsize, self.fdone, self.fstart = "", 0, 0, self.start
@@ -355,9 +357,12 @@ class Progress:
         self.done += n
         self.fdone += n
         now = time.monotonic()
-        if self.tty and now - self.last > 0.25:
+        if (self.tty or self.hook) and now - self.last > 0.25:
             self.last = now
-            print("\r" + self.line(now), end="", file=sys.stderr)
+            if self.tty:
+                print("\r" + self.line(now), end="", file=sys.stderr)
+            if self.hook and self.total:
+                self.hook(min(self.done * 100 // self.total, 100))
 
     def line(self, now: float) -> str:
         width = shutil.get_terminal_size((100, 20)).columns - 1
@@ -951,6 +956,54 @@ def cmd_check(cfg: Config, args) -> int:
     return 1 if errors else 0
 
 
+UPDATES_FILE = "updates.json"      # in the cache: the last look upstream, for the Windows app
+
+
+def tool_updates(cfg: Config, max_age: float = 6 * 3600, refresh: bool = False) -> dict:
+    """Which tools have a newer release than this PC has fetched, for the app to mention.
+    Looks upstream at most every max_age seconds (each look costs GitHub API calls, of which an
+    unsigned-in PC gets 60 an hour); in between, compares the last look with what's been fetched."""
+    path = cfg.cache / UPDATES_FILE
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        age = time.time() - saved["at"]
+    except (OSError, ValueError, KeyError, TypeError):
+        saved, age = None, max_age
+    if refresh or not saved or not 0 <= age < max_age:
+        latest, failed = {}, 0
+        for t in cfg.enabled([]):
+            if t["source"] == "local":
+                continue
+            try:
+                res = resolve(t, cfg)
+            except RescueError:
+                failed += 1
+                continue
+            latest[t["name"]] = {"version": res["version"], "file": res["file"], "remote_id": res.get("remote_id")}
+        saved = {"at": time.time(), "latest": latest, "failed": failed}
+        cfg.cache.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(saved, indent=1) + "\n", encoding="utf-8")
+    lock, titles = load_lock(cfg), {t["name"]: t["title"] for t in cfg.enabled([])}
+    newer = [{"name": n, "title": titles[n], "have": lock[n].get("version"), "latest": res["version"]}
+             for n, res in sorted(saved["latest"].items(), key=lambda kv: titles.get(kv[0], "").lower())
+             if n in titles and lock.get(n) and not is_current(lock[n], res)]
+    return {"checked": dt.datetime.fromtimestamp(saved["at"]).isoformat(timespec="minutes"), "newer": newer,
+            "failed": saved["failed"], "fetched": sum(n in lock for n in titles)}
+
+
+def updates_text(found: dict) -> str:
+    """One line about tool_updates, for the app's window."""
+    if not found["fetched"]:
+        return "Nothing is downloaded on this PC yet: Install or Update gets the latest of every tool."
+    n = len(found["newer"])
+    when = found["checked"].replace("T", " ")
+    if not n:
+        return f"Every tool is at its latest version (checked {when})." + \
+            (f" {found['failed']} couldn't be checked." if found["failed"] else "")
+    names = ", ".join(u["title"] for u in found["newer"][:4]) + (f" and {n - 4} more" if n > 4 else "")
+    return f"Newer versions of {n} tool(s) are out: {names}. Update stick gets them (checked {when})."
+
+
 def cmd_fetch(cfg: Config, args) -> int:
     lock = load_lock(cfg)
     tools = cfg.enabled(args.tools)
@@ -1230,9 +1283,10 @@ STICK_README = """Helix Boot: update this stick, or change how its boot menu loo
 ============================================================================
 
 Windows:  run HelixBoot.exe in this folder (it asks for admin rights).
-          Pick the stick, then Update stick, or Look... for themes and icons.
+          Pick the stick, then Update stick, Look... for themes and icons, or
+          Check stick to find damaged files.
 Linux:    bash HelixBoot.sh        (in a terminal, in this folder)
-          It shows a menu: update the stick, change its look, check for updates.
+          It shows a menu: update the stick, change its look, check it.
 
 Updating from here keeps every tool already on the stick, including ones this
 PC has no copy of. Install ERASES whatever stick you pick: don't use it on this one.
@@ -1785,6 +1839,57 @@ def _tidy_theme_source(cfg: Config, mnt: Path, state: dict, want: set[str]) -> b
     return removed
 
 
+# What `helix verify` checks apps against: each file's sha256, taken from the download or the
+# pack it was copied from (never read back off the stick, where it may already be damaged).
+def _zip_hashes(zf: zipfile.ZipFile, prefix: str = "") -> dict[str, str]:
+    """sha256 of every file in a zip under prefix, named from there."""
+    out = {}
+    for m in zf.infolist():
+        if m.is_dir() or not m.filename.startswith(prefix):
+            continue
+        h = hashlib.sha256()
+        with zf.open(m) as f:
+            while chunk := f.read(1 << 20):
+                h.update(chunk)
+        out[m.filename[len(prefix):]] = h.hexdigest()
+    return out
+
+
+def _load_hashes(mnt: Path) -> dict:
+    try:
+        data = json.loads((mnt / HASHES).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    apps = data.get("apps") if isinstance(data, dict) else None
+    return {n: a for n, a in (apps or {}).items()
+            if isinstance(a, dict) and isinstance(a.get("files"), dict) and isinstance(a.get("dir"), str)}
+
+
+def _save_hashes(mnt: Path, hashes: dict, app_state: dict) -> None:
+    """Keep the records of the apps still on the stick (another PC's too)."""
+    text = json.dumps({"apps": {n: h for n, h in sorted(hashes.items()) if n in app_state}},
+                      separators=(",", ":"), sort_keys=True) + "\n"
+    path = mnt / HASHES
+    if not (path.is_file() and path.read_text(encoding="utf-8") == text):
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+
+def _damaged(state: dict) -> tuple[set[str], set[str]]:
+    """The boot images and apps `helix verify` found damaged, which the next update copies again."""
+    d = state.get("damaged") if isinstance(state.get("damaged"), dict) else {}
+    return ({x for x in d.get("images") or [] if isinstance(x, str)},
+            {x for x in d.get("apps") or [] if isinstance(x, str)})
+
+
+def _still_damaged(state: dict, mnt: Path, fixed_images: set[str], fixed_apps: set[str], app_state: dict) -> dict:
+    """What's left of that list after an update: what it couldn't copy again (another PC's)."""
+    images, apps = _damaged(state)
+    left = {"images": sorted(r for r in images - fixed_images if (mnt / r).is_file()),
+            "apps": sorted(a for a in apps - fixed_apps if a in app_state)}
+    return {"damaged": left} if left["images"] or left["apps"] else {}
+
+
 def _finish(mnt: Path, state_dir: Path, files: set[str], app_state: dict, vjson: Path, extra: dict) -> None:
     tag = f"Helix Boot {__version__}\r\nsynced {dt.datetime.now():%Y-%m-%d %H:%M}\r\n"
     for name in (TAG_FILE, OLD_TAG_FILE):                    # the old name for older launchers and PEs
@@ -1820,6 +1925,7 @@ def cmd_sync(cfg: Config, args) -> int:
     # ISOs round to whole sectors, so a rebuilt Lazarus PE is often exactly as big as the last.
     recorded = state.get("images", {})
     images: dict[str, str] = {}
+    bad_images, bad_apps = _damaged(state)                  # found by `helix verify`: copied again
     me, wrote, wrote_apps = cfg.pc_id(), set(), set()      # what this PC puts on the stick in this run
     moved: set[str] = set()                                 # old paths of images that only change folder
     for n, p in enumerate(placed, 1):
@@ -1847,6 +1953,8 @@ def cmd_sync(cfg: Config, args) -> int:
                 same = recorded[p["rel"]] == p["sha256"]
             elif p["local"]:    # no record yet (an older stick): a local build may have been rebuilt
                 same = file_hash(dst) == p["sha256"]
+        if same and p["rel"] in bad_images and not args.verify:
+            same = False
         if same:
             images[p["rel"]] = p["sha256"]
             ok(f"{p['title']} {p['version']} — already on stick")
@@ -1871,10 +1979,21 @@ def cmd_sync(cfg: Config, args) -> int:
 
     app_state = dict(state.get("apps", {}))
     app_root = mnt / cfg.apps_root
+    hashes = _load_hashes(mnt)
     for t, entry, src in apps:
         root = mnt / _app_root(cfg, t)
         dst = root / t["name"]
-        if app_state.get(t["name"]) == entry["version"] and dst.exists():
+        unzip = zipfile.is_zipfile(src) and t.get("platform") != "mac"
+        rec = hashes.get(t["name"])
+        if not args.dry_run and not (rec and rec.get("version") == entry["version"]):
+            if unzip:
+                with zipfile.ZipFile(src) as zf:
+                    files = _zip_hashes(zf)
+            else:
+                files = {src.name: file_hash(src)}
+            hashes[t["name"]] = {"version": entry["version"], "dir": f"{_app_root(cfg, t)}/{t['name']}",
+                                 "files": files}
+        if app_state.get(t["name"]) == entry["version"] and dst.exists() and t["name"] not in bad_apps:
             ok(f"{t['title']} {entry['version']} — already on stick")
             continue
         info(f"{t['title']} {entry['version']} → {_app_root(cfg, t)}/{t['name']}/")
@@ -1884,7 +2003,6 @@ def cmd_sync(cfg: Config, args) -> int:
         new = root / f".{t['name']}.new"
         shutil.rmtree(new, ignore_errors=True)
         new.mkdir(parents=True)
-        unzip = zipfile.is_zipfile(src) and t.get("platform") != "mac"
         if unzip:
             with zipfile.ZipFile(src) as zf:
                 zf.extractall(new, members=_safe_zip_members(zf))
@@ -1951,6 +2069,7 @@ def cmd_sync(cfg: Config, args) -> int:
         return 0
 
     app_root.mkdir(exist_ok=True)
+    _save_hashes(mnt, hashes, app_state)
     theme_src = cfg.assets / cfg.settings["theme"] if cfg.settings.get("theme") else None
     extras = _carry_extras(mnt, _stick_extras(cfg, placed, apps), kept, kept_apps, cfg.apps_root)
     vjson = _write_extras(cfg, mnt, state, extras, fresh_theme=bool(theme_src and theme_src.is_dir()))
@@ -1959,6 +2078,7 @@ def cmd_sync(cfg: Config, args) -> int:
              **{p["rel"]: p["name"] for p in placed}}
     _finish(mnt, state_dir, want_files | set(kept), app_state, vjson, {
         "images": images, "tools": tools, "mine_by": state.get("mine_by") or {},
+        **_still_damaged(state, mnt, wrote | (want_files if args.verify else set()), wrote_apps, app_state),
         **_put_by(state, me, want_files, wrote, kept, {t["name"] for t, _, _ in apps}, wrote_apps, kept_apps)})
     ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
     return 0
@@ -1972,7 +2092,7 @@ def cmd_sync(cfg: Config, args) -> int:
 PACK_META = "helix-boot-pack.json"
 OLD_PACK_META = "commander-rescue-pack.json"   # packs made before the rename
 PACK_FORMAT = 1
-BUNDLED = ["helix", "tools.toml", "install.sh", "refresh.sh", "theme.sh", "scripts/common.sh", "LICENSE"]
+BUNDLED = ["helix", "tools.toml", "install.sh", "refresh.sh", "theme.sh", "check.sh", "scripts/common.sh", "LICENSE"]
 BUNDLED_MARK = "installer/.bundled"   # tells install.sh / refresh.sh to look for the pack beside them
 APP_REPO = "Commanderx-code/helix-boot"   # where HelixBoot.exe is released
 APP_EXE = "HelixBoot.exe"
@@ -2220,9 +2340,11 @@ def cmd_unpack(cfg: Config, args) -> int:
              f"{'  (dry run)' if args.dry_run else ''}")
 
         dests = {i["rel"]: _inside(mnt, i["rel"], "boot image path") for i in meta["isos"]}
+        bad_images, bad_apps = _damaged(state)          # found by `helix verify`: copied again
         todo = [i for i in meta["isos"]
                 if not (dests[i["rel"]].is_file() and dests[i["rel"]].stat().st_size == i["size"])
-                or (args.verify and file_hash(dests[i["rel"]]) != i["sha256"])]
+                or (args.verify and file_hash(dests[i["rel"]]) != i["sha256"])
+                or (i["rel"] in bad_images and not args.verify)]
         need = sum(i["size"] for i in todo)
         free = shutil.disk_usage(mnt).free
         if need > free and not args.dry_run:
@@ -2263,10 +2385,17 @@ def cmd_unpack(cfg: Config, args) -> int:
         app_root = _inside(mnt, apps_root, "apps folder")
         roots = meta.get("app_roots", {})         # apps that go elsewhere than Apps: the Mac tools
         wrote_apps: set[str] = set()
+        hashes = _load_hashes(mnt)
         for name, version in meta["apps"].items():
             root = _inside(mnt, roots.get(name, apps_root), "apps folder")
             dst = _inside(root, name, "app folder")
-            if app_state.get(name) == version and dst.exists():
+            prefix = f"stick/{roots.get(name, apps_root)}/{name}/"
+            rec = hashes.get(name)
+            fresh = not args.dry_run and not (rec and rec.get("version") == version)
+            if app_state.get(name) == version and dst.exists() and name not in bad_apps:
+                if fresh:
+                    hashes[name] = {"version": version, "dir": f"{roots.get(name, apps_root)}/{name}",
+                                    "files": _zip_hashes(zf, prefix)}
                 ok(f"{name} {version} — already on stick")
                 continue
             info(f"{name} {version} → {roots.get(name, apps_root)}/{name}/")
@@ -2275,10 +2404,11 @@ def cmd_unpack(cfg: Config, args) -> int:
                 continue
             new = root / f".{name}.new"
             shutil.rmtree(new, ignore_errors=True)
-            prefix = f"stick/{roots.get(name, apps_root)}/{name}/"
+            files = {}
             for m in names:
                 if m.startswith(prefix) and not m.endswith("/"):
-                    _unzip_to(zf, m, _inside(new, m[len(prefix):], "path in pack"))
+                    files[m[len(prefix):]] = _unzip_to(zf, m, _inside(new, m[len(prefix):], "path in pack"))
+            hashes[name] = {"version": version, "dir": f"{roots.get(name, apps_root)}/{name}", "files": files}
             if dst.exists():
                 shutil.rmtree(dst)
             os.replace(new, dst)
@@ -2335,6 +2465,7 @@ def cmd_unpack(cfg: Config, args) -> int:
             return 0
 
         app_root.mkdir(exist_ok=True)
+        _save_hashes(mnt, hashes, app_state)
         app_dirs = tuple(f"stick/{roots.get(n, apps_root)}/{n}/" for n in meta["apps"])
         extras = [(m[len("stick/"):], zf.read(m)) for m in sorted(names)
                   if m.startswith("stick/") and not m.endswith("/") and m[len("stick/"):] not in want_files
@@ -2345,9 +2476,115 @@ def cmd_unpack(cfg: Config, args) -> int:
              **{i["rel"]: i["name"] for i in meta["isos"] if i.get("name")}}
     _finish(mnt, state_dir, want_files | set(kept), app_state, vjson, {
         "pack": meta["created"], "tools": tools, "mine_by": state.get("mine_by") or {},
+        "images": {**{rel: sha for rel, sha in (state.get("images") or {}).items() if rel in kept},
+                   **{i["rel"]: i["sha256"] for i in meta["isos"]}},
+        **_still_damaged(state, mnt, {i["rel"] for i in todo} | (want_files if args.verify else set()),
+                         wrote_apps, app_state),
         **_put_by(state, me, want_files, {i["rel"] for i in todo}, kept, set(meta["apps"]), wrote_apps, kept_apps)})
     ok(f"Stick is up to date from the pack: {len(meta['isos'])} boot image(s), {len(meta['apps'])} app(s).")
     return 0
+
+
+# ── Checking a stick ──────────────────────────────────────────────────────
+# Cheap sticks go bad quietly. `verify` reads back everything this project put on a stick and
+# compares it with what was put there: the boot images with the sha256s in state.json, the apps
+# with hashes.json. It needs no cache or internet, so any PC can check any Helix Boot stick.
+def check_stick(mnt: Path, hook=None) -> dict:
+    """Read every boot image and app file back; return what's damaged, missing or unchecked.
+    Damaged images and apps are noted on the stick, so the next update copies them again."""
+    state_dir, state = _open_stick(mnt, init=True)
+    if not state:
+        raise RescueError(f"{mnt} has nothing from Helix Boot on it to check")
+    images = {rel: sha for rel, sha in (state.get("images") or {}).items() if isinstance(sha, str)}
+    apps = _load_hashes(mnt)
+    todo = []                                       # (what, path, sha256, app or None)
+    for rel, sha in sorted(images.items()):
+        todo.append((rel, _inside(mnt, rel, "path in the stick's state"), sha, None))
+    for name, rec in sorted(apps.items()):
+        if name not in (state.get("apps") or {}):
+            continue
+        base = _inside(mnt, rec["dir"], "app folder")
+        for rel, sha in sorted(rec["files"].items()):
+            todo.append((f"{rec['dir']}/{rel}", _inside(base, rel, "app file"), sha, name))
+    found = {"damaged": [], "missing": [], "changed": {}, "checked": 0,
+             "unrecorded": sorted(n for n in (state.get("apps") or {}) if n not in apps),
+             "images": len(images), "apps": len({a for *_, a in todo if a}), "menu": None}
+
+    prog = Progress(sum(p.stat().st_size for _, p, _, _ in todo if p.is_file()), hook=hook)
+    for what, path, sha, app in todo:
+        if not path.is_file():
+            found["missing"].append(what)
+            continue
+        prog.file(app or Path(what).name, path.stat().st_size)
+        _uncached(path)                             # read the stick, not what the OS kept in memory
+        good = file_hash(path, progress=prog) == sha
+        found["checked"] += 1
+        if good:
+            continue
+        if app:                                     # some tools save their settings in their folder
+            found["changed"].setdefault(app, []).append(what)
+        else:
+            found["damaged"].append(what)
+    prog.clear()
+    try:
+        json.loads((mnt / "ventoy" / "ventoy.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        found["menu"] = f"ventoy/ventoy.json can't be read ({e.__class__.__name__}): the boot menu won't work"
+
+    # Noted for the next update. A missing file is noticed by any update anyway.
+    bad = {"images": sorted(found["damaged"] + [m for m in found["missing"] if m in images]),
+           "apps": sorted(set(found["changed"]) | {a for m in found["missing"] for a in [_app_of(m, apps)] if a})}
+    if bad["images"] or bad["apps"] or "damaged" in state:
+        state.pop("damaged", None)
+        if bad["images"] or bad["apps"]:
+            state["damaged"] = bad
+        (state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+        _flush_volume(mnt)
+    return found
+
+
+def _app_of(path: str, apps: dict) -> str | None:
+    return next((n for n, rec in apps.items() if path.startswith(rec["dir"] + "/")), None)
+
+
+def check_text(found: dict) -> str:
+    """What `check_stick` found, in plain words."""
+    lines = []
+    if found["damaged"]:
+        lines.append(f"✗ {len(found['damaged'])} boot image(s) are damaged: the stick may be failing.")
+        lines += [f"    {Path(rel).name}" for rel in found["damaged"]]
+    if found["missing"]:
+        lines.append(f"✗ {len(found['missing'])} file(s) are missing:")
+        lines += [f"    {rel}" for rel in found["missing"][:15]]
+        if len(found["missing"]) > 15:
+            lines.append(f"    … and {len(found['missing']) - 15} more")
+    for app, files in sorted(found["changed"].items()):
+        lines.append(f"! {app}: {len(files)} file(s) differ from when it was copied. Some tools save "
+                     "their settings in their own folder; otherwise the stick may be failing.")
+    if found["menu"]:
+        lines.append(f"✗ {found['menu']}")
+    if found["damaged"] or found["missing"] or found["changed"]:
+        lines.append("  The next update copies those again (an app's saved settings go back to how they came). "
+                     "If this keeps happening, replace the stick.")
+    if not lines:
+        lines.append(f"✓ Everything checks out: {found['images']} boot image(s) and {found['apps']} app(s), "
+                     f"{found['checked']} file(s) read back.")
+    if found["unrecorded"]:
+        lines.append(f"• {len(found['unrecorded'])} app(s) were copied by an older Helix Boot and aren't "
+                     "checked yet; the next update records them.")
+    return "\n".join(lines)
+
+
+def cmd_verify(cfg: Config, args) -> int:
+    mnt = Path(args.target).expanduser().resolve()
+    if not args.json:
+        head(f"Checking {mnt} (reads the whole stick, so this takes a while)")
+    found = check_stick(mnt)
+    if args.json:
+        print(json.dumps(found, indent=2))
+    else:
+        print(check_text(found))
+    return 1 if found["damaged"] or found["missing"] or found["menu"] else 0
 
 
 def _ventoy_from_pack(cfg: Config, pack: str, windows: bool | None = None) -> Path:
@@ -2780,11 +3017,12 @@ def look_changes(mnt: Path, theme=None, icons=None, background=None, splash=None
     return look, pictures
 
 
-def set_look(cfg: Config, mnt: Path, look: dict, pictures: dict[str, Path] | None = None, dim: int = 0) -> bool:
+def set_look(cfg: Config, mnt: Path, look: dict, pictures: dict[str, Path] | None = None, dim: int = 0,
+             force: bool = False) -> bool:
     """Put a look on the stick (False: it already has it). The choice is kept there."""
     pictures = pictures or {}
     state_dir, state = _open_stick(mnt, False, cfg)
-    if look == _look(mnt) and not pictures:
+    if look == _look(mnt) and not pictures and not force:
         return False
     for what, picture in pictures.items():
         _own_picture(picture, mnt / LOOK_DIR / f"{what}.png", dim if what == "background" else 0)
@@ -2797,6 +3035,89 @@ def set_look(cfg: Config, mnt: Path, look: dict, pictures: dict[str, Path] | Non
         (state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     _flush_volume(mnt)
     return True
+
+
+# A saved look: one small zip with the choice and your own pictures and icons, to keep it safe
+# or put it on another stick. Pictures only, checked before anything is written.
+LOOK_SAVE = "helix-look.json"
+LOOK_SAVE_FILES = re.compile(r"(look/(background|splash)|mine/splash|mine/icons/[A-Za-z0-9][A-Za-z0-9._-]{0,80})\.png")
+LOOK_SAVE_MAX = 64 << 20             # a whole saved look; a picture is a few MB
+
+
+def export_look(mnt: Path, out: Path) -> Path:
+    """Save the stick's look to a zip."""
+    if not (mnt / BASE_JSON).is_file():
+        raise RescueError("this stick was filled by an older Helix Boot. Refresh it once with this version first.")
+    files = [p for d in (mnt / LOOK_DIR, mnt / THEME_SRC / "mine") if d.is_dir() for p in sorted(d.rglob("*.png"))]
+    out = out if out.suffix.lower() == ".zip" else out.with_name(out.name + ".zip")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_name(out.name + ".part")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(LOOK_SAVE, json.dumps({"format": 1, "look": _look(mnt), "helix": __version__,
+                                           "saved": dt.date.today().isoformat()}, indent=2) + "\n")
+        for p in files:
+            base = mnt / LOOK_DIR if p.is_relative_to(mnt / LOOK_DIR) else mnt / THEME_SRC
+            arc = ("look/" if base == mnt / LOOK_DIR else "") + p.relative_to(base).as_posix()
+            if LOOK_SAVE_FILES.fullmatch(arc):
+                zf.write(p, arc)
+    os.replace(tmp, out)
+    return out
+
+
+def import_look(cfg: Config, mnt: Path, saved: Path) -> list[str]:
+    """Put a saved look on the stick; return notes on what couldn't be used (a theme this stick lacks)."""
+    if not (mnt / BASE_JSON).is_file():
+        raise RescueError("this stick was filled by an older Helix Boot. Refresh it once with this version first.")
+    try:
+        zf = zipfile.ZipFile(saved)
+    except (OSError, zipfile.BadZipFile):
+        raise RescueError(f"{saved} isn't a saved Helix Boot look") from None
+    with zf:
+        try:
+            meta = json.loads(zf.read(LOOK_SAVE))
+        except (KeyError, ValueError):
+            raise RescueError(f"{saved} isn't a saved Helix Boot look") from None
+        members = [m for m in zf.infolist() if not m.is_dir() and m.filename != LOOK_SAVE]
+        for m in members:
+            if not LOOK_SAVE_FILES.fullmatch(m.filename):
+                raise RescueError(f"{saved} holds something that isn't part of a look: {m.filename!r}")
+        if sum(m.file_size for m in members) > LOOK_SAVE_MAX:
+            raise RescueError(f"{saved} is too big to be a saved look")
+        data = {m.filename: zf.read(m) for m in members}
+    for name, blob in data.items():
+        if not blob.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RescueError(f"{saved}: {name} isn't a PNG picture")
+
+    # The choice, as far as this stick has it: a theme or icon pack it lacks falls back to the default.
+    got = meta.get("look") if isinstance(meta, dict) and isinstance(meta.get("look"), dict) else {}
+    themes, packs = _look_choices(mnt)
+    look, notes = dict(LOOK_DEFAULT), []
+    for key, known in (("theme", set(themes) | {"off"}), ("icons", set(packs))):
+        value = got.get(key)
+        if isinstance(value, str) and value in known:
+            look[key] = _theme_id(themes, value) if key == "theme" else value
+        elif value:
+            notes.append(f"this stick has no {key} {str(value)[:40]!r}: using the default")
+    for key, known in (("background", ("theme", "custom")), ("splash", ("auto", "theme", "custom", "off"))):
+        value = got.get(key)
+        if value in known and (value != "custom" or f"look/{key}.png" in data):
+            look[key] = value
+
+    _open_stick(mnt, False, cfg)
+    for d in (mnt / LOOK_DIR, mnt / THEME_SRC / "mine"):   # the saved look replaces your pictures and icons
+        shutil.rmtree(d, ignore_errors=True)
+    for name, blob in data.items():
+        dst = mnt / (STATE_DIR + "/" + name if name.startswith("look/") else f"{THEME_SRC}/{name}")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(blob)
+    # Keep them on the next update unless that PC has icons or a splash of its own in byo/
+    state_path = mnt / STATE_DIR / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.is_file() else {}
+    state["mine_by"] = {k: "saved look" for k, sub in (("icons", "mine/icons"), ("splash", "mine/splash.png"))
+                        if (mnt / THEME_SRC / sub).exists()}
+    state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    set_look(cfg, mnt, look, force=True)
+    return notes
 
 
 def look_preview(cfg: Config, mnt: Path, look: dict, out: Path, pictures: dict[str, Path] | None = None,
@@ -3016,6 +3337,15 @@ def cmd_theme(cfg: Config, args) -> int:
     background and splash. The choice is kept on the stick, so a refresh doesn't undo it."""
     mnt = Path(args.stick).expanduser().resolve()
     _open_stick(mnt, False, cfg)
+    if getattr(args, "export", None):
+        ok(f"Look saved to {export_look(mnt, Path(args.export).expanduser())}")
+        return 0
+    if getattr(args, "import_", None):
+        for note in import_look(cfg, mnt, Path(args.import_).expanduser()):
+            warn(note)
+        ok(f"Look loaded onto {mnt}")
+        _print_look(mnt, look_report(mnt))
+        return 0
     look, pictures = look_changes(mnt, args.theme, args.icons, args.background, args.splash, args.dim, args.reset)
     if args.menu:
         return _look_menu(cfg, mnt)
@@ -3136,7 +3466,12 @@ def main(argv: list[str] | None = None) -> int:
                    help="also remove tools on the stick that this PC has no copy of (by default they stay)")
     p.set_defaults(fn=cmd_unpack)
 
-    p = sub.add_parser("splash", help="show the splash picture before the Ventoy menu (on its VTOYEFI partition)")
+    p = sub.add_parser("verify", help="read a stick back and find damaged or missing files (no downloads)")
+    p.add_argument("target", help="mount point of the Ventoy data partition")
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.set_defaults(fn=cmd_verify)
+
+    p = sub.add_parser("splash",help="show the splash picture before the Ventoy menu (on its VTOYEFI partition)")
     p.add_argument("efi", help="mount point of the stick's VTOYEFI partition")
     p.add_argument("--remove", action="store_true", help="take the splash out again")
     p.add_argument("--dry-run", action="store_true", help="show what would change")
@@ -3156,6 +3491,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--preview", metavar="FILE",
                    help="don't change the stick: write a picture of how the menu would look")
     p.add_argument("--json", action="store_true", help="print the look and the choices as JSON")
+    p.add_argument("--export", metavar="ZIP", help="save the look (and your own pictures and icons) to a zip")
+    p.add_argument("--import", dest="import_", metavar="ZIP", help="put a saved look on the stick")
     p.set_defaults(fn=cmd_theme)
 
     p = sub.add_parser("setting", help="print one of the [settings], for the scripts (e.g. stick_label)")

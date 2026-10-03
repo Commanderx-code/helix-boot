@@ -40,6 +40,14 @@ same files the stick would get; it is a close sketch, not a boot capture.
 Refresh rewrites the first two and rebuilds the last, so the look survives it.
 Don't edit `ventoy/theme/` by hand: it is rebuilt each time.
 
+`--export ZIP` saves the look to a small zip: `look.json`, your pictures from
+`look/`, and your icons and splash from `mine/`. **Save look…** in the Look
+window does the same. `--import ZIP` (or **Load look…**) puts it back, on the
+same stick or another, after checking that the zip holds only those pictures.
+A theme or icon pack that the stick doesn't have falls back to the default.
+The loaded icons and splash are marked as the stick's own, so an update keeps
+them unless the updating PC has its own in `byo/`.
+
 Icons are layered, later ones winning: the theme's, the preset's if it brings
 any, yours from `byo/icons/`, then the icon pack you picked. The splash is yours (`--splash PICTURE`, else
 `byo/splash.png`) or else the theme's; `--splash theme` uses the theme's even

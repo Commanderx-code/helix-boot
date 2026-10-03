@@ -387,6 +387,18 @@ def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda
     return letter
 
 
+def check(target: str, progress=lambda pct: None) -> str:
+    """Read a stick back and compare it with what was put on it. Needs no downloads.
+    Returns what it found; raises RescueError when something is damaged or missing."""
+    print(f"\nChecking {target} (reads the whole stick, so this takes a while) …")
+    found = cr.check_stick(Path(target), hook=progress)
+    text = cr.check_text(found)
+    print(text)
+    if found["damaged"] or found["missing"] or found["menu"]:
+        raise RescueError(text)
+    return text
+
+
 # ── Output plumbing ────────────────────────────────────────────────────────
 class Tee:
     """Stand-in for stdout/stderr: to the GUI queue and/or a log file."""
@@ -447,7 +459,10 @@ def gui(selftest: bool = False) -> int:
     frm.pack(fill="both", expand=True)
     ttk.Label(frm, text="Helix Boot", style="Title.TLabel").pack(anchor="w")
     ttk.Label(frm, text="Pick a USB stick, then Install (erases it) or Update (keeps your files).",
-              foreground="#555").pack(anchor="w", pady=(0, 10))
+              foreground="#555").pack(anchor="w")
+    news = ttk.Label(frm, text="Looking for newer versions of the tools…", foreground="#1f5f99",
+                     wraplength=820, justify="left")
+    news.pack(anchor="w", pady=(2, 10))
 
     # Where the tools come from: the internet, or a pack (picked up beside the app if there is one)
     src = ttk.Frame(frm)
@@ -508,9 +523,10 @@ def gui(selftest: bool = False) -> int:
     b_refresh = ttk.Button(btns, text="Refresh list")
     b_folder = ttk.Button(btns, text="My tools folder (byo)")
     b_look = ttk.Button(btns, text="Look…")
+    b_check = ttk.Button(btns, text="Check stick")
     b_install = ttk.Button(btns, text="Install  (erases the stick)", style="Accent.TButton")
     b_update = ttk.Button(btns, text="Update stick")
-    for b in (b_refresh, b_folder, b_look):
+    for b in (b_refresh, b_folder, b_look, b_check):
         b.pack(side="left", padx=(0, 6))
     show_pack()
     for b in (b_update, b_install):
@@ -551,10 +567,11 @@ def gui(selftest: bool = False) -> int:
 
     def set_busy(on):
         busy["on"] = on
-        for b in (b_refresh, b_install, b_update, b_pack, b_look):
+        for b in (b_refresh, b_install, b_update, b_pack, b_look, b_check):
             b.state(["disabled"] if on else ["!disabled"])
 
-    def work(fn, *a, **kw):
+    def work(fn, *a, done=lambda letter: f"✓ Done. The stick is {letter} — safe to remove once Windows says so.",
+             **kw):
         set_busy(True)
         bar.config(mode="indeterminate")
         bar.start(12)
@@ -564,8 +581,7 @@ def gui(selftest: bool = False) -> int:
 
         def job():
             try:
-                letter = fn(*a, progress=progress, **kw)
-                q.put(("done", f"✓ Done. The stick is {letter} — safe to remove once Windows says so."))
+                q.put(("done", done(fn(*a, progress=progress, **kw))))
             except Exception as e:  # noqa: BLE001
                 q.put(("fail", str(e)))
 
@@ -622,6 +638,26 @@ def gui(selftest: bool = False) -> int:
         except Exception as e:  # noqa: BLE001: a button that does nothing is worse than a message
             messagebox.showerror(APP, f"Couldn't open the Look window: {e}")
 
+    def look_for_updates(refresh=False):
+        """In the background: which tools have newer versions than this PC has (at most one
+        look upstream every 6 hours; the rest of the time, from the last look)."""
+        def job():
+            try:
+                q.put(("news", cr.updates_text(cr.tool_updates(config(), refresh=refresh))))
+            except Exception as e:  # noqa: BLE001 — offline, or GitHub said no; only a notice
+                q.put(("news", f"Couldn't look for newer versions of the tools ({e})."))
+        threading.Thread(target=job, daemon=True).start()
+
+    def do_check():
+        d = selected()
+        if not d:
+            return
+        if not d.get("Ventoy"):
+            messagebox.showinfo(APP, "That disk has no Helix Boot stick on it yet, or Windows gave it no drive "
+                                     "letter, so there's nothing to check.")
+            return
+        work(check, f"{d['Ventoy']}:\\", done=lambda text: text)
+
     def open_folder():
         path = user_dir() / "byo"
         path.mkdir(exist_ok=True)
@@ -640,6 +676,8 @@ def gui(selftest: bool = False) -> int:
                     last = item.strip().splitlines()[-1:] if item.strip() else []
                     if last:
                         status.config(text=last[0][:110])
+                elif item[0] == "news":
+                    news.config(text=item[1])
                 elif item[0] == "pct":
                     bar.stop()
                     bar.config(mode="determinate", value=item[1])
@@ -658,6 +696,7 @@ def gui(selftest: bool = False) -> int:
                     status.config(text=item[1].splitlines()[0][:110])
                     set_busy(False)
                     refresh()
+                    look_for_updates()      # what was just fetched counts now (no new look upstream)
                     (messagebox.showinfo if item[0] == "done" else messagebox.showerror)(APP, item[1])
         except queue.Empty:
             pass
@@ -666,6 +705,7 @@ def gui(selftest: bool = False) -> int:
     b_refresh.config(command=refresh)
     b_folder.config(command=open_folder)
     b_look.config(command=do_look)
+    b_check.config(command=do_check)
     b_install.config(command=do_install)
     b_update.config(command=do_update)
     b_pack.config(command=choose_pack)
@@ -675,6 +715,8 @@ def gui(selftest: bool = False) -> int:
     root.after(100, pump)
     if selftest:
         root.after(2500, root.destroy)
+    else:
+        root.after(300, look_for_updates)
     root.mainloop()
     return 0
 
@@ -767,6 +809,10 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     btns.grid(row=7, column=0, columnspan=4, sticky="ew")
     b_reset = ttk.Button(btns, text="Default look")
     b_reset.pack(side="left")
+    b_save = ttk.Button(btns, text="Save look…")
+    b_save.pack(side="left", padx=(6, 0))
+    b_load = ttk.Button(btns, text="Load look…")
+    b_load.pack(side="left", padx=(6, 0))
     b_close = ttk.Button(btns, text="Close", command=win.destroy)
     b_close.pack(side="right")
     b_apply = ttk.Button(btns, text="Apply to the stick")
@@ -890,10 +936,51 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
 
         threading.Thread(target=work, daemon=True).start()
 
+    def save():
+        f = filedialog.asksaveasfilename(parent=win, title="Save this stick's look", initialfile="helix-look.zip",
+                                         defaultextension=".zip", filetypes=[("Saved look", "*.zip")])
+        if not f:
+            return
+        try:
+            status.config(text=f"Saved to {cr.export_look(mnt, Path(f))}. (What's on the stick, not what's unapplied.)")
+        except (cr.RescueError, OSError) as e:
+            status.config(text=f"✗ {e}")
+
+    def load():
+        f = filedialog.askopenfilename(parent=win, title="Load a saved look onto the stick",
+                                       filetypes=[("Saved look", "*.zip"), ("All files", "*.*")])
+        if not f:
+            return
+        for b in (b_apply, b_reset, b_load):
+            b.state(["disabled"])
+        status.config(text="Loading the look onto the stick…")
+
+        def work():
+            try:
+                notes = cr.import_look(cfg, mnt, Path(f))
+                q.put(("loaded", " ".join(["The saved look is on the stick.", *[n[0].upper() + n[1:] + "." for n in notes]])))
+            except Exception as e:  # noqa: BLE001
+                q.put(("failed", str(e)))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def show_loaded():
+        """The controls, set to what's on the stick now."""
+        got = cr.look_report(mnt)
+        theme.set(next((k for k, t in themes.items() if t["id"] == got["look"]["theme"]), theme.get()))
+        icons.set(next((k for k, p in packs.items() if p["id"] == got["look"]["icons"]), icons.get()))
+        background.set(got["look"]["background"])
+        splash.set(next(k for k, v in splashes.items() if v == got["look"]["splash"]))
+        on_stick.update(got["custom"])
+        chosen.clear()
+        refresh()
+
     def pump():
         try:
             while True:
                 kind, text = q.get_nowait()
+                if kind == "loaded":
+                    show_loaded()
                 if kind == "preview":
                     shown["image"] = tk.PhotoImage(master=win, file=text)   # kept: Tk drops unreferenced images
                     preview.config(image=shown["image"], text="")
@@ -906,8 +993,8 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
                             chosen.pop(what, None)
                         sent.clear()
                         refresh()
-                    status.config(text=text if kind == "applied" else f"✗ {text}")
-                    for b in (b_apply, b_reset):
+                    status.config(text=f"✗ {text}" if kind == "failed" else text)
+                    for b in (b_apply, b_reset, b_load):
                         b.state(["!disabled"])
         except queue.Empty:
             pass
@@ -916,6 +1003,8 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     b_bg.config(command=lambda: choose("background"))
     b_sp.config(command=lambda: choose("splash"))
     b_reset.config(command=reset)
+    b_save.config(command=save)
+    b_load.config(command=load)
     b_apply.config(command=apply)
     scale.config(command=refresh)
     c_theme.bind("<<ComboboxSelected>>", refresh)
@@ -954,7 +1043,11 @@ def cli(argv: list[str]) -> int:
     ap.add_argument("--splash", metavar="PICTURE", help="with --look: your own splash; theme, auto, or off")
     ap.add_argument("--reset-look", action="store_true", help="with --look: back to the default look")
     ap.add_argument("--preview", metavar="FILE", help="with --look: only write a picture of how it would look")
+    ap.add_argument("--export-look", metavar="ZIP", help="with --look: save the stick's look to a zip")
+    ap.add_argument("--import-look", metavar="ZIP", help="with --look: put a saved look on the stick")
     ap.add_argument("--selftest-look", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--check", metavar="DRIVE", help="read a stick back and find damaged or missing files")
+    ap.add_argument("--updates", action="store_true", help="say which tools have newer versions than this PC has")
     ap.add_argument("--yes", action="store_true", help="confirm --install")
     ap.add_argument("--mbr", action="store_true", help="MBR instead of GPT")
     ap.add_argument("--no-secure-boot", action="store_true")
@@ -970,13 +1063,20 @@ def cli(argv: list[str]) -> int:
         if a.selftest_gui:
             return gui(selftest=True)
         if a.look:
-            asked = a.theme or a.icons or a.background or a.splash or a.reset_look or a.preview
+            asked = a.theme or a.icons or a.background or a.splash or a.reset_look or a.preview \
+                or a.export_look or a.import_look
             if not asked:
                 look_window(Path(a.look), selftest=a.selftest_look)
                 return 0
             return cr.cmd_theme(config(), ns(stick=a.look, theme=a.theme, icons=a.icons, background=a.background,
                                              dim=a.dim, splash=a.splash, reset=a.reset_look, preview=a.preview,
-                                             menu=False, json=False))
+                                             menu=False, json=False, export=a.export_look, import_=a.import_look))
+        if a.check:
+            check(a.check)
+            return 0
+        if a.updates:
+            print(cr.updates_text(cr.tool_updates(config(), refresh=True)))
+            return 0
         if a.list:
             disks = all_disks() if a.all else usb_disks()
             print(json.dumps(disks, indent=2))

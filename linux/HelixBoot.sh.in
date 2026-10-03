@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Helix Boot for Linux: the whole installer in one file, like HelixBoot.exe on Windows.
 #
-#   ./HelixBoot.sh                  menu: install on a new stick, update a stick, change its look
+#   ./HelixBoot.sh                  menu: install on a new stick, update a stick, change its look, check it
 #   ./HelixBoot.sh install [...]    the installer (./HelixBoot.sh install --help for its options)
 #   ./HelixBoot.sh refresh [...]    the refresher (./HelixBoot.sh refresh --help)
 #   ./HelixBoot.sh theme [...]      a stick's look: theme, icons, background, splash (theme --help)
+#   ./HelixBoot.sh check [...]      read a stick back and find damaged or missing files (check --help)
 #   ./HelixBoot.sh helix [...]      the helix engine: list, check, fetch, pack, ...
 #   ./HelixBoot.sh --version
 #
@@ -80,6 +81,7 @@ case ${1:-} in
   -h | --help) sed -n '2,16s/^# \{0,1\}//p' "$self"; exit 0 ;;
   install | refresh) cmd=$1; shift; run "$cmd" "$@" ;;
   theme) shift; exec "$app/theme.sh" "$@" ;;
+  check) shift; exec "$app/check.sh" "$@" ;;
   helix) shift; exec "$HELIX" "$@" ;;
   '') ;;
   *) die "unknown command: $1 (try --help)" ;;
@@ -93,6 +95,7 @@ printf '  %s1)%s Install on a new USB stick   %s(erases the stick)%s\n' "$B" "$X
 printf '  %s2)%s Update a Helix Boot stick    %s(keeps your files)%s\n' "$B" "$X" "$D" "$X"
 printf '  %s3)%s Change a stick'"'"'s look       %s(theme, icons, background, splash)%s\n' "$B" "$X" "$D" "$X"
 printf '  %s4)%s Check for tool updates       %s(no downloads)%s\n' "$B" "$X" "$D" "$X"
+printf '  %s5)%s Check a stick for damage     %s(reads it all back)%s\n' "$B" "$X" "$D" "$X"
 printf '  %sq)%s Quit\n\n' "$B" "$X"
 read -rp "  Choose: " pick
 case $pick in
@@ -100,6 +103,7 @@ case $pick in
   2) run refresh ;;
   3) exec "$app/theme.sh" --menu ;;
   4) exec "$HELIX" check ;;
+  5) exec "$app/check.sh" ;;
   *) exit 0 ;;
 esac
 exit 0

@@ -8,6 +8,8 @@
 #   ./theme.sh --background pic.jpg --dim 40     your own picture behind the menu, darkened
 #   ./theme.sh --splash pic.png        your own picture before the menu (`off`: none)
 #   ./theme.sh --reset                 back to the default look
+#   ./theme.sh --export my-look.zip    save the look, with your own pictures and icons
+#   ./theme.sh --import my-look.zip    put a saved look on this stick (or another)
 set -Eeuo pipefail
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/common.sh
@@ -31,6 +33,8 @@ Options:
   --reset               back to the default look
   --menu                choose from numbered lists instead, with a preview
   --preview FILE        don't change the stick: write a picture of how the menu would look
+  --export ZIP          save the look, with your own pictures and icons, to a zip
+  --import ZIP          put a saved look on the stick
   --stick WHERE         the stick's partition or mount point, if more than one is plugged in
   --eject               unmount when finished
   -h, --help            this help
@@ -40,7 +44,7 @@ EOF
 eject=0 target='' args=()
 while (($#)); do
   case $1 in
-    --theme|--icons|--background|--dim|--splash|--preview) args+=("$1" "${2:?$1 needs a value}"); shift ;;
+    --theme|--icons|--background|--dim|--splash|--preview|--export|--import) args+=("$1" "${2:?$1 needs a value}"); shift ;;
     --reset|--json|--menu) args+=("$1") ;;
     --stick) target=${2:?--stick needs a partition or mount point}; shift ;;
     --eject) eject=1 ;;

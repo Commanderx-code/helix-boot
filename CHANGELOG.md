@@ -6,6 +6,27 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **Checking a stick:** `./check.sh`, `helix verify`, and **Check stick** in the
+  Windows app (also in `HelixBoot.sh`'s menu). They read every boot image and
+  app back off the stick and compare them with the checksums recorded when they
+  were copied, to find a stick that's going bad. No downloads are needed. A
+  damaged image is copied again by the next update, even a quick one. Apps are
+  now recorded in `.helix-boot/hashes.json`, from the download or the pack.
+- **Saved looks:** `theme.sh --export` / `--import`, and **Save look…** /
+  **Load look…** in the Look window. They save a stick's look, with your own
+  pictures and icons, to a small zip and put it back on any stick.
+- The Windows app says, under its title, which tools have newer versions than
+  this PC has. It looks upstream at most every 6 hours, to stay inside GitHub's
+  limit for PCs that aren't signed in. `HelixBoot.exe --updates` prints the same.
+- Releases carry a `SHA256SUMS` file and a GitHub build attestation for
+  `HelixBoot.exe` and `HelixBoot.sh`
+  (`gh attestation verify HelixBoot.exe --repo Commanderx-code/helix-boot`).
+
+### Fixed
+- A stick filled from a pack didn't record its boot images' checksums, so a
+  later quick update from Linux trusted their size alone.
+
 ## [0.6.5] - 2026-10-02
 
 ### Fixed
