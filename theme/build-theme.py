@@ -12,7 +12,6 @@ Tools you add in local.toml get their letter badges (into byo/icons/) with:
     theme/build-theme.py --local
 """
 import argparse
-import json
 import math
 import random
 import shutil
@@ -28,7 +27,6 @@ W, H = 1920, 1080
 
 # Helix Neon palette (keep theme.txt and helix's menu_tip colour in step).
 ARTWORK = HERE.parent / "docs/artwork/helix-purple-source.png"
-TOOL_ICON_DIR = HERE.parent / "docs/artwork/tool-icons"       # the classic set: the tools' own logos
 ICON_DIR = HERE.parent / "docs/artwork/helix-icons"            # the default set: <menu class>.png masters
 PANEL = (9, 5, 20, 228)
 BORDER = (152, 76, 230, 255)
@@ -408,39 +406,13 @@ def local_badges() -> None:
     print(f"badges written to {out}: {', '.join(made)}" if made else "every local tool already has an icon")
 
 
-def tool_icon(t: dict, sources: dict, out: Path | None = None) -> bool:
-    """Fit a curated upstream icon without tinting or distorting its proportions.
-
-    Return False only for a declared fallback or a tool without curated artwork.
-    Missing/corrupt registered assets are errors, not silently replaced badges.
-    """
-    entry = sources.get(t["name"], {})
-    if not entry.get("file"):
-        return False
-    with Image.open(TOOL_ICON_DIR / entry["file"]) as source:
-        icon = source.convert("RGBA")
-        bounds = icon.getchannel("A").getbbox()
-        if bounds is None:
-            raise ValueError(f"empty tool icon: {t['name']}")
-        icon = ImageOps.contain(icon.crop(bounds), (ICON - 4, ICON - 4), Image.Resampling.LANCZOS)
-    canvas = Image.new("RGBA", (ICON, ICON))
-    if entry.get("backplate"):
-        ImageDraw.Draw(canvas).rounded_rectangle((1, 1, ICON - 2, ICON - 2), radius=6,
-                                                fill=entry["backplate"])
-    canvas.alpha_composite(icon, ((ICON - icon.width) // 2, (ICON - icon.height) // 2))
-    dest = out or out_dir() / "icons"
-    dest.mkdir(parents=True, exist_ok=True)
-    canvas.save(dest / f"{t['name']}.png", optimize=True)
-    return True
-
-
 def icons() -> None:
     """theme/icons/: the default set, from the masters in docs/artwork/helix-icons/ (one per
-    menu class: a tool's name, cat-<category id>, Ventoy's own). A boot tool without a master
-    there keeps its classic icon: its own logo, or a letter badge."""
+    menu class: a tool's name, cat-<category id>, Ventoy's own). Anything without a master
+    there gets a plain fallback: a letter badge, or a flat icon drawn here."""
     out = out_dir() / "icons"
     shutil.rmtree(out, ignore_errors=True)
-    classic_icons(out)
+    fallback_icons(out)
     for src in sorted(ICON_DIR.glob("*.png")):
         with Image.open(src) as master:
             icon = master.convert("RGBA")
@@ -450,12 +422,10 @@ def icons() -> None:
         canvas.save(out / src.name, optimize=True)
 
 
-def classic_icons(out: Path) -> None:
-    """The classic set, in `out`: the tools' own logos in their original colours (the masters
-    and their sources are in docs/artwork/tool-icons/), flat category icons drawn here, letter
-    badges for the rest."""
+def fallback_icons(out: Path) -> None:
+    """Plain icons for whatever has no master, in `out`: a flat icon per category, a letter badge
+    per boot tool, and Ventoy's own classes."""
     manifest = tomllib.loads((HERE.parent / "tools.toml").read_text(encoding="utf-8"))
-    sources = json.loads((TOOL_ICON_DIR / "sources.json").read_text(encoding="utf-8"))
     white = (255, 255, 255, 255)
     for cid in CATEGORIES:
         pen = Pen()
@@ -464,8 +434,7 @@ def classic_icons(out: Path) -> None:
 
     for t in manifest.get("tool", []):
         if t.get("kind") == "iso":
-            if not tool_icon(t, sources, out):
-                badge(t, out)
+            badge(t, out)
 
     # Ventoy's own classes: folders, the "go back" entry and files without an icon of their own
     pen = Pen()
@@ -570,12 +539,6 @@ def icon_packs() -> None:
             badge(t, out, col=(186, 171, 211))       # neutral, so it suits every preset
     (out / "pack.toml").write_text('title = "Letter badges"\n'
                                    'description = "Two-letter badges in place of the tools\' logos."\n',
-                                   encoding="utf-8")
-    out = HERE / "icon-packs" / "classic"
-    shutil.rmtree(out, ignore_errors=True)
-    classic_icons(out)
-    (out / "pack.toml").write_text('title = "Classic"\n'
-                                   'description = "The tools\' own logos in their original colours, with flat category icons."\n',
                                    encoding="utf-8")
 
 

@@ -6,6 +6,17 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Changed
+- The HELIXBOOT icon collection is the one icon set. Every master in
+  `docs/artwork/helix-icons/` is rebuilt from it, Super GRUB2 Disk has the
+  collection's icon, and the rest of the collection (51 icons for tools that
+  aren't shipped, and spare variants) is in `docs/artwork/helix-icons/more/`.
+
+### Removed
+- The `classic` icon pack and its source artwork (`docs/artwork/tool-icons/`).
+  A stick whose look asked for it shows the default icons after its next
+  refresh. A tool without an icon gets a letter badge.
+
 ## [0.6.6] - 2026-10-02
 
 ### Added

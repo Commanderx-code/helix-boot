@@ -230,7 +230,7 @@ description = "RAM tester (UEFI and BIOS)."
 # ── Secure wipe ───────────────────────────────────────────────────────────
 [[tool]]
 name = "shredos"
-title = "ShredOS (nwipe)"
+title = "ShredOS"
 kind = "iso"
 category = "wipe"
 source = "github"
@@ -383,7 +383,7 @@ description = "Paragon's WinPE recovery media."
 name = "parted-magic"
 title = "Parted Magic"
 kind = "iso"
-category = "partitioning"
+category = "wipe"
 source = "local"
 byo = true
 path = "byo/parted-magic.iso"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Draw the Lazarus PE icon of the default set: the project's phoenix on a dark glass globe in a
 steel ring, to sit with the rest of the glossy set. Writes lazarus-pe.png (128 px) beside this
-file, from the classic phoenix in docs/artwork/tool-icons/. Needs Pillow.
+file, from the phoenix in src/lazarus-phoenix.png. Needs Pillow.
 
     docs/artwork/helix-icons/make-lazarus-pe.py
 """
@@ -52,7 +52,7 @@ def make(src, out):
 if __name__ == "__main__":
     here = Path(__file__).resolve().parent
     full = here / "lazarus-pe.full.png"
-    make(here.parent / "tool-icons/lazarus-pe.png", full)
+    make(here / "src/lazarus-phoenix.png", full)
     with Image.open(full) as im:
         im = im.convert("RGBA")
         im = ImageOps.contain(im.crop(im.getchannel("A").point(lambda v: 255 if v > 24 else 0).getbbox()), (128, 128), Image.LANCZOS)

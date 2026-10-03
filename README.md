@@ -494,7 +494,6 @@ takes the place of Ventoy's own white look, which `theme = ""` under
 | `auto` | the theme's own style: the icons in colour, or grey on Standby and Poly dark (the default) |
 | `logos` | the default icons in colour, and yours from `byo/icons/` |
 | `grey` | the same icons in shades of grey; a flat one-colour icon turns white |
-| `classic` | the set before 0.6.3: each tool's own logo in its original colours, flat category icons |
 | `badges` | two-letter badges in place of the tools' icons |
 | `off` | no icons, just the names |
 
@@ -535,10 +534,9 @@ entries are painted into the wallpaper. Lazarus PE keeps its separate green
 PortableApps theme.
 
 Every tool, category and Ventoy entry has an icon from one glossy set, the
-HELIXBOOT icon collection, the same on every theme. The set before it (each
-tool's own logo in its original colours, with flat category icons) is still
-there as the `classic` icon pack. The [icon notes](docs/tool-icons.md) show
-both and say where each comes from.
+HELIXBOOT icon collection, the same on every theme. The
+[icon notes](docs/tool-icons.md) show the set and say how to change an icon or
+use one of the collection's extras.
 
 ![Helix Neon layout preview](docs/artwork/helix-neon-preview.jpg)
 
@@ -610,7 +608,7 @@ privately as described in [SECURITY.md](SECURITY.md).
 Built on [Ventoy](https://www.ventoy.net),
 [PhoenixPE](https://github.com/PhoenixPE/PhoenixPE) and the
 [PortableApps.com Platform](https://portableapps.com), with thanks to every tool
-author listed in [`tools.toml`](tools.toml). The classic icon pack's category
+author listed in [`tools.toml`](tools.toml). The plain fallback category
 icons are from [Material Design Icons](https://pictogrammers.com/library/mdi/).
 Inspired by MediCat USB.
 
