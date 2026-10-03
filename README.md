@@ -80,7 +80,10 @@ records that the files were built from this repository by its own workflow.
 To check, run `sha256sum -c SHA256SUMS` (on Windows,
 `Get-FileHash HelixBoot.exe` and compare). With the GitHub CLI you can also run
 `gh attestation verify HelixBoot.exe --repo Commanderx-code/helix-boot`.
-Windows SmartScreen may still warn, because the `.exe` isn't code-signed.
+Windows SmartScreen may still warn, because the `.exe` isn't code-signed yet.
+The [code signing policy](docs/code-signing.md) says how signed releases are
+made, and has the privacy policy: what the app contacts, and what it changes
+on your PC.
 
 **From a stick.** Every Helix Boot stick carries both apps in its `HelixBoot`
 folder, so a stick can be updated, or its look changed, from any PC: run
@@ -282,7 +285,9 @@ to the disk.
 
 Under the title the app says whether newer versions of your tools are out. It
 looks at most every 6 hours, because GitHub limits how often a PC that isn't
-signed in may ask.
+signed in may ask. `check_for_updates = false` under `[settings]` in
+`local.toml` turns that off; the [privacy policy](docs/code-signing.md#privacy-policy)
+lists everything the app contacts.
 
 A stick is recognised whatever you have named its main partition: it is known
 by Ventoy's own small `VTOYEFI` partition.

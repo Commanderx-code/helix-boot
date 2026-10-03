@@ -36,6 +36,15 @@ jobs:
           pip install --disable-pip-version-check pyinstaller pillow certifi
           pyinstaller --noconfirm windows/HelixBoot.spec
 
+      - name: The .exe says what it is (Properties > Details)
+        shell: pwsh
+        run: |
+          $info = (Get-Item dist\HelixBoot.exe).VersionInfo
+          $want = (Select-String -Path helix -Pattern '^__version__ = "([\d.]+)"').Matches[0].Groups[1].Value
+          $info | Format-List ProductName, ProductVersion, FileVersion, CompanyName, OriginalFilename
+          if ($info.ProductName -ne "Helix Boot") { throw "no product name in the .exe" }
+          if ($info.ProductVersion -ne $want) { throw "the .exe says version $($info.ProductVersion), helix says $want" }
+
       - name: Smoke test the real .exe
         shell: pwsh
         env:

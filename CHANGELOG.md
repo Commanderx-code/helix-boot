@@ -6,6 +6,13 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- `HelixBoot.exe` carries its product name and version (Properties > Details).
+- `check_for_updates = false` under `[settings]` in `local.toml` stops the
+  Windows app looking for newer versions of the tools when it starts.
+- A [code signing policy](docs/code-signing.md), with a privacy policy: what
+  the app contacts, what it changes on your PC, and how to remove it.
+
 ## [0.6.7] - 2026-10-03
 
 ### Changed
