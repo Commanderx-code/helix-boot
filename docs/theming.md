@@ -138,4 +138,9 @@ or hotkey, the left side kept dark and calm for the live menu and the bottom
 dark for status. `build-theme.py` adds the wordmark and tagline, so they are
 exact and reproducible.
 
+`docs/artwork/helix-splash.png` is the default theme's splash: the HB logo and
+HELIXBOOT wordmark over a night landscape, supplied by the project's
+maintainer and used as it is. The presets' splashes are still drawn by
+`build-theme.py`, each in its own colours.
+
 Layout properties follow the [GNU GRUB theme format](https://www.gnu.org/software/grub/manual/grub/html_node/Theme-file-format.html).

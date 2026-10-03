@@ -27,6 +27,7 @@ W, H = 1920, 1080
 
 # Helix Neon palette (keep theme.txt and helix's menu_tip colour in step).
 ARTWORK = HERE.parent / "docs/artwork/helix-purple-source.png"
+SPLASH_ART = HERE.parent / "docs/artwork/helix-splash.png"     # the default theme's splash, as it is
 ICON_DIR = HERE.parent / "docs/artwork/helix-icons"            # the default set: <menu class>.png masters
 PANEL = (9, 5, 20, 228)
 BORDER = (152, 76, 230, 255)
@@ -209,7 +210,13 @@ def background() -> None:
 
 def splash() -> None:
     """The picture Ventoy shows for a moment before its menu (splash.png): the same artwork,
-    dimmed, with the DNA mark, wordmark and tagline centred. byo/splash.png replaces it."""
+    dimmed, with the DNA mark, wordmark and tagline centred. The default theme's is a finished
+    picture instead (SPLASH_ART); the presets' are drawn, in their colours. byo/splash.png
+    replaces either."""
+    if OUT is None and SPLASH_ART.is_file():
+        with Image.open(SPLASH_ART) as art:
+            ImageOps.fit(art.convert("RGB"), (W, H), method=Image.LANCZOS).save(out_dir() / "splash.png", optimize=True)
+        return
     img = Image.blend(artwork(helix=False), Image.new("RGB", (W, H), DIM), 0.45).convert("RGBA")
     cx, top = W // 2, 300
     mark = Image.new("RGBA", (W, H))

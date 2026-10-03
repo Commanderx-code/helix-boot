@@ -14,6 +14,9 @@ tagged releases also publish the Windows app.
 - Windows 10 Recovery and Windows 11 Recovery, two tools people add themselves,
   have the collection's recovery icon in the default set.
 
+- The default theme has a new splash: the HB logo and wordmark over a night
+  landscape (`docs/artwork/helix-splash.png`). The presets keep theirs.
+
 ### Removed
 - The `classic` icon pack and its source artwork (`docs/artwork/tool-icons/`).
   A stick whose look asked for it shows the default icons after its next
