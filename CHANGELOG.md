@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.8] - 2026-10-03
+
 ### Added
 - The boot menu's hotkeys are a row of icons, each with its key above it
   (a folder for F2 Browse, a hard disk for F4 Local boot, …), in place of
@@ -475,7 +477,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.7...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.8...HEAD
+[0.6.8]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.4...v0.6.5

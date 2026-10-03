@@ -606,6 +606,8 @@ ventoy/theme/       the look in use, built from .helix-boot (rebuilt on every re
 - [x] Checking a stick for damage, saved looks, newer-version notices in the app,
       and checksums and build attestations on every release (0.6.6)
 - [x] One icon set from the HELIXBOOT collection, and a new default splash (0.6.7)
+- [x] A row of icons for the menu's hotkeys, with a power menu on L and Memtest86+ on F1;
+      the Windows app adds the splash and those keys too (0.6.8)
 
 ## Contributing
 
