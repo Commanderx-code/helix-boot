@@ -429,6 +429,82 @@ def icons() -> None:
         canvas.save(out / src.name, optimize=True)
 
 
+KEYS = [  # the hotkey bar at the bottom of the menu: (file, key, word, master in helix-icons/ or None to draw it)
+    ("lang", "L", "Language", None),
+    ("help", "F1", "Help", None),
+    ("browse", "F2", "Browse", "vtoydir.png"),
+    ("tree", "F3", "Tree", None),
+    ("local", "F4", "Local", "more/hdd.png"),
+    ("tools", "F5", "Tools", "more/ventoy.png"),
+    ("menu", "F6", "Menu", "more/boot.png"),
+]
+KEY_ICON = 32
+
+
+def key_icons() -> None:
+    """theme/key_<name>.png: the icons of the hotkey bar. Those the collection has are fitted from
+    their masters; Language, Help and Tree view are drawn here to sit with them: a white sign on a
+    glossy blue disc in a steel ring."""
+    n = 256
+
+    def disc() -> Image.Image:
+        img = Image.new("RGBA", (n, n))
+        d = ImageDraw.Draw(img)
+        for i in range(n // 2):                                  # the ring: steel, lit from above
+            t = i / (n / 2)
+            d.ellipse((i * .08, i * .08, n - 1 - i * .08, n - 1 - i * .08),
+                      fill=tuple(round(a + (b - a) * t) for a, b in zip((120, 130, 146), (236, 240, 247))) + (255,))
+        blue = Image.new("RGBA", (n, n))
+        bd = ImageDraw.Draw(blue)
+        for i in range(60):                                      # the disc: deep blue, lighter towards the top
+            t = i / 59
+            col = tuple(round(a + (b - a) * t) for a, b in zip((8, 52, 150), (40, 150, 245)))
+            bd.ellipse((24 + i * .6, 24 + i * 1.5 - 30 * t, n - 25 - i * .6, n - 25 - i * .4), fill=col + (255,))
+        mask = Image.new("L", (n, n), 0)
+        ImageDraw.Draw(mask).ellipse((24, 24, n - 25, n - 25), fill=255)
+        img.paste(blue, (0, 0), mask)
+        return img
+
+    def gloss(img: Image.Image) -> Image.Image:
+        shine = Image.new("RGBA", (n, n))
+        ImageDraw.Draw(shine).ellipse((48, 30, n - 49, 132), fill=(255, 255, 255, 54))
+        mask = Image.new("L", (n, n), 0)
+        ImageDraw.Draw(mask).ellipse((24, 24, n - 25, n - 25), fill=255)
+        img.paste(Image.alpha_composite(img, shine), (0, 0), mask)
+        return img
+
+    white = (255, 255, 255, 255)
+    for name, _, _, master in KEYS:
+        if master:
+            with Image.open(ICON_DIR / master) as m:
+                img = m.convert("RGBA")
+            img = img.crop(img.getchannel("A").getbbox())
+        else:
+            img = disc()
+            d = ImageDraw.Draw(img)
+            if name == "lang":                                   # a globe
+                d.ellipse((62, 62, 193, 193), outline=white, width=11)
+                d.ellipse((98, 62, 157, 193), outline=white, width=9)
+                d.line((66, 128, 190, 128), fill=white, width=9)
+                d.arc((70, 28, 185, 110), 25, 155, fill=white, width=8)
+                d.arc((70, 146, 185, 228), 205, 335, fill=white, width=8)
+            elif name == "help":
+                font = ImageFont.truetype(str(ttf("DejaVuSans-Bold.ttf")), 150)
+                d.text((n / 2, n / 2 + 4), "?", font=font, fill=white, anchor="mm")
+            else:                                                # tree view: a folder's lines, the lower ones indented
+                for k, (x, w) in enumerate(((66, 124), (96, 94), (96, 94))):
+                    y = 82 + k * 44
+                    d.rounded_rectangle((x, y, x + w, y + 20), radius=8, fill=white)
+                d.line((76, 102, 76, 180), fill=white, width=9)
+                d.line((76, 136, 96, 136), fill=white, width=9)
+                d.line((76, 180, 96, 180), fill=white, width=9)
+            img = gloss(img)
+        img = ImageOps.contain(img, (KEY_ICON, KEY_ICON), Image.Resampling.LANCZOS)
+        canvas = Image.new("RGBA", (KEY_ICON, KEY_ICON))
+        canvas.alpha_composite(img, ((KEY_ICON - img.width) // 2, (KEY_ICON - img.height) // 2))
+        canvas.save(HERE / f"key_{name}.png", optimize=True)
+
+
 def fallback_icons(out: Path) -> None:
     """Plain icons for whatever has no master, in `out`: a flat icon per category, a letter badge
     per boot tool, and Ventoy's own classes."""
@@ -472,6 +548,8 @@ def themed() -> None:
     nine_slice("scrollbar", SCROLL, size=2)
     slider()
     icons()
+    if OUT is None:             # the same on every preset, which is laid over the theme
+        key_icons()
     (out_dir() / "preset.toml").write_text(
         f'title = "{TITLE}"\ndescription = "{DESCRIPTION}"\n'
         f'muted = "{hexc(MUTED)}"                 # ventoy.json: the tip line and Ventoy\'s version text\n'

@@ -50,13 +50,64 @@ terminal-box: "terminal_box_*.png"
   highlight_style = "*"
 }
 
-# Hotkeys (F1 help, F2 browse, F3 tree view, …)
+# Hotkeys: an icon, the key and a word for each (Ventoy's own line of them is @VTOY_HOTKEY_TIP@).
+# The icons are key_*.png, made by build-theme.py. Each slot is as wide as its text, in pixels,
+# so the row fits a 1024-pixel screen and stays over the dark side of the artwork on a wide one.
++ image { left = 5%+0 top = 91%-8 width = 32 height = 32 file = "key_lang.png" }
 + hbox {
-  left = 5%
-  top = 91%
-  width = 90%
+  left = 5%+40
+  top = 91%-2
+  width = 104
   height = 24
-  + label { text = "@VTOY_HOTKEY_TIP@" font = "DejaVu Sans Regular 16" color = "#baabd3" align = "left" }
+  + label { text = "L  Language" font = "DejaVu Sans Regular 16" color = "#baabd3" align = "left" }
+}
++ image { left = 5%+156 top = 91%-8 width = 32 height = 32 file = "key_help.png" }
++ hbox {
+  left = 5%+196
+  top = 91%-2
+  width = 72
+  height = 24
+  + label { text = "F1  Help" font = "DejaVu Sans Regular 16" color = "#baabd3" align = "left" }
+}
++ image { left = 5%+280 top = 91%-8 width = 32 height = 32 file = "key_browse.png" }
++ hbox {
+  left = 5%+320
+  top = 91%-2
+  width = 94
+  height = 24
+  + label { text = "F2  Browse" font = "DejaVu Sans Regular 16" color = "#baabd3" align = "left" }
+}
++ image { left = 5%+426 top = 91%-8 width = 32 height = 32 file = "key_tree.png" }
++ hbox {
+  left = 5%+466
+  top = 91%-2
+  width = 70
+  height = 24
+  + label { text = "F3  Tree" font = "DejaVu Sans Regular 16" color = "#baabd3" align = "left" }
+}
++ image { left = 5%+548 top = 91%-8 width = 32 height = 32 file = "key_local.png" }
++ hbox {
+  left = 5%+588
+  top = 91%-2
+  width = 78
+  height = 24
+  + label { text = "F4  Local" font = "DejaVu Sans Regular 16" color = "#baabd3" align = "left" }
+}
++ image { left = 5%+678 top = 91%-8 width = 32 height = 32 file = "key_tools.png" }
++ hbox {
+  left = 5%+718
+  top = 91%-2
+  width = 78
+  height = 24
+  + label { text = "F5  Tools" font = "DejaVu Sans Regular 16" color = "#baabd3" align = "left" }
+}
++ image { left = 5%+808 top = 91%-8 width = 32 height = 32 file = "key_menu.png" }
++ hbox {
+  left = 5%+848
+  top = 91%-2
+  width = 80
+  height = 24
+  + label { text = "F6  Menu" font = "DejaVu Sans Regular 16" color = "#baabd3" align = "left" }
 }
 
 # How to move around: Ventoy's left/right arrows only scroll a long name sideways
@@ -71,28 +122,28 @@ terminal-box: "terminal_box_*.png"
 # Boot-mode indicators, shown only when a mode is switched on
 + hbox {
   left = 5%
-  top = 91%-48
+  top = 91%-60
   width = 20%
   height = 24
   + label { text = "@VTOY_ISO_RAW@" font = "DejaVu Sans Regular 16" color = "#b55eff" align = "left" }
 }
 + hbox {
   left = 5%
-  top = 91%-24
+  top = 91%-36
   width = 20%
   height = 24
   + label { text = "@VTOY_MEM_DISK@" font = "DejaVu Sans Regular 16" color = "#b55eff" align = "left" }
 }
 + hbox {
   left = 30%
-  top = 91%-48
+  top = 91%-60
   width = 20%
   height = 24
   + label { text = "@VTOY_GRUB2_MODE@" font = "DejaVu Sans Regular 16" color = "#b55eff" align = "left" }
 }
 + hbox {
   left = 30%
-  top = 91%-24
+  top = 91%-36
   width = 20%
   height = 24
   + label { text = "@VTOY_WIMBOOT_MODE@" font = "DejaVu Sans Regular 16" color = "#b55eff" align = "left" }
