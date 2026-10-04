@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.10] - 2026-10-04
+
 ### Fixed
 - An app with no version number of its own (Sysinternals, ProduKey, OnyX, …)
   was copied again whenever the stick was updated from a PC that had fetched
@@ -496,7 +498,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.9...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.10...HEAD
+[0.6.10]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.9...v0.6.10
 [0.6.9]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.6...v0.6.7
