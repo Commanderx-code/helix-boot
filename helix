@@ -14,6 +14,7 @@ import http.client
 import html
 import importlib.util
 import json
+import lzma
 import os
 import re
 import shutil
@@ -2629,6 +2630,58 @@ def cmd_unpack(cfg: Config, args) -> int:
         **_put_by(state, me, want_files, {i["rel"] for i in todo}, kept, set(meta["apps"]), wrote_apps, kept_apps)})
     ok(f"Stick is up to date from the pack: {len(meta['isos'])} boot image(s), {len(meta['apps'])} app(s).")
     return 0
+
+
+# ── Ventoy's layout, written directly ─────────────────────────────────────
+# Ventoy has an installer for Linux and for Windows, and none for macOS. What its installer
+# writes for an MBR disk is simple enough to write without it (format_ventoy_disk_mbr and
+# VentoyWorker.sh in its package): its boot code and core.img in the first MiB, the data
+# partition from sector 2048, and its 32 MiB VTOYEFI image last, on a 4 KiB boundary. The
+# image carries Secure Boot support as shipped. The boot test builds its disks with this, so
+# what it returns is booted on UEFI and BIOS in every CI run.
+VENTOY_EFI_SECTORS = 65536
+VENTOY_DATA_START = 2048
+
+
+def ventoy_layout(vdir: Path, sectors: int, data_type: int = 0x07) -> dict:
+    """What to write on a disk of `sectors` 512-byte sectors to make it a Ventoy disk, from
+    Ventoy's Linux package in vdir: "head" (the first 2048 sectors: boot code, partition table,
+    core.img), "efi" (the VTOYEFI image) and "efi_start" (its sector). The data partition runs
+    from sector 2048 to just before it, and is formatted by the caller (`data_type`: its type
+    byte, 0x07 for exFAT). Each call gives the disk a new random id, as Ventoy does."""
+    if sectors > 0xFFFFFFFF:
+        raise RescueError("that disk is bigger than 2 TiB, which needs a GPT layout this can't write")
+    if sectors < VENTOY_DATA_START + VENTOY_EFI_SECTORS + (64 << 20) // 512:
+        raise RescueError("that disk is too small for Ventoy")
+    try:
+        boot = (vdir / "boot" / "boot.img").read_bytes()
+        core = lzma.decompress((vdir / "boot" / "core.img.xz").read_bytes())
+        efi = lzma.decompress((vdir / "ventoy" / "ventoy.disk.img.xz").read_bytes())
+    except (OSError, lzma.LZMAError) as e:
+        raise RescueError(f"{vdir} isn't Ventoy's Linux package, or it is damaged: {e}") from None
+    if len(boot) < 446 or not 0 < len(core) <= (VENTOY_DATA_START - 1) * 512 or len(efi) != VENTOY_EFI_SECTORS * 512:
+        raise RescueError(f"{vdir}: Ventoy's boot files aren't the sizes this knows how to write")
+    data_end = sectors - VENTOY_EFI_SECTORS - 1
+    data_end -= (data_end + 1) % 8                      # VTOYEFI starts on a 4 KiB boundary
+    efi_start = data_end + 1
+
+    def chs(lba: int) -> bytes:                         # as fdisk writes it: 255 heads, 63 sectors
+        c, h, sec = lba // (255 * 63), (lba // 63) % 255, lba % 63 + 1
+        return b"\xfe\xff\xff" if c > 1023 else bytes([h, sec | ((c >> 8) << 6), c & 0xFF])
+
+    def entry(active: bool, kind: int, start: int, count: int) -> bytes:
+        return struct.pack("<B3sB3sII", 0x80 if active else 0, chs(start), kind, chs(start + count - 1), start, count)
+
+    head = bytearray(VENTOY_DATA_START * 512)
+    head[:446] = boot[:446]
+    head[384:400] = os.urandom(16)                      # Ventoy's id for the disk
+    head[440:444] = os.urandom(4)                       # and the MBR's signature
+    head[446:462] = entry(True, data_type, VENTOY_DATA_START, data_end - VENTOY_DATA_START + 1)
+    head[462:478] = entry(False, 0xEF, efi_start, VENTOY_EFI_SECTORS)
+    head[510:512] = b"\x55\xaa"
+    head[512:512 + len(core)] = core
+    return {"head": bytes(head), "efi": efi, "efi_start": efi_start, "data_start": VENTOY_DATA_START,
+            "data_sectors": data_end - VENTOY_DATA_START + 1}
 
 
 # ── Checking a stick ──────────────────────────────────────────────────────

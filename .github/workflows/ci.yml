@@ -190,6 +190,34 @@ jobs:
           python mac/helix-mac update --disk "$disk" --yes --no-fetch | tee again.log
           grep -q 'already up to date' again.log
           hdiutil detach "$dev"
+      # A new stick made on this Mac (experimental), on a second disk image. The image is kept:
+      # the job below boots it, to see that a disk written here really starts on a PC.
+      - name: Make a new stick on this Mac
+        env:
+          HELIX_CACHE: ${{ runner.temp }}/helix-small
+          NO_COLOR: "1"
+        run: |
+          set -euo pipefail
+          mkfile -n 700m "$RUNNER_TEMP/new-stick.img"
+          dev=$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$RUNNER_TEMP/new-stick.img" | awk 'NR==1 { print $1 }')
+          disk=${dev#/dev/}
+          if python mac/helix-mac install --disk "$disk" --erase "$disk" --no-fetch; then
+            echo "a disk image was erased without --allow-disk-image"; exit 1
+          fi
+          python mac/helix-mac install --disk "$disk" --erase "$disk" --no-fetch --allow-disk-image
+          diskutil list "$dev"
+          test -f /Volumes/HelixBoot/ventoy/ventoy.json
+          test -f /Volumes/HelixBoot/.helix-boot/keys-hook
+          python mac/helix-mac check --disk "$disk"
+          python mac/helix-mac update --disk "$disk" --yes --no-fetch | tee again.log
+          grep -q 'already up to date' again.log
+          hdiutil detach "$dev"
+          gzip -1 "$RUNNER_TEMP/new-stick.img"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: stick-made-on-a-mac
+          path: ${{ runner.temp }}/new-stick.img.gz
+          retention-days: 3
       - name: Fetch the Mac tools
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -201,3 +229,34 @@ jobs:
           HELIX_CACHE: ${{ runner.temp }}/helix
           NO_COLOR: "1"
         run: python tests/mac/check_tools.py
+
+  mac-boot:
+    # The stick the Mac job made, started in a virtual PC: the menu has to come up, on UEFI and BIOS.
+    needs: mac
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: stick-made-on-a-mac
+          path: ${{ runner.temp }}
+      - name: Boot it
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 ovmf >/dev/null
+          pip install --disable-pip-version-check -q pillow
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          gunzip "$RUNNER_TEMP/new-stick.img.gz"
+          python tests/boot/boot_menu.py --image "$RUNNER_TEMP/new-stick.img" --firmware both --out boot-shots
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: mac-stick-boot-screenshots
+          path: boot-shots
+          if-no-files-found: ignore

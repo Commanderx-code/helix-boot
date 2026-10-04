@@ -10,9 +10,15 @@ tagged releases also publish the Windows app.
 - **Updating a stick from a Mac:** `mac/helix-mac` finds the stick, shows what
   an update will copy, remove and keep, asks, updates it (from the internet or
   a pack), and adds the splash and the L / F1 keys, as on Linux. Also
-  `helix-mac check`, `look` and `list`. A Mac can't create a stick yet. CI
-  runs a whole update on a real Mac, against a disk image partitioned like a
-  stick.
+  `helix-mac check`, `look` and `list`. CI runs a whole update on a real Mac,
+  against a disk image partitioned like a stick.
+- **Creating a stick on a Mac (experimental):** `mac/helix-mac install --disk
+  disk4`. Ventoy has no installer for macOS, so the engine writes Ventoy's MBR
+  layout itself (`ventoy_layout`), as Ventoy's installer does on Linux, with
+  Secure Boot support as shipped. Only a USB or SD disk that isn't inside the
+  Mac can be erased, after its name is typed. CI makes a stick on a Mac and
+  boots that disk in a virtual PC, on UEFI and BIOS. The boot test builds its
+  disks with the same code.
 
 ### Changed
 - Release pages carry that version's section of this changelog, and how to
