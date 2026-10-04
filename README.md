@@ -151,7 +151,7 @@ app doesn't survive the stick's exFAT file system.
 | Cleaning up | OnyX and Maintenance (one each for macOS 26, 15 and 14), AppCleaner, Pearcleaner |
 | Data | SuperDuper! and Vorta (backup), TestDisk & PhotoRec and DMDE (recovery) |
 | Reinstalling | Mist (macOS installers), OpenCore Legacy Patcher (newer macOS on older Intel Macs) |
-| Handy | Keka (archives macOS can't open by itself) |
+| Handy | Keka (archives macOS can't open by itself), RustDesk (remote support), balenaEtcher (writes boot sticks) |
 | Tweaks | [Chris Titus Tech's MacUtil](https://github.com/ChrisTitusTech/macutil) *(on hold upstream)* |
 
 CI opens every one of these on a real Mac, and checks that what is inside is

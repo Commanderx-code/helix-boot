@@ -1031,3 +1031,48 @@ source = "github"
 repo = "objective-see/BlockBlock"
 asset = ['^BlockBlock_[\d.]+\.zip$']
 checksum = ["github-digest"]
+
+# Remote support, and writing boot sticks from a Mac. Each ships one download per chip.
+[[tool]]
+name = "rustdesk-arm"
+title = "RustDesk (Apple Silicon)"
+description = "Remote support: see and control another computer over the internet; open source; for M-series Macs"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "rustdesk/rustdesk"
+asset = ['^rustdesk-[\d.]+(-\d+)?-aarch64\.dmg$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "rustdesk-intel"
+title = "RustDesk (Intel)"
+description = "Remote support: see and control another computer over the internet; open source; for Intel Macs"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "rustdesk/rustdesk"
+asset = ['^rustdesk-[\d.]+(-\d+)?-x86_64\.dmg$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "etcher-arm"
+title = "balenaEtcher (Apple Silicon)"
+description = "Write a boot stick or SD card from an image file; for M-series Macs"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "balena-io/etcher"
+asset = ['^balenaEtcher-[\d.]+-arm64\.dmg$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "etcher-intel"
+title = "balenaEtcher (Intel)"
+description = "Write a boot stick or SD card from an image file; for Intel Macs"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "balena-io/etcher"
+asset = ['^balenaEtcher-[\d.]+-x64\.dmg$']
+checksum = ["github-digest"]
