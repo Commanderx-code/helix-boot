@@ -6,6 +6,15 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Changed
+- The Windows app has a new look: dark and compact, in the boot menu's colours.
+  The stick is picked from a drop-down, Install and Update are the two big
+  buttons, the progress bar shows its percentage, and the log is behind
+  **Show log**. The Look window matches.
+
+### Fixed
+- The Look window's preview didn't draw the menu's row of hotkey icons.
+
 ## [0.6.8] - 2026-10-03
 
 ### Added

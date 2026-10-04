@@ -60,7 +60,13 @@ terminal-box: "terminal_box_*.png"
   height = 22
   + label { text = "L" font = "DejaVu Sans Regular 16" color = "#8cbe98" align = "center" width = 56 }
 }
-+ image { left = 5%+0 top = 91%+10 width = 32 height = 32 file = "key_lang.png" }
++ image {
+  left = 5%+0
+  top = 91%+10
+  width = 32
+  height = 32
+  file = "key_lang.png"
+}
 + hbox {
   left = 5%+44
   top = 91%-12
@@ -68,7 +74,13 @@ terminal-box: "terminal_box_*.png"
   height = 22
   + label { text = "F1" font = "DejaVu Sans Regular 16" color = "#8cbe98" align = "center" width = 56 }
 }
-+ image { left = 5%+56 top = 91%+10 width = 32 height = 32 file = "key_help.png" }
++ image {
+  left = 5%+56
+  top = 91%+10
+  width = 32
+  height = 32
+  file = "key_help.png"
+}
 + hbox {
   left = 5%+100
   top = 91%-12
@@ -76,7 +88,13 @@ terminal-box: "terminal_box_*.png"
   height = 22
   + label { text = "F2" font = "DejaVu Sans Regular 16" color = "#8cbe98" align = "center" width = 56 }
 }
-+ image { left = 5%+112 top = 91%+10 width = 32 height = 32 file = "key_browse.png" }
++ image {
+  left = 5%+112
+  top = 91%+10
+  width = 32
+  height = 32
+  file = "key_browse.png"
+}
 + hbox {
   left = 5%+156
   top = 91%-12
@@ -84,7 +102,13 @@ terminal-box: "terminal_box_*.png"
   height = 22
   + label { text = "F3" font = "DejaVu Sans Regular 16" color = "#8cbe98" align = "center" width = 56 }
 }
-+ image { left = 5%+168 top = 91%+10 width = 32 height = 32 file = "key_tree.png" }
++ image {
+  left = 5%+168
+  top = 91%+10
+  width = 32
+  height = 32
+  file = "key_tree.png"
+}
 + hbox {
   left = 5%+212
   top = 91%-12
@@ -92,7 +116,13 @@ terminal-box: "terminal_box_*.png"
   height = 22
   + label { text = "F4" font = "DejaVu Sans Regular 16" color = "#8cbe98" align = "center" width = 56 }
 }
-+ image { left = 5%+224 top = 91%+10 width = 32 height = 32 file = "key_local.png" }
++ image {
+  left = 5%+224
+  top = 91%+10
+  width = 32
+  height = 32
+  file = "key_local.png"
+}
 + hbox {
   left = 5%+268
   top = 91%-12
@@ -100,7 +130,13 @@ terminal-box: "terminal_box_*.png"
   height = 22
   + label { text = "F5" font = "DejaVu Sans Regular 16" color = "#8cbe98" align = "center" width = 56 }
 }
-+ image { left = 5%+280 top = 91%+10 width = 32 height = 32 file = "key_tools.png" }
++ image {
+  left = 5%+280
+  top = 91%+10
+  width = 32
+  height = 32
+  file = "key_tools.png"
+}
 + hbox {
   left = 5%+324
   top = 91%-12
@@ -108,7 +144,13 @@ terminal-box: "terminal_box_*.png"
   height = 22
   + label { text = "F6" font = "DejaVu Sans Regular 16" color = "#8cbe98" align = "center" width = 56 }
 }
-+ image { left = 5%+336 top = 91%+10 width = 32 height = 32 file = "key_menu.png" }
++ image {
+  left = 5%+336
+  top = 91%+10
+  width = 32
+  height = 32
+  file = "key_menu.png"
+}
 
 # How to move around: Ventoy's left/right arrows only scroll a long name sideways
 + hbox {

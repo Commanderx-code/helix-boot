@@ -477,6 +477,80 @@ def open_log(path: Path | None):
 
 
 # ── GUI ────────────────────────────────────────────────────────────────────
+# One dark look for both windows, in the boot menu's colours.
+BG, PANEL, FIELD, EDGE = "#14121f", "#1d1a2e", "#262238", "#3a3555"
+TEXT, MUTED, ACCENT, ACCENT_HOT, VIOLET = "#ece8f7", "#a79fc0", "#19c3d6", "#3fdcee", "#b55eff"
+FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
+
+
+def apply_theme(root) -> None:
+    """Dark, flat widgets: ttk's own "clam" theme recoloured (Windows' native one can't be)."""
+    from tkinter import ttk
+    style = ttk.Style(root)
+    style.theme_use("clam")
+    root.configure(background=BG)
+    style.configure(".", background=BG, foreground=TEXT, fieldbackground=FIELD, bordercolor=EDGE,
+                    lightcolor=EDGE, darkcolor=EDGE, troughcolor=FIELD, focuscolor=ACCENT, font=(FONT, 10))
+    style.configure("TLabel", background=BG, foreground=TEXT)
+    style.configure("Muted.TLabel", foreground=MUTED)
+    style.configure("News.TLabel", foreground=ACCENT_HOT, font=(FONT, 9))
+    style.configure("Title.TLabel", font=(FONT, 18, "bold"))
+    style.configure("TButton", background=PANEL, foreground=TEXT, padding=(12, 7), relief="flat", borderwidth=1)
+    style.map("TButton", background=[("disabled", BG), ("pressed", EDGE), ("active", FIELD)],
+              foreground=[("disabled", "#6d6787")])
+    style.configure("Accent.TButton", background=ACCENT, foreground="#06222a", font=(FONT, 11, "bold"), padding=(12, 11))
+    style.map("Accent.TButton", background=[("disabled", "#1f4a52"), ("pressed", "#12a3b3"), ("active", ACCENT_HOT)],
+              foreground=[("disabled", "#0c2f36")])
+    style.configure("Big.TButton", font=(FONT, 11), padding=(12, 11))
+    style.configure("Go.TButton", background=ACCENT, foreground="#06222a", font=(FONT, 10, "bold"))
+    style.map("Go.TButton", background=[("disabled", "#1f4a52"), ("pressed", "#12a3b3"), ("active", ACCENT_HOT)],
+              foreground=[("disabled", "#0c2f36")])
+    for kind in ("TCheckbutton", "TRadiobutton"):
+        style.configure(kind, background=BG, foreground=TEXT, indicatorbackground=FIELD, indicatorforeground=TEXT,
+                        indicatorcolor=FIELD, padding=(0, 3))
+        style.map(kind, background=[("active", BG)], foreground=[("disabled", "#6d6787")],
+                  indicatorcolor=[("selected", ACCENT), ("pressed", EDGE)],
+                  indicatorbackground=[("selected", ACCENT)])
+    style.configure("TCombobox", fieldbackground=FIELD, background=PANEL, foreground=TEXT, arrowcolor=TEXT,
+                    selectbackground=FIELD, selectforeground=TEXT, padding=5)
+    style.map("TCombobox", fieldbackground=[("readonly", FIELD), ("disabled", BG)],
+              foreground=[("disabled", "#6d6787")], selectbackground=[("readonly", FIELD)])
+    for opt, value in (("background", FIELD), ("foreground", TEXT), ("selectBackground", ACCENT),
+                       ("selectForeground", "#06222a")):
+        root.option_add(f"*TCombobox*Listbox.{opt}", value)
+    style.configure("TSeparator", background=EDGE)
+    style.configure("Horizontal.TScale", background=BG, troughcolor=FIELD)
+    # a progress bar with its text inside it
+    style.layout("Text.Horizontal.TProgressbar", [
+        ("Horizontal.Progressbar.trough", {"sticky": "nswe", "children": [
+            ("Horizontal.Progressbar.pbar", {"side": "left", "sticky": "ns"})]}),
+        ("Horizontal.Progressbar.label", {"sticky": ""})])
+    style.configure("Text.Horizontal.TProgressbar", background=ACCENT, troughcolor=FIELD, bordercolor=EDGE,
+                    lightcolor=ACCENT, darkcolor=ACCENT, foreground=TEXT, thickness=30, text="", anchor="center",
+                    font=(FONT, 10))
+    if os.name == "nt":             # a dark title bar to go with it (Windows 10 20H1 and later; else ignored)
+        try:
+            import ctypes
+            root.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+            value = ctypes.c_int(1)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(value), ctypes.sizeof(value))
+        except Exception:  # noqa: BLE001 — only looks
+            pass
+
+
+def logo_image(master):
+    """The helix mark for a window's header, or None where the picture can't be loaded."""
+    import tkinter as tk
+    for path in (bundle_dir() / "logo.png", bundle_dir() / "windows" / "logo.png"):
+        if path.is_file():
+            try:
+                return tk.PhotoImage(master=master, file=str(path))
+            except tk.TclError:
+                return None
+    return None
+
+
 def gui(selftest: bool = False) -> int:
     import tkinter as tk
     from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -487,36 +561,95 @@ def gui(selftest: bool = False) -> int:
 
     root = tk.Tk()
     root.title(APP)
-    root.geometry("860x620")
-    root.minsize(720, 520)
+    root.geometry("600x560")
+    root.minsize(560, 540)
+    apply_theme(root)
     style = ttk.Style(root)
-    if "vista" in style.theme_names():
-        style.theme_use("vista")
-    style.configure("Title.TLabel", font=("Segoe UI", 16, "bold"))
-    style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"))
 
-    frm = ttk.Frame(root, padding=14)
+    frm = ttk.Frame(root, padding=(18, 14, 18, 16))
     frm.pack(fill="both", expand=True)
-    ttk.Label(frm, text="Helix Boot", style="Title.TLabel").pack(anchor="w")
-    ttk.Label(frm, text="Pick a USB stick, then Install (erases it) or Update (keeps your files).",
-              foreground="#555").pack(anchor="w")
-    news = ttk.Label(frm, text="Looking for newer versions of the tools…", foreground="#1f5f99",
-                     wraplength=820, justify="left")
-    news.pack(anchor="w", pady=(2, 10))
+    head = ttk.Frame(frm)
+    head.pack(fill="x")
+    logo = logo_image(root)             # (kept in a variable: Tk drops an image nothing refers to)
+    if logo:
+        ttk.Label(head, image=logo).pack(side="left", padx=(0, 12))
+    ttk.Label(head, text="Helix Boot", style="Title.TLabel").pack(side="left")
+    ttk.Label(head, text=f"v{cr.__version__}", style="Muted.TLabel").pack(side="right", anchor="n")
+    ttk.Separator(frm).pack(fill="x", pady=(12, 10))
+
+    ttk.Label(frm, text="USB stick:").pack(anchor="w")
+    pick_row = ttk.Frame(frm)
+    pick_row.pack(fill="x", pady=(3, 8))
+    b_refresh = ttk.Button(pick_row, text="Refresh", padding=(10, 5))
+    b_refresh.pack(side="right", padx=(8, 0))
+    drive = ttk.Combobox(pick_row, state="readonly", values=[])
+    drive.pack(side="left", fill="x", expand=True)
+
+    secure = tk.BooleanVar(value=True)
+    gpt = tk.BooleanVar(value=True)
+    upv = tk.BooleanVar(value=False)
+    ttk.Checkbutton(frm, text="Secure Boot support", variable=secure).pack(anchor="w")
+    ttk.Checkbutton(frm, text="GPT partition table (untick for very old BIOS PCs)", variable=gpt).pack(anchor="w")
+    ttk.Checkbutton(frm, text="Update also refreshes Ventoy", variable=upv).pack(anchor="w")
 
     # Where the tools come from: the internet, or a pack (picked up beside the app if there is one)
-    src = ttk.Frame(frm)
-    src.pack(fill="x", pady=(0, 8))
     found = find_pack()
     pack_path = tk.StringVar(value=str(found or ""))
     use_pack = tk.BooleanVar(value=found is not None)
-    ttk.Label(src, text="Tools from:").pack(side="left")
-    ttk.Radiobutton(src, text="the internet (latest)", variable=use_pack, value=False).pack(side="left", padx=(8, 0))
-    ttk.Radiobutton(src, text="a pack (offline):", variable=use_pack, value=True).pack(side="left", padx=(12, 4))
-    pack_label = ttk.Label(src, foreground="#555")
-    pack_label.pack(side="left")
-    b_pack = ttk.Button(src, text="Choose pack…")
-    b_pack.pack(side="left", padx=(8, 0))
+    ttk.Radiobutton(frm, text="Tools from the internet (latest)", variable=use_pack, value=False).pack(anchor="w", pady=(8, 0))
+    src = ttk.Frame(frm)
+    src.pack(fill="x")
+    ttk.Radiobutton(src, text="Tools from a pack (offline):", variable=use_pack, value=True).pack(side="left")
+    b_pack = ttk.Button(src, text="Choose…", padding=(10, 3))
+    b_pack.pack(side="right")
+    pack_label = ttk.Label(src, style="Muted.TLabel")
+    pack_label.pack(side="left", padx=(6, 0))
+
+    main = ttk.Frame(frm)
+    main.pack(fill="x", pady=(14, 10))
+    main.columnconfigure((0, 1), weight=1, uniform="main")
+    b_install = ttk.Button(main, text="Install Helix Boot", style="Accent.TButton")
+    b_install.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+    b_update = ttk.Button(main, text="Update stick", style="Big.TButton")
+    b_update.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+    prog = ttk.Frame(frm)
+    prog.pack(fill="x")
+    b_log = ttk.Button(prog, text="Show log", padding=(10, 5))
+    b_log.pack(side="right", padx=(8, 0))
+    bar = ttk.Progressbar(prog, mode="determinate", maximum=100, style="Text.Horizontal.TProgressbar")
+    bar.pack(side="left", fill="x", expand=True)
+    status = ttk.Label(frm, text="Ready.", style="Muted.TLabel", wraplength=560, justify="left")
+    status.pack(anchor="w", pady=(8, 0))
+    news = ttk.Label(frm, text="Looking for newer versions of the tools…", style="News.TLabel",
+                     wraplength=560, justify="left")
+    news.pack(anchor="w", pady=(2, 0))
+
+    foot = ttk.Frame(frm)
+    foot.pack(fill="x", side="bottom")
+    foot.columnconfigure((0, 1, 2), weight=1, uniform="foot")
+    b_look = ttk.Button(foot, text="Look…")
+    b_check = ttk.Button(foot, text="Check stick")
+    b_folder = ttk.Button(foot, text="My tools folder")
+    for i, b in enumerate((b_look, b_check, b_folder)):
+        b.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 4, 0 if i == 2 else 4))
+    # The log: out of the way until asked for
+    out = tk.Text(frm, height=10, wrap="word", font=("Consolas" if os.name == "nt" else "DejaVu Sans Mono", 9),
+                  relief="flat", background="#0d0b16", foreground="#cfc8e6", insertbackground="#cfc8e6",
+                  highlightthickness=1, highlightbackground=EDGE)
+
+    def bar_text(text: str) -> None:
+        style.configure("Text.Horizontal.TProgressbar", text=text)
+
+    def toggle_log():
+        if out.winfo_ismapped():
+            out.pack_forget()
+            b_log.config(text="Show log")
+            root.geometry(f"{root.winfo_width()}x{max(root.winfo_height() - 190, 540)}")
+        else:
+            out.pack(fill="both", expand=True, pady=(10, 10))
+            b_log.config(text="Hide log")
+            root.geometry(f"{root.winfo_width()}x{root.winfo_height() + 190}")
 
     def show_pack():
         pack_label.config(text=Path(pack_path.get()).name if pack_path.get() else "none chosen")
@@ -542,78 +675,49 @@ def gui(selftest: bool = False) -> int:
             return False
         return pack_path.get()
 
-    cols = ("disk", "name", "size", "ventoy", "letter")
-    tree = ttk.Treeview(frm, columns=cols, show="headings", height=5, selectmode="browse")
-    for c, text, w in zip(cols, ("Disk", "Name", "Size", "Ventoy", "Drive"), (60, 360, 90, 80, 70)):
-        tree.heading(c, text=text)
-        tree.column(c, width=w, anchor="w" if c == "name" else "center", stretch=c == "name")
-    tree.pack(fill="x")
-
-    opts = ttk.Frame(frm)
-    opts.pack(fill="x", pady=8)
-    secure = tk.BooleanVar(value=True)
-    gpt = tk.BooleanVar(value=True)
-    upv = tk.BooleanVar(value=False)
-    ttk.Checkbutton(opts, text="Secure Boot support", variable=secure).pack(side="left")
-    ttk.Checkbutton(opts, text="GPT (untick for very old BIOS PCs)", variable=gpt).pack(side="left", padx=14)
-    ttk.Checkbutton(opts, text="Update also refreshes Ventoy", variable=upv).pack(side="left")
-
-    btns = ttk.Frame(frm)
-    btns.pack(fill="x")
-    b_refresh = ttk.Button(btns, text="Refresh list")
-    b_folder = ttk.Button(btns, text="My tools folder (byo)")
-    b_look = ttk.Button(btns, text="Look…")
-    b_check = ttk.Button(btns, text="Check stick")
-    b_install = ttk.Button(btns, text="Install  (erases the stick)", style="Accent.TButton")
-    b_update = ttk.Button(btns, text="Update stick")
-    for b in (b_refresh, b_folder, b_look, b_check):
-        b.pack(side="left", padx=(0, 6))
     show_pack()
-    for b in (b_update, b_install):
-        b.pack(side="right", padx=(6, 0))
-
-    bar = ttk.Progressbar(frm, mode="determinate", maximum=100)
-    bar.pack(fill="x", pady=(12, 4))
-    status = ttk.Label(frm, text="Ready.")
-    status.pack(anchor="w")
-    out = tk.Text(frm, height=16, wrap="word", font=("Consolas", 9), relief="flat",
-                  background="#0f1722", foreground="#d8e1ea", insertbackground="#d8e1ea")
-    out.pack(fill="both", expand=True, pady=(6, 0))
-
-    disks: dict[str, dict] = {}
+    disks: list[dict] = []
     busy = {"on": False}
 
     def refresh():
-        tree.delete(*tree.get_children())
-        disks.clear()
+        chosen = disks[drive.current()]["Number"] if 0 <= drive.current() < len(disks) else None
         try:
             found = usb_disks()
         except Exception as e:  # noqa: BLE001 — shown to the user
             status.config(text=f"Couldn't list disks: {e}")
             return
+        disks[:] = found
+        names = []
         for d in found:
-            iid = tree.insert("", "end", values=(d["Number"], d["Name"], human(d["Size"]),
-                                                 "yes" if d["IsVentoy"] else "—",
-                                                 f"{d['Ventoy']}:" if d.get("Ventoy") else ", ".join(f"{x}:" for x in d["Letters"])))
-            disks[iid] = d
+            where = f"{d['Ventoy']}:" if d.get("Ventoy") else ", ".join(f"{x}:" for x in d["Letters"])
+            names.append(f"Disk {d['Number']}:  {d['Name']}  ({human(d['Size'])})"
+                         + (f"  {where}" if where else "") + ("  ·  Ventoy stick" if d["IsVentoy"] else ""))
+        drive.config(values=names)
+        if found:           # keep the stick that was picked, else the one that already has Ventoy, else the first
+            numbers = [d["Number"] for d in found]
+            drive.current(numbers.index(chosen) if chosen in numbers
+                          else next((i for i, d in enumerate(found) if d["IsVentoy"]), 0))
+        else:
+            drive.set("")
         status.config(text=f"{len(found)} USB disk(s) found." if found else "No USB sticks found. Plug one in and Refresh.")
 
     def selected():
-        sel = tree.selection()
-        if not sel:
+        if not 0 <= drive.current() < len(disks):
             messagebox.showinfo(APP, "Pick a USB stick in the list first.")
             return None
-        return disks[sel[0]]
+        return disks[drive.current()]
 
     def set_busy(on):
         busy["on"] = on
         for b in (b_refresh, b_install, b_update, b_pack, b_look, b_check):
             b.state(["disabled"] if on else ["!disabled"])
+        drive.state(["disabled"] if on else ["!disabled", "readonly"])
 
     def work(fn, *a, done=lambda letter: f"✓ Done. The stick is {letter} — safe to remove once Windows says so.",
              **kw):
         set_busy(True)
         bar.config(mode="indeterminate")
+        bar_text("Working…")
         bar.start(12)
 
         def progress(pct):
@@ -721,9 +825,12 @@ def gui(selftest: bool = False) -> int:
                 elif item[0] == "pct":
                     bar.stop()
                     bar.config(mode="determinate", value=item[1])
+                    bar_text(f"{item[1]}%")
                 elif item[0] == "confirm":
                     bar.stop()
                     item[2].put(messagebox.askokcancel(APP, f"This update will:\n\n{item[1]}\n\nGo ahead?"))
+                    bar.config(mode="indeterminate")
+                    bar_text("Working…")
                     bar.start(12)
                 elif item[0] == "ask":
                     item[1].put(messagebox.askyesno(APP, "Some tools failed to download (see the log).\n"
@@ -731,6 +838,7 @@ def gui(selftest: bool = False) -> int:
                 elif item[0] in ("done", "fail"):
                     bar.stop()
                     bar.config(mode="determinate", value=100 if item[0] == "done" else 0)
+                    bar_text("Done" if item[0] == "done" else "")
                     out.insert("end", ("\n" if item[0] == "done" else "\n✗ ") + item[1] + "\n")
                     out.see("end")
                     status.config(text=item[1].splitlines()[0][:110])
@@ -743,6 +851,7 @@ def gui(selftest: bool = False) -> int:
         root.after(100, pump)
 
     b_refresh.config(command=refresh)
+    b_log.config(command=toggle_log)
     b_folder.config(command=open_folder)
     b_look.config(command=do_look)
     b_check.config(command=do_check)
@@ -773,6 +882,10 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     report = cr.look_report(mnt)
     cr.look_changes(mnt)                       # an older stick is refused here, before a window opens
     win = tk.Toplevel(parent) if parent else tk.Tk()
+    if parent:
+        win.configure(background=BG)
+    else:
+        apply_theme(win)
     win.title(f"{APP}: the look of {mnt}")
     if parent:      # modal: Install and Update can't be started while this can still write to the stick
         win.transient(parent)
@@ -785,7 +898,7 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
         win.after(0, hold)
     # The preview sets the window's height: a smaller one where the screen is short (768 px laptops)
     preview_size = (672, 378) if win.winfo_screenheight() >= 900 else (480, 270)
-    win.minsize(preview_size[0] + 40, preview_size[1] + 270)
+    win.minsize(preview_size[0] + 40, preview_size[1] + 300)
     frm = ttk.Frame(win, padding=14)
     frm.pack(fill="both", expand=True)
     themes = {t["title"]: t for t in report["themes"]}
@@ -807,12 +920,12 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     ttk.Label(frm, text="Theme").grid(row=1, column=0, sticky="w", pady=4)
     c_theme = ttk.Combobox(frm, textvariable=theme, values=list(themes), state="readonly", width=26)
     c_theme.grid(row=1, column=1, sticky="w")
-    about = ttk.Label(frm, foreground="#555")
+    about = ttk.Label(frm, style="Muted.TLabel")
     about.grid(row=1, column=2, columnspan=2, sticky="w", padx=(10, 0))
     ttk.Label(frm, text="Icons").grid(row=2, column=0, sticky="w", pady=4)
     c_icons = ttk.Combobox(frm, textvariable=icons, values=list(packs), state="readonly", width=26)
     c_icons.grid(row=2, column=1, sticky="w")
-    about_icons = ttk.Label(frm, foreground="#555")
+    about_icons = ttk.Label(frm, style="Muted.TLabel")
     about_icons.grid(row=2, column=2, columnspan=2, sticky="w", padx=(10, 0))
 
     ttk.Label(frm, text="Background").grid(row=3, column=0, sticky="w", pady=4)
@@ -822,7 +935,7 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     ttk.Radiobutton(bg, text="My picture", variable=background, value="custom").pack(side="left", padx=(12, 4))
     b_bg = ttk.Button(bg, text="Choose…")
     b_bg.pack(side="left")
-    bg_name = ttk.Label(bg, foreground="#555")
+    bg_name = ttk.Label(bg, style="Muted.TLabel")
     bg_name.pack(side="left", padx=(8, 0))
     dimmer = ttk.Frame(frm)
     dimmer.grid(row=4, column=1, columnspan=3, sticky="w")
@@ -839,11 +952,11 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     c_splash.pack(side="left")
     b_sp = ttk.Button(sp, text="Choose…")
     b_sp.pack(side="left", padx=(8, 0))
-    sp_name = ttk.Label(sp, foreground="#555")
+    sp_name = ttk.Label(sp, style="Muted.TLabel")
     sp_name.pack(side="left", padx=(8, 0))
 
     status = ttk.Label(frm, text="The preview is a sketch from the theme's files; nothing changes until Apply.",
-                       foreground="#555")
+                       style="Muted.TLabel")
     status.grid(row=6, column=0, columnspan=4, sticky="w", pady=(12, 6))
     btns = ttk.Frame(frm)
     btns.grid(row=7, column=0, columnspan=4, sticky="ew")
@@ -855,7 +968,7 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
     b_load.pack(side="left", padx=(6, 0))
     b_close = ttk.Button(btns, text="Close", command=win.destroy)
     b_close.pack(side="right")
-    b_apply = ttk.Button(btns, text="Apply to the stick")
+    b_apply = ttk.Button(btns, text="Apply to the stick", style="Go.TButton")
     b_apply.pack(side="right", padx=(0, 6))
     frm.columnconfigure(0, pad=14)
     frm.columnconfigure(3, weight=1)

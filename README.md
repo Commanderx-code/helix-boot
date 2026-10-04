@@ -268,8 +268,9 @@ afterwards, keeps the look it had, and keeps tools the pack doesn't have
 `HelixBoot.exe` asks for admin rights, because installing Ventoy writes
 to the disk.
 
-1. Pick the USB stick. Only USB/SD disks are listed, never the one Windows is
-   running from.
+1. Pick the USB stick from the drop-down. Only USB/SD disks are listed, never
+   the one Windows is running from; a stick that already has Ventoy is picked
+   for you.
 2. **Install** erases the stick (you type its disk number to confirm), installs
    Ventoy and copies everything on. **Update** refreshes a stick you already
    have and keeps your files, including tools this PC has no copy of. It first

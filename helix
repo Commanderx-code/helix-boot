@@ -3342,12 +3342,14 @@ def look_preview(cfg: Config, mnt: Path, look: dict, out: Path, pictures: dict[s
                     with Image.open(work / at["file"]) as im:
                         img.alpha_composite(im.convert("RGBA"), (px(at.get("left", "0"), W), px(at.get("top", "0"), H)))
             for block in text.split("+ hbox")[1:]:                                # Ventoy's hotkeys, the key hint
-                at = settings(block)
+                at = settings(block.split("\n}\n")[0])                           # (this box only, not what follows it)
                 shown = {"@VTOY_HOTKEY_TIP@": "L:Language  F1:Help  F2:Browse  F3:TreeView  F4:Localboot  F5:Tools  F6:ExMenu"
                          }.get(at.get("text", ""), "" if at.get("text", "@").startswith("@") else at["text"])
                 if shown:
-                    d.text((px(at.get("left", "0"), W), px(at.get("top", "0"), H) + 10), shown, font=font(16),
-                           fill=at.get("color", "#ffffff"), anchor="lm")
+                    centred = at.get("align") == "center" and at.get("width", "").isdigit()
+                    d.text((px(at.get("left", "0"), W) + (int(at["width"]) // 2 if centred else 0),
+                            px(at.get("top", "0"), H) + 10), shown, font=font(16),
+                           fill=at.get("color", "#ffffff"), anchor="mm" if centred else "lm")
             muted, tip = doc["theme"].get("ventoy_color", "#baabd3"), doc.get("menu_tip") or {}
             if tips:
                 d.text((px(tip.get("left", "5%"), W), px(tip.get("top", "82%"), H) + 10), tips[0]["tip"], font=font(16),

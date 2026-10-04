@@ -10,6 +10,7 @@ datas = [
     (str(root / "pe" / "launcher"), "pe/launcher"),
     (str(root / "pe" / "lazarus"), "pe/lazarus"),
     (str(root / "byo" / "README.md"), "byo"),
+    (str(root / "windows" / "logo.png"), "."),          # the mark in the windows' header
 ]
 datas += [(str(p), (Path("theme") / p.parent.relative_to(root / "theme")).as_posix())
           for p in (root / "theme").rglob("*")
