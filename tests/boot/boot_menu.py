@@ -10,14 +10,13 @@ theme Ventoy refuses to load, or a menu that never appears, fails here and not o
     tests/boot/boot_menu.py                      # every theme, UEFI
     tests/boot/boot_menu.py --themes default,standby --firmware both --out /tmp/shots
 
-Needs qemu-system-x86_64, OVMF, mtools, dosfstools, sfdisk, xz and Pillow, and Ventoy in the
+Needs qemu-system-x86_64, OVMF, mtools, dosfstools, xz and Pillow, and Ventoy in the
 cache (`./helix fetch ventoy`). Screenshots and a contact sheet land in --out.
 """
 import argparse
 import importlib.machinery
 import importlib.util
 import json
-import lzma
 import os
 import re
 import shutil
@@ -60,11 +59,13 @@ def mtools(image: Path, *cmd, offset: bool = True):
 
 
 def build_disk(cr, cfg, work: Path) -> Path:
-    """A Ventoy disk as Ventoy2Disk lays it out: MBR boot code, the data partition, VTOYEFI."""
+    """A Ventoy disk laid out by the engine (ventoy_layout, as a Mac install writes it), with a
+    FAT32 data partition, and the splash added to Ventoy's boot script as install.sh adds it."""
     ventoy = Path(run(ROOT / "helix", "ventoy-path").stdout.strip())
+    layout = cr.ventoy_layout(ventoy, DISK_SECTORS, data_type=0x0C)
     efi = work / "vtoyefi.img"
-    efi.write_bytes(lzma.decompress((ventoy / "ventoy/ventoy.disk.img.xz").read_bytes()))
-    (work / "efi/grub").mkdir(parents=True)                           # the splash, as install.sh adds it
+    efi.write_bytes(layout["efi"])
+    (work / "efi/grub").mkdir(parents=True)
     mtools(efi, "mcopy", "-o", "::/grub/grub.cfg", work / "efi/grub/grub.cfg", offset=False)
     cr.cmd_splash(cfg, argparse.Namespace(efi=str(work / "efi"), remove=False, dry_run=False))
     mtools(efi, "mcopy", "-o", work / "efi/grub/grub.cfg", "::/grub/grub.cfg", offset=False)
@@ -72,22 +73,11 @@ def build_disk(cr, cfg, work: Path) -> Path:
     disk = work / "stick.img"
     with open(disk, "wb") as f:
         f.truncate(DISK_SECTORS * SECTOR)
-    data_end = DISK_SECTORS - EFI_SECTORS - 1
-    data_end -= (data_end + 1) % 8                                    # VTOYEFI starts on a 4 KiB boundary
-    efi_start = data_end + 1
-    run("sfdisk", "-q", disk, input=f"label: dos\nstart=2048, size={data_end - 2047}, type=c, bootable\n"
-                                    f"start={efi_start}, size={EFI_SECTORS}, type=ef\n")
-    run("mkfs.vfat", "-F", "32", "-n", cfg.stick_label[:11], "--offset", "2048", disk, (data_end - 2047) // 2)
-    with open(disk, "r+b") as f:
-        f.write((ventoy / "boot/boot.img").read_bytes()[:446])        # boot code, not the partition table
-        f.seek(SECTOR)
-        f.write(lzma.decompress((ventoy / "boot/core.img.xz").read_bytes())[:2047 * SECTOR])
-        f.seek(384)
-        f.write(os.urandom(16))                                       # Ventoy's disk id
-        f.seek(440)
-        f.write(os.urandom(4))                                        # and the MBR's
-        f.seek(efi_start * SECTOR)
+        f.write(layout["head"])
+        f.seek(layout["efi_start"] * SECTOR)
         f.write(efi.read_bytes())
+    run("mkfs.vfat", "-F", "32", "-n", cfg.stick_label[:11], "--offset", str(layout["data_start"]), disk,
+        layout["data_sectors"] // 2)
     return disk
 
 
@@ -235,17 +225,51 @@ def check_theme(cr, cfg, stick: Path, disk: Path, theme: str, firmware: str, out
     return problems
 
 
+def check_image(image: Path, firmware: str, out: Path, work: Path) -> list[str]:
+    """Boot a disk made elsewhere (a stick written on a Mac) and check the menu comes up on it, in
+    the default theme. The image is copied first: booting writes to a disk."""
+    disk = work / f"image-{firmware}.img"
+    shutil.copyfile(image, disk)
+    theme = ROOT / "theme"
+    with Image.open(theme / "background.png") as im:
+        background = im.convert("RGB")
+    clear, menu = regions((theme / "theme.txt").read_text(encoding="utf-8"))
+    name, vm = f"image-{firmware}", Machine(disk, firmware, work)
+    try:
+        deadline = time.monotonic() + 60 * SLOW
+        while time.monotonic() < deadline:
+            time.sleep(1.5)
+            main = vm.shot(out / f"{name}-main.png")
+            if main.size == (1920, 1080) and difference(main, background, clear) < 12 \
+                    and difference(main, background, menu) > 1.5:
+                return []
+        return [f"{name}: the menu didn't come up on this disk (see {name}-main.png)"]
+    finally:
+        vm.close()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--themes", help="comma-separated theme ids (default: every one)")
     ap.add_argument("--firmware", choices=["uefi", "bios", "both"], default="uefi")
     ap.add_argument("--out", type=Path, default=Path(__file__).resolve().parent / "out")
+    ap.add_argument("--image", type=Path, help="boot this disk image, made elsewhere, and check the menu comes up")
     args = ap.parse_args()
-    for tool in ("qemu-system-x86_64", "sfdisk", "mkfs.vfat", "mcopy", "mdeltree"):
+    for tool in ("qemu-system-x86_64",) if args.image else ("qemu-system-x86_64", "mkfs.vfat", "mcopy", "mdeltree"):
         if not shutil.which(tool):
-            sys.exit(f"{tool} not found: this needs QEMU, mtools, dosfstools and sfdisk")
-    cr = load_helix()
+            sys.exit(f"{tool} not found: this needs QEMU, mtools and dosfstools")
     args.out.mkdir(parents=True, exist_ok=True)
+    if args.image:
+        problems = []
+        with tempfile.TemporaryDirectory(prefix="helix-boot-test-") as tmp:
+            for firmware in (["uefi", "bios"] if args.firmware == "both" else [args.firmware]):
+                found = check_image(args.image, firmware, args.out, Path(tmp))
+                print(f"  {'FAIL' if found else 'ok  '} {args.image.name} ({firmware})")
+                problems += found
+        for p in problems:
+            print(f"✗ {p}", file=sys.stderr)
+        return 1 if problems else 0
+    cr = load_helix()
     with tempfile.TemporaryDirectory(prefix="helix-boot-test-") as tmp:
         work = Path(tmp)
         (work / "user").mkdir()                                       # a clean setup: no local.toml, no byo/

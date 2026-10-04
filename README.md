@@ -89,11 +89,16 @@ The [code signing policy](docs/code-signing.md) says how signed releases are
 made, and has the privacy policy: what the app contacts, and what it changes
 on your PC.
 
-**Mac.** A Mac can keep a stick up to date, though not create one yet (Ventoy
-has no installer for macOS): make the stick once on a PC, then from a clone of
-this repo run `python3 mac/helix-mac`. It finds the stick, shows what it will
-change, and asks. `mac/helix-mac check` and `mac/helix-mac look` work as
-`check.sh` and `theme.sh` do. It needs Python 3.11 or newer.
+**Mac.** From a clone of this repo, `python3 mac/helix-mac` keeps a stick up
+to date: it finds the stick, shows what it will change, and asks.
+`mac/helix-mac check` and `mac/helix-mac look` work as `check.sh` and
+`theme.sh` do. It needs Python 3.11 or newer.
+
+Creating a stick on a Mac is **experimental**: `mac/helix-mac install --disk disk4`.
+Ventoy has no installer for macOS, so this writes Ventoy's layout onto the disk
+itself, as Ventoy's own installer does on Linux. CI makes a stick this way on a
+Mac and boots it in a virtual PC, but it hasn't been tried on many real sticks.
+If yours doesn't boot, make it once on a PC and keep it current from the Mac.
 
 **From a stick.** Every Helix Boot stick carries both apps in its `HelixBoot`
 folder, so a stick can be updated, or its look changed, from any PC: run

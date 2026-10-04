@@ -39,6 +39,9 @@ class Disks:
     def __call__(self, *args):
         self.calls.append(args)
         if args[:2] == ("list", "-plist"):
+            if len(args) == 3:
+                return {"AllDisksAndPartitions": [d for d in self.listing["AllDisksAndPartitions"]
+                                                  if d["DeviceIdentifier"] == args[2]]}
             return self.listing
         if args[:2] == ("info", "-plist"):
             what = args[2]
@@ -50,6 +53,10 @@ class Disks:
             self.mounted[args[1]] = self.dirs[args[1]]
         elif args[0] == "unmount":
             self.mounted.pop(args[1], None)
+        elif args[0] == "unmountDisk":
+            self.mounted = {p: d for p, d in self.mounted.items() if not p.startswith(args[-1])}
+        elif args[0] == "eraseVolume":
+            self.mounted[args[3]] = self.dirs[args[3]]
         return {}
 
 
@@ -146,6 +153,73 @@ class TestMacFront(unittest.TestCase):
         forget.assert_called_once()
         self.assertIn("stay Ventoy's Language and Help", err.getvalue())
         self.assertNotIn("disk4s2", self.run.mounted)
+
+    # ── install (experimental) ──
+    def install(self, ask=lambda q: "disk4", **kw):
+        base = dict(disk="disk4", pack=None, no_fetch=True, erase=None, eject=False, allow_disk_image=False)
+        steps, root = [], []
+        layout = {"head": b"H" * 2048 * 512, "efi": b"E" * 4096, "efi_start": 120_000_000, "data_start": 2048,
+                  "data_sectors": 1}
+        vdir = self.tmp / "cache/ventoy/ventoy-1.1.17"
+        (vdir / "boot").mkdir(parents=True, exist_ok=True)
+        (vdir / "boot/boot.img").write_bytes(b"x")
+        fakes = dict(
+            load_lock=lambda cfg: {"ventoy": {"final": "ventoy-1.1.17"}},
+            ventoy_layout=lambda v, sectors: steps.append(("layout", v.name, sectors)) or layout,
+            cmd_sync=lambda cfg, n: steps.append(("sync", n.target, n.init, n.verify)) or 0,
+            cmd_splash=lambda cfg, n: steps.append(("splash", n.efi, n.stick)) or 0,
+            Config=lambda repo=None: mock.Mock(cache=self.tmp / "cache", stick_label="HelixBoot"),
+        )
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(out), mock.patch.multiple(mac.cr, **fakes), \
+                mock.patch.object(mac.time, "sleep"):
+            try:
+                rc = mac.install(mac.ns(**{**base, **kw}), run=self.run, ask=ask, root=lambda *c: root.append(c))
+            except mac.cr.RescueError as e:
+                rc = str(e)
+        return rc, steps, root, out.getvalue()
+
+    def test_install_only_erases_a_usb_disk_that_isnt_the_macs(self):
+        self.run.info["disk6"] = {"Internal": False, "TotalSize": 2000 * GB, "BusProtocol": "SATA"}
+        self.run.info["disk7"] = {"Internal": False, "TotalSize": 1 * GB, "BusProtocol": "Disk Image"}
+        for disk, why in (("disk0", "inside this Mac"), ("disk4s1", "whole disk"), ("disk6", "isn't a USB or SD disk"),
+                          ("disk7", "isn't a USB or SD disk"), ("../disk4", "whole disk")):
+            rc, steps, root, out = self.install(disk=disk)
+            self.assertIn(why, rc, disk)
+            self.assertEqual((steps, root), ([], []), disk)                 # nothing fetched into place, nothing written
+        self.run.mounted["disk4s1"] = "/"                                   # as if the Mac were running from it
+        rc, steps, root, out = self.install()
+        self.assertIn("running system", rc)
+        self.assertEqual(root, [])
+
+    def test_install_needs_the_disks_name_typed(self):
+        rc, steps, root, out = self.install(ask=lambda q: "disk5")
+        self.assertIn("didn't match", rc)
+        self.assertEqual(root, [])
+        self.assertIn("ERASE", out)
+        self.assertNotIn(("eraseVolume", "ExFAT", "HelixBoot", "disk4s1"), self.run.calls)
+
+    def test_install_writes_ventoy_formats_then_fills(self):
+        rc, steps, root, out = self.install(erase="disk4", ask=lambda q: self.fail("asked"))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(steps[0], ("layout", "ventoy-1.1.17", 62 * GB // 512))
+        self.assertEqual([c[0] for c in root], ["dd", "dd", "sync", "dd", "sync"])
+        self.assertEqual(root[0][2:], ("of=/dev/rdisk4", "bs=1m"))                               # the first MiB
+        self.assertEqual(root[1][2:], ("of=/dev/rdisk4", "bs=4096", f"seek={120_000_000 // 8}"))   # VTOYEFI, at its sector
+        self.assertEqual(root[3][2:], ("of=/dev/rdisk4", "bs=512", "count=1"))                   # the table again
+        calls = self.run.calls
+        erase = calls.index(("eraseVolume", "ExFAT", "HelixBoot", "disk4s1"))
+        self.assertLess(calls.index(("unmountDisk", "force", "disk4")), erase)
+        self.assertEqual(steps[1:], [("sync", str(self.stick), True, True), ("splash", str(self.efi), str(self.stick))])
+        self.assertEqual(list(Path(tempfile.gettempdir()).glob("helix-install-*")), [])          # its work files are gone
+
+    def test_install_stops_if_the_disk_changes_after_the_question(self):
+        def swap(question):
+            self.run.info["disk4"] = {"Internal": False, "TotalSize": 128 * GB, "MediaName": "Another", "BusProtocol": "USB"}
+            return "disk4"
+        rc, steps, root, out = self.install(ask=swap)
+        self.assertIn("unplugged or replaced", rc)
+        self.assertEqual(root, [])
 
 
 if __name__ == "__main__":

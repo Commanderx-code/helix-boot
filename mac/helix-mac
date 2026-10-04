@@ -6,10 +6,13 @@
     mac/helix-mac check            read the stick back: any damaged or missing files?
     mac/helix-mac look --theme midnight      change its look (the options of `helix theme`)
     mac/helix-mac list             the Helix Boot / Ventoy sticks it can see
+    mac/helix-mac install --disk disk4       EXPERIMENTAL: erase a USB disk and make a new stick
 
-A Mac can't create a stick yet (Ventoy has no installer for macOS): make it once on a PC, then
-this keeps it current. Nothing here boots a Mac either; the stick's Mac folder holds tools to
-copy onto one. Needs Python 3.11 or newer (python.org, or `brew install python`).
+Ventoy has no installer for macOS, so `install` writes Ventoy's layout onto the disk itself, the
+way Ventoy's own installer does on Linux. CI boots a disk made that way, but it has not been
+tried on many real sticks: if it doesn't boot, make the stick once on a PC (install.sh or
+HelixBoot.exe) and keep it current from here. Nothing here boots a Mac; the stick's Mac folder
+holds tools to copy onto one. Needs Python 3.11 or newer (python.org, or `brew install python`).
 
 Your local.toml and byo/ folder are the ones beside the `helix` script, as on Linux.
 """
@@ -17,8 +20,11 @@ import argparse
 import importlib.machinery
 import importlib.util
 import plistlib
+import re
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 if sys.version_info < (3, 11):
@@ -179,6 +185,123 @@ def update(a, run=diskutil, ask=input) -> int:
     return 0
 
 
+# ── A new stick (experimental) ─────────────────────────────────────────────
+ERASABLE_BUSES = {"USB", "Secure Digital"}
+BIG_DISK = 300 * 1000**3
+
+
+def sudo(*cmd: str) -> None:
+    """Run one command as root (it asks for your password in the terminal the first time)."""
+    r = subprocess.run(["sudo", *cmd], capture_output=True, text=True)
+    if r.returncode:
+        raise cr.RescueError(f"{cmd[0]} failed: {(r.stderr or r.stdout).strip()[-300:]}")
+
+
+def erasable(disk: str, run=diskutil, disk_images: bool = False) -> dict:
+    """The disk to erase, if it may be: a whole USB or SD disk that isn't inside the Mac and
+    holds nothing the Mac is running from. Raises RescueError otherwise."""
+    if not re.fullmatch(r"disk\d+", disk):
+        raise cr.RescueError("install needs a whole disk, named like disk4 (see `diskutil list external`)")
+    info = run("info", "-plist", disk)
+    if not info or not info.get("WholeDisk", True):
+        raise cr.RescueError(f"{disk} isn't a whole disk")
+    bus = str(info.get("BusProtocol") or "")
+    if info.get("Internal") or info.get("SystemImage"):
+        raise cr.RescueError(f"{disk} is inside this Mac. Refusing.")
+    if bus not in ERASABLE_BUSES and not (disk_images and bus == "Disk Image"):
+        raise cr.RescueError(f"{disk} isn't a USB or SD disk (it is on {bus or 'an unknown bus'}). Refusing.")
+    for d in run("list", "-plist", disk).get("AllDisksAndPartitions", []):
+        for part in d.get("Partitions", []):
+            where = str(run("info", "-plist", part.get("DeviceIdentifier", "")).get("MountPoint") or "")
+            if where == "/" or where.startswith(("/System", "/private")):
+                raise cr.RescueError(f"{disk} holds part of the running system ({where}). Refusing.")
+    size = int(info.get("TotalSize") or info.get("Size") or 0)
+    if size <= 0:
+        raise cr.RescueError(f"can't tell how big {disk} is")
+    return {"disk": disk, "name": str(info.get("MediaName") or info.get("IORegistryEntryName") or "disk"),
+            "size": size, "bus": bus}
+
+
+def install(a, run=diskutil, ask=input, root=sudo) -> int:
+    """Erase a USB disk and make it a Helix Boot stick: Ventoy's layout written directly (see
+    ventoy_layout in the engine), the data partition formatted by macOS, then filled as an
+    update fills it."""
+    cfg = cr.Config(repo=ROOT)
+    disk = (a.disk or "").removeprefix("/dev/")
+    target = erasable(disk, run, a.allow_disk_image)
+    # Everything is fetched and checked before the disk is touched
+    if a.pack:
+        vdir = cr._ventoy_from_pack(cfg, a.pack, windows=False)
+    else:
+        if not a.no_fetch and cr.cmd_fetch(cfg, ns(tools=[], force=False)):
+            cr.warn("some downloads failed; the stick gets everything else")
+        entry = cr.load_lock(cfg).get("ventoy")
+        vdir = cfg.cache / "ventoy" / entry["final"] if entry else None
+        if not vdir or not (vdir / "boot" / "boot.img").is_file():
+            raise cr.RescueError("Ventoy isn't downloaded: check your connection and try again")
+    layout = cr.ventoy_layout(vdir, target["size"] // 512)
+
+    cr.head("This will ERASE everything on:")
+    print(f"  {disk}: {target['name']}, {human(target['size'])}, {target['bus']}")
+    if target["size"] >= BIG_DISK:
+        cr.warn("this disk is bigger than most sticks. Is it an external drive with backups?")
+    print("  Installing from a Mac is experimental: Ventoy's layout is written directly.\n")
+    if a.erase != disk and ask(f"Type {disk} to erase it: ").strip() != disk:
+        raise cr.RescueError("didn't match: nothing was changed")
+    if erasable(disk, run, a.allow_disk_image) != target:
+        raise cr.RescueError("the disk was unplugged or replaced; start again")
+
+    work = Path(tempfile.mkdtemp(prefix="helix-install-"))
+    try:
+        (work / "head.bin").write_bytes(layout["head"])
+        (work / "efi.img").write_bytes(layout["efi"])
+        raw, part1, part2 = f"/dev/r{disk}", f"{disk}s1", f"{disk}s2"
+        cr.info("writing Ventoy …")
+        run("unmountDisk", "force", disk)
+        root("dd", f"if={work / 'head.bin'}", f"of={raw}", "bs=1m")
+        root("dd", f"if={work / 'efi.img'}", f"of={raw}", "bs=4096", f"seek={layout['efi_start'] // 8}")
+        root("sync")
+        for _ in range(30):                              # macOS reads the new partition table
+            names = {p.get("DeviceIdentifier") for d in run("list", "-plist", disk).get("AllDisksAndPartitions", [])
+                     for p in d.get("Partitions", [])}
+            if {part1, part2} <= names:
+                break
+            time.sleep(1)
+        else:
+            raise cr.RescueError(f"macOS doesn't see the new partitions on {disk}; unplug it, plug it in and try again")
+        cr.info("formatting the data partition …")
+        run("eraseVolume", "ExFAT", cfg.stick_label, part1)
+        run("unmountDisk", "force", disk)
+        (work / "sector0.bin").write_bytes(layout["head"][:512])    # formatting may touch the table: ours again
+        root("dd", f"if={work / 'sector0.bin'}", f"of={raw}", "bs=512", "count=1")
+        root("sync")
+    finally:
+        for f in work.glob("*"):
+            f.unlink()
+        work.rmdir()
+
+    stick = {"disk": disk, "name": target["name"], "size": target["size"], "bus": target["bus"],
+             "data": part1, "label": cfg.stick_label, "efi": part2}
+    mnt = mount(part1, run)
+    cr.ok(f"Ventoy written, stick mounted at {mnt}")
+    same_stick(stick, mnt, run)
+    common = dict(target=str(mnt), init=True, dry_run=False, verify=True, no_prune=False, prune_unknown=False)
+    rc = cr.cmd_unpack(cfg, ns(pack=a.pack, **common)) if a.pack else cr.cmd_sync(cfg, ns(**common))
+    if rc:
+        return rc
+    try:
+        (mnt / ".metadata_never_index").touch()
+    except OSError:
+        pass
+    same_stick(stick, mnt, run)
+    boot_script(cfg, stick, mnt, run)
+    if a.eject:
+        run("eject", disk)
+        cr.ok("Ejected: safe to unplug.")
+    cr.ok("Done. On a Secure Boot PC, the first boot asks to enrol Ventoy's key (Enroll key, then reboot).")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="helix-mac", description=__doc__.split("\n\n")[0],
                                  epilog="`helix-mac look` takes the options of `helix theme`: --theme, --icons, "
@@ -197,6 +320,13 @@ def main(argv: list[str] | None = None) -> int:
                    help="also remove tools on the stick that this Mac has no copy of (by default they stay)")
     p.add_argument("--yes", action="store_true", help="don't ask before changing the stick")
     p.add_argument("--eject", action="store_true", help="eject the stick when finished")
+    p = sub.add_parser("install", help="EXPERIMENTAL: erase a USB disk and make a new stick")
+    p.add_argument("--disk", metavar="diskN", required=True, help="the whole disk to erase (see `diskutil list external`)")
+    p.add_argument("--from", dest="pack", metavar="PACK", help="fill it from a pack .zip, with no downloads")
+    p.add_argument("--no-fetch", action="store_true", help="don't download: use what's already fetched")
+    p.add_argument("--erase", metavar="diskN", help="confirm the erase here (the disk's name again) and don't ask")
+    p.add_argument("--eject", action="store_true", help="eject the stick when finished")
+    p.add_argument("--allow-disk-image", action="store_true", help=argparse.SUPPRESS)   # for the test in CI
     p = sub.add_parser("check", help="read the stick back and find damaged or missing files")
     stick_arg(p)
     p = sub.add_parser("look", help="show or change the stick's look", add_help=False)
@@ -220,6 +350,8 @@ def main(argv: list[str] | None = None) -> int:
             if not found:
                 print("No Helix Boot / Ventoy stick found.")
             return 0
+        if a.cmd == "install":
+            return install(a)
         if a.cmd == "check":
             mnt = mount(pick(a.disk)["data"])
             return cr.cmd_verify(cr.Config(repo=ROOT), ns(target=str(mnt), json=False))
