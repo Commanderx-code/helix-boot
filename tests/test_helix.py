@@ -1607,7 +1607,7 @@ class TestPack(Base):
         (self.repo / "byo/Thing.zip").write_bytes(app_zip)
         (self.repo / "byo/Disk.dmg").write_bytes(b"koly disk image")
         mac = ('[[tool]]\nname = "thing"\ntitle = "Thing"\ndescription = "Does a thing."\nkind = "app"\n'
-               'platform = "mac"\nsource = "local"\nbyo = true\npath = "byo/Thing.zip"\n\n'
+               'platform = "mac"\nmacos = "14.0"\nsource = "local"\nbyo = true\npath = "byo/Thing.zip"\n\n'
                '[[tool]]\nname = "disk-tool"\ntitle = "Disk Tool"\nkind = "app"\nplatform = "mac"\n'
                'source = "local"\nbyo = true\npath = "byo/Disk.dmg"\n')
         (self.repo / "local.toml").write_text(mac)
@@ -1619,8 +1619,14 @@ class TestPack(Base):
         self.assertEqual((self.stick / "Mac/disk-tool/Disk.dmg").read_bytes(), b"koly disk image")
         self.assertFalse((self.stick / "Apps/thing").exists())
         readme = (self.stick / "Mac/README.txt").read_text()
-        for text in ("Thing\n    thing/Thing.zip\n    Does a thing.", "Disk Tool\n    disk-tool/Disk.dmg"):
+        for text in ("Thing\n    thing/Thing.zip\n    Does a thing.\n    Needs macOS 14 or newer\n",
+                     "Disk Tool\n    disk-tool/Disk.dmg\n\n"):                       # (it doesn't say: no such line)
             self.assertIn(text, readme)
+        for bad in ('macos = "new"', 'macos = 14'):                                        # a version, as text
+            (self.repo / "local.toml").write_text(mac.replace('macos = "14.0"', bad))
+            with self.assertRaisesRegex(cr.RescueError, "oldest macOS"):
+                cr.Config(repo=self.repo)
+        (self.repo / "local.toml").write_text(mac)
         self.assertNotIn("Thing", (self.stick / "Apps/apps.txt").read_text())               # not for the PE launcher
         self.assertTrue((self.stick / "Apps/sysinternals").is_dir())                         # Windows apps as before
 

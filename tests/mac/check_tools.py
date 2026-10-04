@@ -7,7 +7,8 @@ is inside is whole, signed by its developer and let through by Gatekeeper.
 
 A download that can't be opened, holds no app, or whose signature is broken fails the run. One that
 is merely unsigned or not notarized is reported: macOS then asks before opening it, which the
-stick's Mac/README.txt explains. Needs macOS (hdiutil, codesign, spctl, pkgutil); CI runs it on
+stick's Mac/README.txt explains. That README also says which macOS each tool needs, from `macos`
+in tools.toml: an app that says otherwise fails the run, with the line to change. Needs macOS (hdiutil, codesign, spctl, pkgutil); CI runs it on
 GitHub's Mac runners.
 """
 import argparse
@@ -22,6 +23,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+MINIMUMS: list[str] = []         # the oldest macOS each app found in the current download says it runs on
 
 
 def load_helix():
@@ -73,6 +75,7 @@ def check_app(app: Path) -> tuple[list[str], list[str], list[str]]:
         facts.append(archs or "unknown architecture")
     if info.get("LSMinimumSystemVersion"):
         facts.append(f"macOS {info['LSMinimumSystemVersion']}+")
+        MINIMUMS.append(str(info["LSMinimumSystemVersion"]))
 
     sign = run("codesign", "--verify", "--deep", "--strict", app)
     if sign.returncode == 0:
@@ -181,12 +184,21 @@ def main() -> int:
             print(f"✗ {fails[-1]}")
             continue
         work = Path(tempfile.mkdtemp(prefix="helix-mac-"))
+        MINIMUMS.clear()
         try:
             facts, w, x = check_download(path, work)
         except subprocess.TimeoutExpired as e:
             facts, w, x = [], [], [f"timed out ({e.cmd[0]})"]
         finally:
             shutil.rmtree(work, ignore_errors=True)
+        # The stick's Mac/README.txt tells people which macOS each tool needs, from `macos` in tools.toml
+        real = MINIMUMS[0] if len(MINIMUMS) == 1 else None
+        if real and t.get("macos") != real:
+            x.append(f"it needs macOS {real} now, and tools.toml says "
+                     f"{t.get('macos') or 'nothing'}: set macos = \"{real}\" for {t['name']}")
+        elif t.get("macos") and not real:
+            x.append(f"tools.toml says macos = \"{t['macos']}\", but the app doesn't say which macOS it needs: "
+                     f"take that line out for {t['name']}")
         line = f"{t['title']} ({path.name}): " + "; ".join(facts or ["—"])
         for msg in x:
             fails.append(f"{t['title']}: {msg}")

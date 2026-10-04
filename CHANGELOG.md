@@ -6,6 +6,12 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- The stick's `Mac/README.txt` says which macOS each tool needs ("Needs macOS
+  15.6 or newer"), from a new `macos` line per tool in `tools.toml`. The Mac
+  job in CI fails, naming the line to change, when an app's own requirement
+  no longer matches.
+
 ## [0.6.11] - 2026-10-04
 
 ### Security

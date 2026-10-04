@@ -194,6 +194,9 @@ class Config:
             raise RescueError(f"{where}: ventoy_mode must be one of {sorted(VENTOY_MODES)}")
         if t.get("platform") not in (None, "mac") or (t.get("platform") and t["kind"] != "app"):
             raise RescueError(f"{where}: platform can only be \"mac\", on an app")
+        if "macos" in t and not (t.get("platform") == "mac" and isinstance(t["macos"], str)
+                                 and re.fullmatch(r"\d+(\.\d+){0,2}", t["macos"])):
+            raise RescueError(f"{where}: macos is the oldest macOS a Mac app runs on, such as \"10.13\" or \"15.6\"")
         if t["kind"] == "file":
             dest = t.get("dest") or ""
             if not dest or dest.startswith("/") or ".." in dest.split("/"):
@@ -1359,6 +1362,8 @@ def _mac_readme(cfg: Config, apps: list[tuple]) -> bytes | None:
     for t, src in sorted(mac, key=lambda ts: ts[0]["title"].lower()):
         lines += [f"{t['title']}", f"    {t['name']}/{src.name}"]
         lines += [f"    {t['description']}"] if t.get("description") else []
+        if t.get("macos"):          # "14.0" reads better as 14; "15.6" and "10.13" stay
+            lines += [f"    Needs macOS {re.sub(r'(?<=\d{2})\.0$', '', t['macos'])} or newer"]
         lines += [""]
     return "\n".join(lines).encode("utf-8")
 
