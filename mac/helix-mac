@@ -19,6 +19,7 @@ Your local.toml and byo/ folder are the ones beside the `helix` script, as on Li
 import argparse
 import importlib.machinery
 import importlib.util
+import os
 import plistlib
 import re
 import subprocess
@@ -33,6 +34,14 @@ if sys.version_info < (3, 11):
 
 ROOT = Path(__file__).resolve().parents[1]
 EFI_LABEL = "VTOYEFI"            # Ventoy's own small partition: what makes a disk a Ventoy stick
+EFI_SIZE = 65536 * 512           # … always 32 MiB
+
+
+def is_ventoy_efi(part: dict) -> bool:
+    """Ventoy's partition: by its name where macOS reads it, else by what it is on an MBR stick,
+    an EFI system partition of exactly 32 MiB (macOS doesn't read the name of one of those)."""
+    return part.get("VolumeName") == EFI_LABEL or \
+        (not part.get("VolumeName") and part.get("Content") in ("0xEF", "EFI") and part.get("Size") == EFI_SIZE)
 
 
 def load_helix():
@@ -70,7 +79,7 @@ def sticks(run=diskutil) -> list[dict]:
     found = []
     for d in run("list", "-plist").get("AllDisksAndPartitions", []):
         parts = [p for p in d.get("Partitions", []) if p.get("DeviceIdentifier")]
-        efi = next((p for p in parts if p.get("VolumeName") == EFI_LABEL), None)
+        efi = next((p for p in parts if is_ventoy_efi(p)), None)
         rest = [p for p in parts if p is not efi]
         if not efi or not rest:
             continue
@@ -129,12 +138,28 @@ def ns(**kw):
     return argparse.Namespace(**kw)
 
 
-def boot_script(cfg, stick: dict, mnt: Path, run=diskutil) -> None:
+def sudo(*cmd: str) -> None:
+    """Run one command as root (it asks for your password in the terminal the first time)."""
+    r = subprocess.run(["sudo", *cmd], capture_output=True, text=True)
+    if r.returncode:
+        raise cr.RescueError(f"{cmd[0]} failed: {(r.stderr or r.stdout).strip()[-300:]}")
+
+
+def boot_script(cfg, stick: dict, mnt: Path, run=diskutil, root=sudo) -> None:
     """The splash and the L / F1 keys, in Ventoy's own boot script (as install.sh and refresh.sh
-    add on Linux). Never fatal: a stick it can't be done on starts as Ventoy does."""
+    add on Linux). Never fatal: a stick it can't be done on starts as Ventoy does.
+
+    Ventoy's partition is an EFI system partition, which diskutil won't mount from an MBR disk
+    (as most sticks are), so it is then mounted directly as the FAT volume it is. That needs
+    root, hence the password."""
     was = run("info", "-plist", stick["efi"]).get("MountPoint")
+    direct = None
     try:
-        efi = mount(stick["efi"], run)
+        try:
+            efi = mount(stick["efi"], run)
+        except cr.RescueError:
+            direct = efi = Path(tempfile.mkdtemp(prefix="helix-vtoyefi-"))
+            root("mount_msdos", "-u", str(os.getuid()), "-g", str(os.getgid()), f"/dev/{stick['efi']}", str(efi))
         if cr.cmd_splash(cfg, ns(efi=str(efi), remove=False, dry_run=False, stick=str(mnt))):
             raise cr.RescueError("Ventoy's boot script couldn't be changed")
     except (cr.RescueError, OSError) as e:
@@ -144,11 +169,19 @@ def boot_script(cfg, stick: dict, mnt: Path, run=diskutil) -> None:
         except (cr.RescueError, OSError):
             pass
     finally:
-        if not was:
-            try:
+        try:
+            if direct:
+                try:
+                    root("umount", str(direct))
+                finally:
+                    try:
+                        direct.rmdir()
+                    except OSError:
+                        pass
+            elif not was:
                 run("unmount", stick["efi"])
-            except cr.RescueError:
-                pass
+        except cr.RescueError:
+            pass
 
 
 def update(a, run=diskutil, ask=input) -> int:
@@ -188,13 +221,6 @@ def update(a, run=diskutil, ask=input) -> int:
 # ── A new stick (experimental) ─────────────────────────────────────────────
 ERASABLE_BUSES = {"USB", "Secure Digital"}
 BIG_DISK = 300 * 1000**3
-
-
-def sudo(*cmd: str) -> None:
-    """Run one command as root (it asks for your password in the terminal the first time)."""
-    r = subprocess.run(["sudo", *cmd], capture_output=True, text=True)
-    if r.returncode:
-        raise cr.RescueError(f"{cmd[0]} failed: {(r.stderr or r.stdout).strip()[-300:]}")
 
 
 def write_disk(disk: str, src: Path, *where: str, run=diskutil, root=sudo, tries: int = 6) -> None:
@@ -311,7 +337,7 @@ def install(a, run=diskutil, ask=input, root=sudo) -> int:
     except OSError:
         pass
     same_stick(stick, mnt, run)
-    boot_script(cfg, stick, mnt, run)
+    boot_script(cfg, stick, mnt, run, root)
     if a.eject:
         run("eject", disk)
         cr.ok("Ejected: safe to unplug.")
