@@ -86,6 +86,19 @@ class TestMacFront(unittest.TestCase):
             with self.assertRaisesRegex(mac.cr.RescueError, "isn't a Helix Boot / Ventoy stick"):
                 mac.pick(disk, self.run)
 
+    def test_an_mbr_sticks_ventoy_partition_has_no_name_on_a_mac(self):
+        # macOS doesn't read the name of an EFI system partition on an MBR disk: it is known by
+        # its type and Ventoy's size instead. Another size, or another type, isn't Ventoy's.
+        part = self.run.listing["AllDisksAndPartitions"][1]["Partitions"][1]
+        part.pop("VolumeName")
+        part.update(Content="0xEF", Size=65536 * 512)
+        self.assertEqual(mac.pick(None, self.run)["efi"], "disk4s2")
+        for change in ({"Size": 200 << 20}, {"Content": "Windows_FAT_32"}):
+            part.update(Content="0xEF", Size=65536 * 512)
+            part.update(change)
+            with self.assertRaisesRegex(mac.cr.RescueError, "no Helix Boot / Ventoy stick found"):
+                mac.pick(None, self.run)
+
     def test_none_or_several_sticks(self):
         self.run.listing["AllDisksAndPartitions"][2]["Partitions"].append(
             {"DeviceIdentifier": "disk5s2", "VolumeName": "VTOYEFI", "Size": 32 << 20})
@@ -153,6 +166,23 @@ class TestMacFront(unittest.TestCase):
         forget.assert_called_once()
         self.assertIn("stay Ventoy's Language and Help", err.getvalue())
         self.assertNotIn("disk4s2", self.run.mounted)
+
+    def test_ventoys_partition_is_mounted_directly_when_diskutil_wont(self):
+        # On an MBR stick Ventoy's partition is an EFI system partition, which diskutil won't mount
+        real, rooted, seen = self.run.__call__, [], []
+
+        def run(*args):
+            if args == ("mount", "disk4s2"):
+                self.run.calls.append(args)
+                raise mac.cr.RescueError("Volume on disk4s2 failed to mount")
+            return real(*args)
+        with mock.patch.object(mac.cr, "cmd_splash", lambda cfg, n: seen.append(n.efi) or 0), redirect_stderr(io.StringIO()):
+            mac.boot_script(mock.Mock(), mac.pick(None, self.run), self.stick, run, lambda *c: rooted.append(c))
+        self.assertEqual([c[0] for c in rooted], ["mount_msdos", "umount"])
+        self.assertEqual(rooted[0][-2], "/dev/disk4s2")
+        self.assertEqual(rooted[0][-1], seen[0])                      # the script is changed where it was mounted
+        self.assertEqual(rooted[1][1], seen[0])
+        self.assertFalse(Path(seen[0]).exists())                      # and the mount point is tidied away
 
     # ── install (experimental) ──
     def install(self, ask=lambda q: "disk4", **kw):
