@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.9] - 2026-10-04
+
 ### Changed
 - The Windows app has a new look: dark and compact, in the boot menu's colours.
   The stick is picked from a drop-down, Install and Update are the two big
@@ -488,7 +490,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.8...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.9...HEAD
+[0.6.9]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.5...v0.6.6
