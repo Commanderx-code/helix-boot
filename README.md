@@ -47,7 +47,8 @@ desktop) and fixes the rest:
 ## Quick start
 
 **Linux.** Needs Python 3.11+ and `sudo`; nothing to `pip install`.
-Use an updated Python with `tarfile.data_filter` for Ventoy archives. Disk writes require a stable device identity: Linux kernel `diskseq`, or a hardware serial reported by Windows. If identity cannot be established, the operation stops. Keep the stick connected throughout the operation.
+That means Python 3.11.4 or newer: Ventoy's archive is only unpacked with the
+safe extraction those versions have. Keep the stick plugged in until it's done.
 
 ```fish
 git clone https://github.com/Commanderx-code/helix-boot
@@ -402,8 +403,16 @@ the stick.
 
 A damaged image is noted on the stick, and the next update copies it again,
 even a quick one. An app file that differs is reported separately, because
-some tools save their settings in their own folder. If a fresh copy goes bad
-again, replace the stick.
+some tools save their settings in their own folder; it still counts as a
+finding (`helix verify` exits non-zero, and the app shows it as a problem),
+since a changed program file looks the same. If a fresh copy goes bad again,
+replace the stick.
+
+An update with `--verify` (`install.sh` always, `refresh.sh --verify`, and
+every Update from the Windows app) checks the apps' files as well as the boot
+images, and copies an app again when any of its files is missing or differs.
+That puts back settings a tool saved in its own folder, so copy those off
+first if you want to keep them.
 
 Apps copied by Helix Boot 0.6.5 or older aren't recorded yet. The next update
 records them.
@@ -425,7 +434,22 @@ records them.
   write or delete anything else.
 - Lazarus PE and the Helix Apps menu only accept a USB/SD disk as the stick
   (tag file, no Windows on it), so a tag planted on the PC being repaired can't
-  get its script run.
+  get its script run. They need PowerShell to tell which disks are USB; where
+  it's missing they run nothing by themselves, and you open the stick's `Apps`
+  folder by hand.
+- The disk you confirm is the disk that gets written. Between your confirmation
+  and each write, the scripts and the Windows app check it is still the same
+  device (Linux: the kernel's disk sequence number; Windows: its serial, or the
+  device id Windows gave it), still USB, and not the system disk. A stick
+  swapped under the same name stops the run.
+- A stick is only written if it is a plain file tree. A symlink, a Windows
+  reparse point or a hard link anywhere on it is refused before anything is
+  changed, since one could send a write somewhere else. Keep the stick mounted
+  by one system only while it's updated.
+- Files are written under a fresh, unguessable temporary name and then moved
+  into place, so nothing planted under a predictable name gets written through.
+- `refresh.sh --dry-run` changes nothing, so it can't be combined with
+  `--upgrade-ventoy` or `--eject`.
 
 ## Customising
 
@@ -643,12 +667,3 @@ names, logos and icons belong to their owners and only identify the software
 the boot-menu themes are other people's work under their own licences, credited
 in their folders: [Standby](theme/presets/standby/NOTICE.md) (GPL) and
 [Poly dark](theme/presets/poly-dark/NOTICE.md) (MIT).
-
-Stick updates require a plain file tree: symlinks, Windows reparse points and hard links
-are refused before managed writes. Keep the target exclusively mounted while updating it.
-`sync --verify` and `unpack --verify` check app contents as well as images and restore
-missing or changed app files from the source; back up intentional app-file edits first.
-`helix verify` returns a nonzero status for changed app files, including changed settings.
-`refresh.sh --dry-run` cannot be combined with `--upgrade-ventoy` or `--eject`.
-PE automatic app discovery requires confirmed USB, SD or MMC bus information; if the
-helper or that information is unavailable, open the trusted stick manually to launch apps.

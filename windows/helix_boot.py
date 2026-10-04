@@ -158,6 +158,8 @@ Get-Disk | ForEach-Object {
     Number  = [int]$_.Number
     Name    = "$($_.FriendlyName)"
     Serial  = "$($_.SerialNumber)"
+    Id      = "$($_.UniqueId)"
+    Path    = "$($_.Path)"
     Size    = [int64]$_.Size
     Bus     = "$($_.BusType)"
     System  = [bool]($_.IsSystem -or $_.IsBoot)
@@ -213,10 +215,15 @@ def pick(disk_no: int, run=powershell) -> dict:
 
 
 def disk_identity(d: dict) -> tuple:
-    serial = str(d.get("Serial") or "").strip()
-    if not serial:
-        raise RescueError("Windows did not report a hardware serial for this disk; refusing to write")
-    return serial, d["Size"], d["Bus"]
+    """What tells this disk from another that takes its place under the same number: its hardware
+    serial, or for the many sticks that report none, the id Windows gave this one when it was
+    plugged in. Without either there is nothing to hold a confirmation to, so nothing is written."""
+    for key in ("Serial", "Id", "Path"):
+        value = str(d.get(key) or "").strip()
+        if value:
+            return key, value, d["Size"], d["Bus"]
+    raise RescueError("Windows reports nothing that identifies this disk (no serial, no device id); "
+                      "refusing to write")
 
 
 def recheck_disk(expected: dict, run=powershell, *, same_volume: bool = False) -> dict:

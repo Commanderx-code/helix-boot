@@ -6,6 +6,44 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Security
+A hardening pass over what gets written, and where:
+- **The disk you confirm is the disk that is written.** `install.sh`,
+  `refresh.sh --upgrade-ventoy` and the Windows app check, between your
+  confirmation and each write, that it is still the same device (Linux: the
+  kernel's disk sequence number; Windows: the disk's serial, or the device id
+  Windows gave it), still USB, and not the system disk.
+- **A stick must be a plain file tree.** A symlink, a Windows reparse point or
+  a hard link anywhere on the target is refused before anything is changed.
+- **No predictable temporary names.** Files are staged under a fresh random
+  name before being moved into place (downloads onto the stick, the pack,
+  Ventoy's boot script, the lock file).
+- **Lazarus PE and Helix Apps run nothing without proof the stick is USB.**
+  The fallback that scanned drive letters when PowerShell was missing is gone.
+- A pack's Ventoy version and its tree patches are validated before use, and
+  the cache folder a pack's Ventoy is unpacked into can't be a link.
+- Tar archives are only unpacked with Python's safe extraction (3.11.4+).
+- A download that changed upstream without a version bump is no longer
+  accepted with `--force`; the message says how to accept a file you checked.
+
+### Changed
+- `--verify` on an update checks the apps' files too, and copies an app again
+  when any differ; the Windows app's update summary now counts those. This
+  puts back settings a tool saved in its own folder.
+- `helix verify` and **Check stick** count a changed app file as a finding
+  (exit status 1), where it was a note before.
+- `refresh.sh --dry-run` can't be combined with `--upgrade-ventoy` or `--eject`.
+- A tool of your own that is an app is versioned by its content, so a changed
+  file under the same date is noticed.
+
+### Fixed
+- The new device check refused every stick that reports no serial number to
+  Windows, which many do. Such a stick is now known by the device id Windows
+  gives it.
+- The new link check stopped on a folder only the system may read
+  (`System Volume Information` on an NTFS stick, `lost+found` on ext4). Those
+  are left alone; any other unreadable folder gives a plain message.
+
 ## [0.6.12] - 2026-10-04
 
 ### Security
