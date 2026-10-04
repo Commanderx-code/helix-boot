@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/artwork/helix-logo.png" alt="Helix Boot" width="150">
+
 # Helix Boot
 
 **A multiboot rescue USB that builds itself from upstream sources.**<br>

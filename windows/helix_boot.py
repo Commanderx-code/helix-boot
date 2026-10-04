@@ -539,16 +539,29 @@ def apply_theme(root) -> None:
             pass
 
 
-def logo_image(master):
-    """The helix mark for a window's header, or None where the picture can't be loaded."""
+def _picture(master, name: str):
+    """A bundled picture (beside the app's files, or in windows/ when run from source), or None."""
     import tkinter as tk
-    for path in (bundle_dir() / "logo.png", bundle_dir() / "windows" / "logo.png"):
+    for path in (bundle_dir() / name, bundle_dir() / "windows" / name):
         if path.is_file():
             try:
                 return tk.PhotoImage(master=master, file=str(path))
             except tk.TclError:
                 return None
     return None
+
+
+def logo_image(master):
+    """The HB mark for a window's header, or None where the picture can't be loaded."""
+    return _picture(master, "logo.png")
+
+
+def set_icon(root) -> None:
+    """The app's icon on its windows and taskbar button (new windows of this root take it too)."""
+    icon = _picture(root, "icon.png")
+    if icon:
+        root.iconphoto(True, icon)
+        root._helix_icon = icon         # Tk drops an image nothing refers to
 
 
 def gui(selftest: bool = False) -> int:
@@ -564,6 +577,7 @@ def gui(selftest: bool = False) -> int:
     root.geometry("600x560")
     root.minsize(560, 540)
     apply_theme(root)
+    set_icon(root)
     style = ttk.Style(root)
 
     frm = ttk.Frame(root, padding=(18, 14, 18, 16))
@@ -886,6 +900,7 @@ def look_window(mnt: Path, parent=None, selftest: bool = False):
         win.configure(background=BG)
     else:
         apply_theme(win)
+        set_icon(win)
     win.title(f"{APP}: the look of {mnt}")
     if parent:      # modal: Install and Update can't be started while this can still write to the stick
         win.transient(parent)

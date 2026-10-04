@@ -11,6 +11,8 @@ tagged releases also publish the Windows app.
   The stick is picked from a drop-down, Install and Update are the two big
   buttons, the progress bar shows its percentage, and the log is behind
   **Show log**. The Look window matches.
+- The project has a logo, the HB mark: in the app's header, as the icon of
+  `HelixBoot.exe` and its windows, and at the top of the README.
 
 ### Fixed
 - The Look window's preview didn't draw the menu's row of hotkey icons.
