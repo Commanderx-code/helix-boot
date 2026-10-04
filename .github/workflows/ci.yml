@@ -157,6 +157,39 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.11"
+      # Updating a stick from a Mac, for real: a disk image partitioned like a Ventoy stick (a data
+      # partition and VTOYEFI) stands in for one, found and written through diskutil.
+      - name: Update a stick from this Mac
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HELIX_CACHE: ${{ runner.temp }}/helix-small
+          NO_COLOR: "1"
+        run: |
+          set -euo pipefail
+          mkfile -n 700m "$RUNNER_TEMP/stick.img"
+          dev=$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$RUNNER_TEMP/stick.img" | awk 'NR==1 { print $1 }')
+          disk=${dev#/dev/}
+          diskutil partitionDisk "$dev" MBR ExFAT HELIXTEST 640M "MS-DOS FAT16" VTOYEFI R
+          mkdir -p /Volumes/VTOYEFI/grub
+          printf '%s\n' 'function legacy_iso_memdisk {' '}' 'function uefi_iso_memdisk {' '}' \
+            'set VTOY_HELP_CMD="a"' 'set VTOY_LANG_CMD="b"' '#clear all input key before show main menu' 'vt_clear_key' \
+            > /Volumes/VTOYEFI/grub/grub.cfg
+          diskutil unmount /Volumes/VTOYEFI
+          diskutil info "$dev" | grep -E 'Internal|Protocol|Virtual' || true
+          python helix fetch ventoy supergrub2 memtest86plus
+          python mac/helix-mac list
+          python mac/helix-mac update --disk "$disk" --yes --no-fetch
+          test -f /Volumes/HELIXTEST/ventoy/ventoy.json
+          test -f /Volumes/HELIXTEST/.helix-boot/keys-hook
+          grep -q key_power.png /Volumes/HELIXTEST/ventoy/theme/theme.txt
+          find /Volumes/HELIXTEST/ISO -type f | sed 's/^/on the stick: /'
+          diskutil mount "${disk}s2"
+          grep -q 'helix-boot splash: begin' /Volumes/VTOYEFI/grub/grub.cfg
+          diskutil unmount /Volumes/VTOYEFI
+          python mac/helix-mac check --disk "$disk"
+          python mac/helix-mac update --disk "$disk" --yes --no-fetch | tee again.log
+          grep -q 'already up to date' again.log
+          hdiutil detach "$dev"
       - name: Fetch the Mac tools
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

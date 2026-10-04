@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Helix Boot on a Mac: keep a Helix Boot stick up to date.
+
+    mac/helix-mac                  update the stick that's plugged in (it asks first)
+    mac/helix-mac update --from helix-boot-2026-10-04.zip     from a pack, no downloads
+    mac/helix-mac check            read the stick back: any damaged or missing files?
+    mac/helix-mac look --theme midnight      change its look (the options of `helix theme`)
+    mac/helix-mac list             the Helix Boot / Ventoy sticks it can see
+
+A Mac can't create a stick yet (Ventoy has no installer for macOS): make it once on a PC, then
+this keeps it current. Nothing here boots a Mac either; the stick's Mac folder holds tools to
+copy onto one. Needs Python 3.11 or newer (python.org, or `brew install python`).
+
+Your local.toml and byo/ folder are the ones beside the `helix` script, as on Linux.
+"""
+import argparse
+import importlib.machinery
+import importlib.util
+import plistlib
+import subprocess
+import sys
+from pathlib import Path
+
+if sys.version_info < (3, 11):
+    sys.exit(f"Helix Boot needs Python 3.11 or newer, and this is {sys.version.split()[0]}. "
+             "Get one from python.org or with `brew install python`, then run:  python3 mac/helix-mac")
+
+ROOT = Path(__file__).resolve().parents[1]
+EFI_LABEL = "VTOYEFI"            # Ventoy's own small partition: what makes a disk a Ventoy stick
+
+
+def load_helix():
+    loader = importlib.machinery.SourceFileLoader("helix", str(ROOT / "helix"))
+    spec = importlib.util.spec_from_loader("helix", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+cr = load_helix()
+
+
+def diskutil(*args: str) -> dict:
+    """`diskutil … -plist`, as a dict. Raises RescueError with what diskutil said."""
+    try:
+        r = subprocess.run(["diskutil", *args], capture_output=True, timeout=120)
+    except FileNotFoundError:
+        raise cr.RescueError("diskutil isn't here: this runs on macOS") from None
+    except subprocess.TimeoutExpired:
+        raise cr.RescueError("diskutil didn't answer within 2 minutes") from None
+    if r.returncode:
+        said = (r.stderr or r.stdout).decode("utf-8", "replace").strip()
+        raise cr.RescueError(f"diskutil {' '.join(args)}: {said[:300]}")
+    try:
+        return plistlib.loads(r.stdout) if "-plist" in args else {}
+    except (plistlib.InvalidFileException, ValueError):
+        raise cr.RescueError(f"diskutil {' '.join(args)} gave something that isn't a property list") from None
+
+
+def sticks(run=diskutil) -> list[dict]:
+    """The Ventoy sticks plugged in: disks that aren't inside the Mac and have Ventoy's VTOYEFI
+    partition. The data partition is the one named Ventoy or, since people rename it, the
+    biggest other one."""
+    found = []
+    for d in run("list", "-plist").get("AllDisksAndPartitions", []):
+        parts = [p for p in d.get("Partitions", []) if p.get("DeviceIdentifier")]
+        efi = next((p for p in parts if p.get("VolumeName") == EFI_LABEL), None)
+        rest = [p for p in parts if p is not efi]
+        if not efi or not rest:
+            continue
+        info = run("info", "-plist", d["DeviceIdentifier"])
+        if info.get("Internal") or info.get("SystemImage"):          # never a disk inside the Mac
+            continue
+        data = next((p for p in rest if p.get("VolumeName") == "Ventoy"), max(rest, key=lambda p: p.get("Size", 0)))
+        found.append({"disk": d["DeviceIdentifier"], "name": str(info.get("MediaName") or info.get("IORegistryEntryName") or "disk"),
+                      "size": int(info.get("TotalSize") or info.get("Size") or d.get("Size") or 0),
+                      "bus": str(info.get("BusProtocol") or ""), "data": data["DeviceIdentifier"],
+                      "label": str(data.get("VolumeName") or ""), "efi": efi["DeviceIdentifier"]})
+    return found
+
+
+def pick(disk: str | None, run=diskutil) -> dict:
+    found = sticks(run)
+    if disk:
+        disk = disk.removeprefix("/dev/")
+        hit = next((s for s in found if s["disk"] == disk), None)
+        if not hit:
+            raise cr.RescueError(f"{disk} isn't a Helix Boot / Ventoy stick (an external disk with a {EFI_LABEL} partition)")
+        return hit
+    if not found:
+        raise cr.RescueError("no Helix Boot / Ventoy stick found. Plug it in, or name it with --disk disk4.")
+    if len(found) > 1:
+        raise cr.RescueError("more than one stick is plugged in (" + ", ".join(s["disk"] for s in found)
+                             + "): name the one you mean with --disk")
+    return found[0]
+
+
+def mount(part: str, run=diskutil) -> Path:
+    """Where a partition is mounted, mounting it if it isn't."""
+    where = run("info", "-plist", part).get("MountPoint")
+    if not where:
+        run("mount", part)
+        where = run("info", "-plist", part).get("MountPoint")
+    if not where:
+        raise cr.RescueError(f"couldn't mount {part}")
+    return Path(where)
+
+
+def same_stick(stick: dict, mnt: Path, run=diskutil) -> None:
+    """Before a write: the folder is still that stick's data partition, and the disk is still it."""
+    now = run("info", "-plist", str(mnt))
+    disk = run("info", "-plist", stick["disk"])
+    size = int(disk.get("TotalSize") or disk.get("Size") or 0)
+    if now.get("DeviceIdentifier") != stick["data"] or disk.get("Internal") or size != stick["size"]:
+        raise cr.RescueError("the stick was unplugged or replaced; start again")
+
+
+def human(size: int) -> str:
+    return f"{size / 1000**3:.0f} GB" if size >= 10 * 1000**3 else f"{size / 1000**3:.1f} GB"
+
+
+def ns(**kw):
+    return argparse.Namespace(**kw)
+
+
+def boot_script(cfg, stick: dict, mnt: Path, run=diskutil) -> None:
+    """The splash and the L / F1 keys, in Ventoy's own boot script (as install.sh and refresh.sh
+    add on Linux). Never fatal: a stick it can't be done on starts as Ventoy does."""
+    was = run("info", "-plist", stick["efi"]).get("MountPoint")
+    try:
+        efi = mount(stick["efi"], run)
+        if cr.cmd_splash(cfg, ns(efi=str(efi), remove=False, dry_run=False, stick=str(mnt))):
+            raise cr.RescueError("Ventoy's boot script couldn't be changed")
+    except (cr.RescueError, OSError) as e:
+        cr.warn(f"no splash, and L and F1 stay Ventoy's Language and Help: {e}")
+        try:
+            cr.forget_keys_hook(cfg, mnt)
+        except (cr.RescueError, OSError):
+            pass
+    finally:
+        if not was:
+            try:
+                run("unmount", stick["efi"])
+            except cr.RescueError:
+                pass
+
+
+def update(a, run=diskutil, ask=input) -> int:
+    cfg = cr.Config(repo=ROOT)
+    stick = pick(a.disk, run)
+    mnt = mount(stick["data"], run)
+    cr.ok(f"Stick: {stick['disk']} ({stick['name']}, {human(stick['size'])}) at {mnt}")
+    if not a.pack and not a.no_fetch:
+        if cr.cmd_fetch(cfg, ns(tools=[], force=False)):
+            cr.warn("some downloads failed; updating with everything else")
+    same_stick(stick, mnt, run)
+    # (init=True below: this disk was just checked to be a Ventoy stick, whatever it has been named)
+    summary = cr.plan_text(cr.update_plan(cfg, str(mnt), a.pack, prune_unknown=a.prune_unknown, init=True,
+                                          verify=a.verify))
+    print(f"\nThis update will:\n{summary}\n")
+    nothing = summary.startswith("Everything on the stick is already up to date")
+    if not a.yes and not nothing and ask("Go ahead? [y/N] ").strip().lower() not in ("y", "yes"):
+        raise cr.RescueError("stopped: nothing on the stick was changed")
+    same_stick(stick, mnt, run)
+    common = dict(target=str(mnt), init=True, dry_run=False, verify=a.verify, no_prune=False, prune_unknown=a.prune_unknown)
+    rc = cr.cmd_unpack(cfg, ns(pack=a.pack, **common)) if a.pack else cr.cmd_sync(cfg, ns(**common))
+    if rc:
+        return rc
+    # Spotlight would index the stick and leave its folders on it; this asks it not to
+    try:
+        (mnt / ".metadata_never_index").touch()
+    except OSError:
+        pass
+    same_stick(stick, mnt, run)
+    boot_script(cfg, stick, mnt, run)
+    if a.eject:
+        run("eject", stick["disk"])
+        cr.ok("Ejected: safe to unplug.")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="helix-mac", description=__doc__.split("\n\n")[0],
+                                 epilog="`helix-mac look` takes the options of `helix theme`: --theme, --icons, "
+                                        "--background, --dim, --splash, --reset, --menu, --preview, --export, --import.")
+    sub = ap.add_subparsers(dest="cmd", metavar="command")
+
+    def stick_arg(p):
+        p.add_argument("--disk", metavar="diskN", help="the stick, if more than one is plugged in (see `list`)")
+
+    p = sub.add_parser("update", help="update the stick: newer tools, the menu, the splash (the default)")
+    stick_arg(p)
+    p.add_argument("--from", dest="pack", metavar="PACK", help="copy from a pack .zip, with no downloads")
+    p.add_argument("--no-fetch", action="store_true", help="don't download: use what's already fetched")
+    p.add_argument("--verify", action="store_true", help="re-read every file on the stick after copying (slow)")
+    p.add_argument("--prune-unknown", action="store_true",
+                   help="also remove tools on the stick that this Mac has no copy of (by default they stay)")
+    p.add_argument("--yes", action="store_true", help="don't ask before changing the stick")
+    p.add_argument("--eject", action="store_true", help="eject the stick when finished")
+    p = sub.add_parser("check", help="read the stick back and find damaged or missing files")
+    stick_arg(p)
+    p = sub.add_parser("look", help="show or change the stick's look", add_help=False)
+    p = sub.add_parser("list", help="the Helix Boot / Ventoy sticks plugged in")
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv or argv[0].startswith("-") and argv[0] not in ("-h", "--help"):
+        argv = ["update", *argv]
+    try:
+        if argv[0] == "look":                        # its options go to `helix theme` as they are
+            lp = argparse.ArgumentParser(prog="helix-mac look", add_help=False)
+            stick_arg(lp)
+            mine, theme_args = lp.parse_known_args(argv[1:])
+            mnt = mount(pick(mine.disk)["data"])
+            return cr.main(["theme", str(mnt), *theme_args])
+        a = ap.parse_args(argv)
+        if a.cmd == "list":
+            found = sticks()
+            for s in found:
+                print(f"{s['disk']}  {s['name']}  {human(s['size'])}  {s['bus']}  ({s['label'] or 'unnamed'})")
+            if not found:
+                print("No Helix Boot / Ventoy stick found.")
+            return 0
+        if a.cmd == "check":
+            mnt = mount(pick(a.disk)["data"])
+            return cr.cmd_verify(cr.Config(repo=ROOT), ns(target=str(mnt), json=False))
+        return update(a)
+    except cr.RescueError as e:
+        cr.bad(str(e))
+        return 1
+    except KeyboardInterrupt:
+        print()
+        cr.bad("stopped")
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())
