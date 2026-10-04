@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.12] - 2026-10-04
+
 ### Security
 - The Mac check in CI printed text taken from the downloads (an app's name,
   its version, who signed it) into the log as it was. It is now made safe
@@ -530,7 +532,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.11...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.12...HEAD
+[0.6.12]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.11...v0.6.12
 [0.6.11]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.10...v0.6.11
 [0.6.10]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.9...v0.6.10
 [0.6.9]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.8...v0.6.9
