@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.11] - 2026-10-04
+
 ### Security
 - A tool whose download link is read from a web page (`source = "page"`) took
   any link on that page that matched its pattern, whatever site it pointed to.
@@ -517,7 +519,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.10...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.11...HEAD
+[0.6.11]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.10...v0.6.11
 [0.6.10]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.9...v0.6.10
 [0.6.9]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.7...v0.6.8

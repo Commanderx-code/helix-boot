@@ -616,6 +616,7 @@ ventoy/theme/       the look in use, built from .helix-boot (rebuilt on every re
 - [x] A row of icons for the menu's hotkeys, with a power menu on L and Memtest86+ on F1;
       the Windows app adds the splash and those keys too (0.6.8)
 - [x] A new look for the Windows app, and the HB logo (0.6.9)
+- [x] Fourteen more tools for a Mac, all checked on a real Mac in CI (0.6.11)
 
 ## Contributing
 
