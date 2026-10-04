@@ -155,6 +155,12 @@ or hotkey, the left side kept dark and calm for the live menu and the bottom
 dark for status. `build-theme.py` adds the wordmark and tagline, so they are
 exact and reproducible.
 
+`docs/artwork/helix-logo.png` is the project's logo, the HB mark on a clear
+background, and `docs/artwork/helix-app-icon.png` the same mark on a dark tile:
+the Windows app's header and its icon (`windows/logo.png`, `windows/icon.png`,
+`windows/HelixBoot.ico` are made from them). Both were supplied by the
+project's maintainer.
+
 `docs/artwork/helix-splash.png` is the default theme's splash: the HB logo and
 HELIXBOOT wordmark over a night landscape, supplied by the project's
 maintainer and used as it is. The presets' splashes are still drawn by

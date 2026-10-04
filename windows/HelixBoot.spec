@@ -11,6 +11,7 @@ datas = [
     (str(root / "pe" / "lazarus"), "pe/lazarus"),
     (str(root / "byo" / "README.md"), "byo"),
     (str(root / "windows" / "logo.png"), "."),          # the mark in the windows' header
+    (str(root / "windows" / "icon.png"), "."),          # the windows' own icon (title bar, taskbar)
 ]
 datas += [(str(p), (Path("theme") / p.parent.relative_to(root / "theme")).as_posix())
           for p in (root / "theme").rglob("*")
@@ -54,5 +55,6 @@ exe = EXE(
     console=False,
     uac_admin=sys.platform == "win32",
     upx=False,
+    icon=str(root / "windows" / "HelixBoot.ico"),
     version=str(version_file) if version_file else None,
 )
