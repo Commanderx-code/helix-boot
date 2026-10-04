@@ -516,6 +516,17 @@ def remote_id(url: str) -> str | None:
     return "|".join(p or "" for p in parts) if any(parts) else None
 
 
+def same_build(a: str | None, b: str | None) -> bool:
+    """Are two versions the same files? A download without a version number is named after the
+    day it was fetched and its checksum (2026-10-02-e1c73a31), so two PCs that fetched the same
+    file on different days call it differently: the checksum is what counts there."""
+    if a == b:
+        return True
+    dated = re.compile(r"\d{4}-\d\d-\d\d-([0-9a-f]{8})")
+    ma, mb = dated.fullmatch(a or ""), dated.fullmatch(b or "")
+    return bool(ma and mb and ma.group(1) == mb.group(1))
+
+
 def is_current(prev: dict | None, res: dict) -> bool:
     if not prev or prev.get("source_file", prev.get("file")) != res["file"]:
         return False
@@ -2012,7 +2023,7 @@ def cmd_sync(cfg: Config, args) -> int:
         dst = root / t["name"]
         unzip = zipfile.is_zipfile(src) and t.get("platform") != "mac"
         rec = hashes.get(t["name"])
-        if not args.dry_run and not (rec and rec.get("version") == entry["version"]):
+        if not args.dry_run and not (rec and same_build(rec.get("version"), entry["version"])):
             if unzip:
                 with zipfile.ZipFile(src) as zf:
                     files = _zip_hashes(zf)
@@ -2020,7 +2031,7 @@ def cmd_sync(cfg: Config, args) -> int:
                 files = {src.name: file_hash(src)}
             hashes[t["name"]] = {"version": entry["version"], "dir": f"{_app_root(cfg, t)}/{t['name']}",
                                  "files": files}
-        if app_state.get(t["name"]) == entry["version"] and dst.exists() and t["name"] not in bad_apps:
+        if same_build(app_state.get(t["name"]), entry["version"]) and dst.exists() and t["name"] not in bad_apps:
             ok(f"{t['title']} {entry['version']} — already on stick")
             continue
         info(f"{t['title']} {entry['version']} → {_app_root(cfg, t)}/{t['name']}/")
@@ -2418,8 +2429,8 @@ def cmd_unpack(cfg: Config, args) -> int:
             dst = _inside(root, name, "app folder")
             prefix = f"stick/{roots.get(name, apps_root)}/{name}/"
             rec = hashes.get(name)
-            fresh = not args.dry_run and not (rec and rec.get("version") == version)
-            if app_state.get(name) == version and dst.exists() and name not in bad_apps:
+            fresh = not args.dry_run and not (rec and same_build(rec.get("version"), version))
+            if same_build(app_state.get(name), version) and dst.exists() and name not in bad_apps:
                 if fresh:
                     hashes[name] = {"version": version, "dir": f"{roots.get(name, apps_root)}/{name}",
                                     "files": _zip_hashes(zf, prefix)}

@@ -394,6 +394,23 @@ class TestFetchAndSync(Base):
         self.assertTrue((self.stick / "ISO/2-Rescue/systemrescue-12.03-amd64.iso").exists())
         self.assertTrue(mine.exists())
 
+    def test_an_app_fetched_on_another_day_by_another_pc_isnt_copied_again(self):
+        self.assertTrue(cr.same_build("2026-10-02-e1c73a31", "2026-09-27-e1c73a31"))
+        self.assertFalse(cr.same_build("2026-10-02-e1c73a31", "2026-10-02-0000ffff"))
+        self.assertFalse(cr.same_build("8.10", "8.11") or cr.same_build(None, "2026-10-02-e1c73a31"))
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync()[0], 0)
+        state_file = self.stick / cr.STATE_DIR / "state.json"
+        state = json.loads(state_file.read_text())
+        mine = state["apps"]["sysinternals"]                            # unversioned: the day it was fetched, and its checksum
+        self.assertRegex(mine, r"^\d{4}-\d\d-\d\d-[0-9a-f]{8}$")
+        state["apps"]["sysinternals"] = "2001-01-01" + mine[10:]          # as another PC, another day, would have noted it
+        state_file.write_text(json.dumps(state))
+        rc, out = self.sync(init=False)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Sysinternals Suite", out)
+        self.assertNotIn("unpacked", out)                                # the same files: left as they are
+
     def test_tool_updates_for_the_app(self):
         found = cr.tool_updates(self.cfg)
         self.assertEqual((found["fetched"], found["newer"]), (0, []))
