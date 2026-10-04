@@ -830,13 +830,26 @@ def _reject_links(root: Path) -> None:
                 or (p.is_file() and st.st_nlink > 1):
             raise RescueError(f"refusing linked path on the target: {p}")
 
-    check(root)
+    try:
+        check(root)
+    except OSError as e:
+        raise RescueError(f"can't read {root}: {e}") from None
+    # Folders the system keeps at the top of a volume, which only it may read (on an NTFS or ext4
+    # stick). Nothing here is ever written under them, so a link in one can redirect nothing.
+    system = {"system volume information", "$recycle.bin", "lost+found"}
 
     def failed(error):
-        raise error
+        raise RescueError(f"can't check the target for links: {error}") from None
     for folder, dirs, files in os.walk(root, followlinks=False, onerror=failed):
+        if Path(folder) == root:
+            for name in [d for d in dirs if d.lower() in system]:
+                check(root / name)              # itself not a link …
+                dirs.remove(name)               # … and not gone into
         for name in dirs + files:
-            check(Path(folder) / name)
+            try:
+                check(Path(folder) / name)
+            except OSError as e:
+                raise RescueError(f"can't check {Path(folder) / name} for links: {e}") from None
 
 
 def _temporary_output(dst: Path):

@@ -162,9 +162,20 @@ class TestFlows(unittest.TestCase):
         self.assertEqual(self.calls, ["fetch"])
 
     def test_missing_hardware_identity_refuses_writes(self):
-        with self.assertRaisesRegex(app.RescueError, "hardware serial"):
+        with self.assertRaisesRegex(app.RescueError, "nothing that identifies this disk"):
             app.install(2, run=ps({**STICK, "Serial": ""}), ventoy=self.ventoy)
         self.assertEqual(self.calls, [])
+
+    def test_a_stick_without_a_serial_is_known_by_its_device_id(self):
+        # Many sticks report no serial. The id Windows gave this one when it was plugged in tells
+        # it from another that takes its place, so it can be written, and a swap is still caught.
+        bare = {**STICK, "Serial": "", "Id": "USBSTOR\\DISK&VEN_X\\7&2A3B&0", "Path": "\\\\?\\usbstor#disk&ven_x#7&2a3b&0"}
+        self.assertEqual(app.disk_identity(bare)[:2], ("Id", bare["Id"]))
+        self.assertEqual(app.disk_identity({**bare, "Id": ""})[:2], ("Path", bare["Path"]))
+        self.assertEqual(app.disk_identity(STICK)[:2], ("Serial", "test-usb-123"))        # a serial comes first
+        with self.assertRaisesRegex(app.RescueError, "replaced"):
+            app.recheck_disk(bare, run=ps({**bare, "Id": "USBSTOR\\DISK&VEN_X\\7&9999&0"}))
+        self.assertEqual(app.recheck_disk(bare, run=ps(bare))["Number"], 2)
 
     def test_install(self):
         states = iter([ps(STICK), ps(VENTOY)])                 # before, then after Ventoy

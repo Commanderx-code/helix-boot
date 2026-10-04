@@ -2597,6 +2597,38 @@ class TestReviewFixes(Base):
             self.assertTrue(any(action == "copy" for action, _, _ in plan))
             self.assertEqual(exe.read_bytes(), b"changed")
 
+    def test_link_check_leaves_the_systems_own_folders_alone(self):
+        # An NTFS or ext4 stick has folders at its top that only the system may read. They aren't
+        # gone into (nothing is written under them), and an unreadable folder elsewhere is a plain
+        # message, not a crash.
+        for name in ("System Volume Information", "$RECYCLE.BIN", "lost+found"):
+            (self.stick / name / "inner").mkdir(parents=True)
+            os.symlink("/etc", self.stick / name / "inner" / "link")      # as if unreadable: never looked at
+        cr._reject_links(self.stick)
+        (self.stick / "ISO" / "sub").mkdir(parents=True)
+        os.symlink("/etc", self.stick / "ISO" / "sub" / "link")           # anywhere else, a link is refused
+        with self.assertRaisesRegex(cr.RescueError, "refusing linked path"):
+            cr._reject_links(self.stick)
+        (self.stick / "ISO" / "sub" / "link").unlink()
+        os.symlink("/etc", self.stick / "lost+found2")                    # a look-alike name gets no pass
+        with self.assertRaisesRegex(cr.RescueError, "refusing linked path"):
+            cr._reject_links(self.stick)
+        (self.stick / "lost+found2").unlink()
+        shutil.rmtree(self.stick / "lost+found")
+        os.symlink("/etc", self.stick / "lost+found")                     # nor the folder itself, as a link
+        with self.assertRaisesRegex(cr.RescueError, "refusing linked path"):
+            cr._reject_links(self.stick)
+        (self.stick / "lost+found").unlink()
+        if os.geteuid():
+            locked = self.stick / "Apps" / "locked"
+            locked.mkdir(parents=True)
+            locked.chmod(0)
+            try:
+                with self.assertRaisesRegex(cr.RescueError, "can't check the target for links"):
+                    cr._reject_links(self.stick)
+            finally:
+                locked.chmod(0o755)
+
     def test_boot_hook_failure_cleanup_cannot_bypass_link_guard(self):
         outside = self.tmp / "outside"
         outside.mkdir()
@@ -2665,6 +2697,7 @@ class TestReviewFixes(Base):
         self.assertNotIn("WROTE", got.stdout)
         self.assertIn("disconnected or replaced", got.stderr)
 
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "the PortableApps theme maker needs Pillow")
     def test_failed_theme_generation_preserves_previous_theme(self):
         loader = importlib.machinery.SourceFileLoader("make_theme_review", str(ROOT / "portableapps/make-theme.py"))
         spec = importlib.util.spec_from_loader(loader.name, loader)
