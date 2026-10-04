@@ -1,0 +1,2 @@
+# The oldest Python the project runs on: `ruff check` then flags syntax that only newer ones accept.
+target-version = "py311"

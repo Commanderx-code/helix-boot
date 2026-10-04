@@ -6,6 +6,11 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Security
+- The Mac check in CI printed text taken from the downloads (an app's name,
+  its version, who signed it) into the log as it was. It is now made safe
+  first, so a download can't pass commands to the CI runner that way.
+
 ### Added
 - The stick's `Mac/README.txt` says which macOS each tool needs ("Needs macOS
   15.6 or newer"), from a new `macos` line per tool in `tools.toml`. The Mac

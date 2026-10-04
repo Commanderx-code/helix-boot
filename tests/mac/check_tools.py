@@ -34,6 +34,13 @@ def load_helix():
     return module
 
 
+def clean(text: str) -> str:
+    """Text that came out of a download (an app's name, its version, who signed it), made safe to
+    print in a CI log: one line, nothing a runner would take for a command (::error, ::add-mask …)."""
+    text = "".join(c if c.isprintable() else " " for c in str(text))
+    return text.replace("::", ": :").replace("##[", "# #[")[:400]
+
+
 def run(*cmd, stdin: str | None = None, timeout: int = 300) -> subprocess.CompletedProcess:
     return subprocess.run([str(c) for c in cmd], input=stdin, capture_output=True, text=True, timeout=timeout)
 
@@ -180,7 +187,7 @@ def main() -> int:
         entry = lock.get(t["name"])
         path = cfg.cache / t["name"] / entry["final"] if entry else None
         if not path or not path.is_file():
-            fails.append(f"{t['title']}: not fetched")
+            fails.append(clean(f"{t['title']}: not fetched"))
             print(f"✗ {fails[-1]}")
             continue
         work = Path(tempfile.mkdtemp(prefix="helix-mac-"))
@@ -199,12 +206,12 @@ def main() -> int:
         elif t.get("macos") and not real:
             x.append(f"tools.toml says macos = \"{t['macos']}\", but the app doesn't say which macOS it needs: "
                      f"take that line out for {t['name']}")
-        line = f"{t['title']} ({path.name}): " + "; ".join(facts or ["—"])
+        line = clean(f"{t['title']} ({path.name}): " + "; ".join(facts or ["—"]))
         for msg in x:
-            fails.append(f"{t['title']}: {msg}")
+            fails.append(clean(f"{t['title']}: {msg}"))
             print(f"✗ {fails[-1]}")
         for msg in w:
-            warns.append(f"{t['title']}: {msg}")
+            warns.append(clean(f"{t['title']}: {msg}"))
             print(f"! {warns[-1]}")
         if not x:
             oks.append(line)

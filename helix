@@ -1363,7 +1363,8 @@ def _mac_readme(cfg: Config, apps: list[tuple]) -> bytes | None:
         lines += [f"{t['title']}", f"    {t['name']}/{src.name}"]
         lines += [f"    {t['description']}"] if t.get("description") else []
         if t.get("macos"):          # "14.0" reads better as 14; "15.6" and "10.13" stay
-            lines += [f"    Needs macOS {re.sub(r'(?<=\d{2})\.0$', '', t['macos'])} or newer"]
+            oldest = re.sub(r"(?<=\d{2})\.0$", "", t["macos"])
+            lines += [f"    Needs macOS {oldest} or newer"]
         lines += [""]
     return "\n".join(lines).encode("utf-8")
 
