@@ -836,7 +836,8 @@ def _reject_links(root: Path) -> None:
         raise RescueError(f"can't read {root}: {e}") from None
     # Folders the system keeps at the top of a volume, which only it may read (on an NTFS or ext4
     # stick). Nothing here is ever written under them, so a link in one can redirect nothing.
-    system = {"system volume information", "$recycle.bin", "lost+found"}
+    system = {"system volume information", "$recycle.bin", "lost+found",
+              ".spotlight-v100", ".fseventsd", ".trashes", ".temporaryitems", ".documentrevisions-v100"}   # macOS's
 
     def failed(error):
         raise RescueError(f"can't check the target for links: {error}") from None

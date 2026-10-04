@@ -12,7 +12,7 @@ Current tools, verified downloads, a MediCat-style boot menu, and room for your 
 [![Release](https://img.shields.io/github/v/release/Commanderx-code/helix-boot?sort=semver)](https://github.com/Commanderx-code/helix-boot/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
-![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)
+![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)
 
 [Quick start](#quick-start) ·
 [What's on the stick](#whats-on-the-stick) ·
@@ -88,6 +88,12 @@ Windows SmartScreen may still warn, because the `.exe` isn't code-signed yet.
 The [code signing policy](docs/code-signing.md) says how signed releases are
 made, and has the privacy policy: what the app contacts, and what it changes
 on your PC.
+
+**Mac.** A Mac can keep a stick up to date, though not create one yet (Ventoy
+has no installer for macOS): make the stick once on a PC, then from a clone of
+this repo run `python3 mac/helix-mac`. It finds the stick, shows what it will
+change, and asks. `mac/helix-mac check` and `mac/helix-mac look` work as
+`check.sh` and `theme.sh` do. It needs Python 3.11 or newer.
 
 **From a stick.** Every Helix Boot stick carries both apps in its `HelixBoot`
 folder, so a stick can be updated, or its look changed, from any PC: run

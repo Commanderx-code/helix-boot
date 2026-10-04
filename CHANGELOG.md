@@ -6,6 +6,14 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **Updating a stick from a Mac:** `mac/helix-mac` finds the stick, shows what
+  an update will copy, remove and keep, asks, updates it (from the internet or
+  a pack), and adds the splash and the L / F1 keys, as on Linux. Also
+  `helix-mac check`, `look` and `list`. A Mac can't create a stick yet. CI
+  runs a whole update on a real Mac, against a disk image partitioned like a
+  stick.
+
 ### Changed
 - Release pages carry that version's section of this changelog, and how to
   check a download (`scripts/release-notes.sh`).
