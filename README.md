@@ -644,6 +644,7 @@ ventoy/theme/       the look in use, built from .helix-boot (rebuilt on every re
       the Windows app adds the splash and those keys too (0.6.8)
 - [x] A new look for the Windows app, and the HB logo (0.6.9)
 - [x] Fourteen more tools for a Mac, all checked on a real Mac in CI (0.6.11)
+- [x] A security hardening pass: the confirmed disk is the one written, plain file trees only (0.6.13)
 
 ## Contributing
 
