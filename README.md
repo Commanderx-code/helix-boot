@@ -155,7 +155,9 @@ app doesn't survive the stick's exFAT file system.
 | Tweaks | [Chris Titus Tech's MacUtil](https://github.com/ChrisTitusTech/macutil) *(on hold upstream)* |
 
 CI opens every one of these on a real Mac, and checks that what is inside is
-whole, signed by its developer and accepted by Gatekeeper.
+whole, signed by its developer and accepted by Gatekeeper. The `README.txt`
+says which macOS each one needs (AppCleaner 15.6, Keka 10.10, …); CI checks
+those against the apps too.
 
 <details>
 <summary><b>Notes on unverified tools, antivirus and Kaspersky</b></summary>
