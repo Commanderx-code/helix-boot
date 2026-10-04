@@ -47,6 +47,7 @@ desktop) and fixes the rest:
 ## Quick start
 
 **Linux.** Needs Python 3.11+ and `sudo`; nothing to `pip install`.
+Use an updated Python with `tarfile.data_filter` for Ventoy archives. Disk writes require a stable device identity: Linux kernel `diskseq`, or a hardware serial reported by Windows. If identity cannot be established, the operation stops. Keep the stick connected throughout the operation.
 
 ```fish
 git clone https://github.com/Commanderx-code/helix-boot
@@ -642,3 +643,12 @@ names, logos and icons belong to their owners and only identify the software
 the boot-menu themes are other people's work under their own licences, credited
 in their folders: [Standby](theme/presets/standby/NOTICE.md) (GPL) and
 [Poly dark](theme/presets/poly-dark/NOTICE.md) (MIT).
+
+Stick updates require a plain file tree: symlinks, Windows reparse points and hard links
+are refused before managed writes. Keep the target exclusively mounted while updating it.
+`sync --verify` and `unpack --verify` check app contents as well as images and restore
+missing or changed app files from the source; back up intentional app-file edits first.
+`helix verify` returns a nonzero status for changed app files, including changed settings.
+`refresh.sh --dry-run` cannot be combined with `--upgrade-ventoy` or `--eject`.
+PE automatic app discovery requires confirmed USB, SD or MMC bus information; if the
+helper or that information is unavailable, open the trusted stick manually to launch apps.

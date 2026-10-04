@@ -2089,13 +2089,15 @@ class TestPortableAppsLogo(unittest.TestCase):
 
     @staticmethod
     def png(width, height, noise=True):
-        import struct, zlib
+        import struct
+        import zlib
         rows = b"".join(b"\0" + (os.urandom(width * 4) if noise else bytes(width * 4)) for _ in range(height))
         return (b"\x89PNG\r\n\x1a\n" + cr._png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
                 + cr._png_chunk(b"IDAT", zlib.compress(rows)) + cr._png_chunk(b"IEND", b""))
 
     def chunks(self, png):
-        import struct, zlib
+        import struct
+        import zlib
         i, out = 8, []
         while i < len(png):
             n, kind = struct.unpack(">I4s", png[i:i + 8])
@@ -2123,7 +2125,8 @@ class TestPortableAppsLogo(unittest.TestCase):
         after = exe.read_bytes()
         self.assertEqual(len(after), len(before))
         self.assertIn(self.png(24, 17)[:24], after)                  # the icon's header is untouched
-        import struct, zlib
+        import struct
+        import zlib
         for logo, size in ((grey, (300, 50)), (white, (135, 75))):
             start = before.index(logo)
             self.assertEqual(before[start - 20:start], after[start - 20:start])
@@ -2144,7 +2147,8 @@ class TestPortableAppsLogo(unittest.TestCase):
     @staticmethod
     def filtered_png(width, height, rgba):
         """A PNG whose rows use each of the five filter types in turn, as real encoders do."""
-        import struct, zlib
+        import struct
+        import zlib
         stride, rows, prev = width * 4, b"", bytes(width * 4)
         for y in range(height):
             line, ftype = rgba[y * stride:(y + 1) * stride], y % 5
@@ -2319,7 +2323,8 @@ class TestDownloadRetry(unittest.TestCase):
 class TestPortability(unittest.TestCase):
     def test_loads_without_a_console(self):
         # HelixBoot.exe started from Explorer: a windowed program has sys.stdout/stderr = None
-        import importlib.machinery, importlib.util
+        import importlib.machinery
+        import importlib.util
         with unittest.mock.patch.object(sys, "stdout", None), unittest.mock.patch.object(sys, "stderr", None):
             loader = importlib.machinery.SourceFileLoader("helix_noconsole", str(ROOT / "helix"))
             mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("helix_noconsole", loader))
@@ -2394,6 +2399,296 @@ class TestShellHelpers(unittest.TestCase):
             used |= set(re.findall(r"(?<!\|)\|(?!\|)\s*([a-z][\w.-]*)", (ROOT / f).read_text()))
         self.assertIn("head", used)
         self.assertEqual(sorted(used & set(names)), [], "helper functions hide commands the scripts use")
+
+
+class TestReviewFixes(Base):
+    pack = TestPack.pack
+    unpack = TestPack.unpack
+    tamper = TestPack.tamper
+
+    def test_pack_validates_both_ventoy_entries_before_cache_mutation(self):
+        self.fetch()
+        pack, _ = self.pack()
+        outside = self.tmp / "victim-linux"
+        outside.mkdir()
+        sentinel = outside / "keep"
+        sentinel.write_text("untouched")
+        for key in ("ventoy", "ventoy_windows"):
+            for field, value in (("version", "../../../victim"), ("version", "..\\..\\victim"),
+                                 ("version", "C:/victim"), ("version", None),
+                                 ("file", "../escape.tar.gz"), ("file", "C:\\escape.zip")):
+                with self.subTest(key=key, field=field, value=value):
+                    v = {"file": "installer/ventoy.tar.gz", "version": "1.1.17", field: value}
+                    bad = self.tamper(pack, meta={key: v})
+                    with self.assertRaises(cr.RescueError):
+                        cr._ventoy_from_pack(self.cfg, str(bad), windows=False)
+                    self.assertEqual(sentinel.read_text(), "untouched")
+        # Normal executable archive extraction remains supported.
+        dest = cr._ventoy_from_pack(self.cfg, str(pack), windows=False)
+        self.assertTrue((dest / "Ventoy2Disk.sh").is_file())
+
+    def test_ventoy_cache_symlink_is_refused(self):
+        self.fetch()
+        pack, _ = self.pack()
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        sentinel = outside / "keep"
+        sentinel.write_text("untouched")
+        (self.cfg.cache / "ventoy-from-pack").symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(cr.RescueError):
+            cr._ventoy_from_pack(self.cfg, str(pack), windows=False)
+        self.assertEqual(sentinel.read_text(), "untouched")
+
+    def test_copy_and_unpack_do_not_follow_predictable_staging_links(self):
+        src, dst, outside = (self.tmp / n for n in ("source", "dest", "outside"))
+        src.write_bytes(b"new")
+        outside.write_bytes(b"untouched")
+        part = dst.with_name(dst.name + ".part")
+        for hard in (False, True):
+            if hard:
+                os.link(outside, part)
+            else:
+                part.symlink_to(outside)
+            cr._copy(src, dst)
+            with zipfile.ZipFile(io.BytesIO(zipped({"file": b"zip data"}))) as zf:
+                cr._unzip_to(zf, "file", dst)
+            self.assertEqual(dst.read_bytes(), b"zip data")
+            self.assertEqual(outside.read_bytes(), b"untouched")
+            part.unlink()
+
+    def test_managed_links_refused_before_any_stick_write(self):
+        self.fetch()
+        pack, _ = self.pack()
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        marker = outside / "keep"
+        marker.write_text("untouched")
+        for rel in ("Apps/.sysinternals.new", cr.STATE_DIR, "ventoy", "ISO"):
+            with self.subTest(rel=rel):
+                link = self.stick / rel
+                link.parent.mkdir(parents=True, exist_ok=True)
+                link.symlink_to(outside, target_is_directory=True)
+                with self.assertRaises(cr.RescueError):
+                    self.sync()
+                with self.assertRaises(cr.RescueError):
+                    self.unpack(pack)
+                self.assertEqual(list(outside.iterdir()), [marker])
+                self.assertEqual(marker.read_text(), "untouched")
+                link.unlink()
+        os.link(marker, self.stick / "hardlink")
+        with self.assertRaisesRegex(cr.RescueError, "linked path"):
+            self.sync()
+
+    def test_tree_patch_metadata_refused_even_for_already_installed_tree(self):
+        self.fetch()
+        pack, _ = self.pack()
+        (self.stick / "marker").write_text("installed")
+        for rel in ("../outside.exe", "/outside.exe", "C:\\outside.exe", "..\\outside.exe"):
+            tree = dict(name="tree", title="Tree", version="1", dest="", once="marker", hide_logo=rel)
+            bad = self.tamper(pack, meta={"trees": [tree]})
+            with self.assertRaises(cr.RescueError):
+                self.unpack(bad)
+            with self.assertRaises(cr.RescueError):
+                cr._tree_patches(tree, self.stick, False)
+        with zipfile.ZipFile(self.tamper(pack, meta={"trees": [dict(
+                name="tree", dest="", once="marker", recolor={"icon": "invalid"})]})) as zf:
+            with self.assertRaises(cr.RescueError):
+                cr._read_pack(zf)
+
+    def test_legacy_tar_refuses_before_extraction_and_modern_keeps_mode(self):
+        with unittest.mock.patch.dict(cr.tarfile.__dict__):
+            del cr.tarfile.data_filter
+            for data in (targz({"../escape": b"bad"}), targz({"normal": b"ok"})):
+                with tarfile.open(fileobj=io.BytesIO(data)) as tf, self.assertRaisesRegex(
+                        cr.RescueError, "data_filter"):
+                    cr._safe_extract_tar(tf, self.stick)
+            self.assertEqual(list(self.stick.iterdir()), [])
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tf:
+            ti = tarfile.TarInfo("./ventoy/tool.sh")
+            ti.mode, ti.size = 0o755, 2
+            tf.addfile(ti, io.BytesIO(b"ok"))
+        buf.seek(0)
+        with tarfile.open(fileobj=buf) as tf:
+            cr._safe_extract_tar(tf, self.stick)
+        self.assertEqual((self.stick / "ventoy/tool.sh").stat().st_mode & 0o777, 0o755)
+
+    def test_modern_tar_rejects_escape_links_and_special_files(self):
+        for kind in (tarfile.SYMTYPE, tarfile.LNKTYPE, tarfile.FIFOTYPE):
+            with self.subTest(kind=kind):
+                buf = io.BytesIO()
+                with tarfile.open(fileobj=buf, mode="w") as tf:
+                    member = tarfile.TarInfo("escape")
+                    member.type, member.linkname = kind, "../outside"
+                    tf.addfile(member)
+                buf.seek(0)
+                with tarfile.open(fileobj=buf) as tf, self.assertRaises(tarfile.TarError):
+                    cr._safe_extract_tar(tf, self.stick)
+                self.assertFalse((self.tmp / "outside").exists())
+
+    def test_unpack_replaces_same_size_new_image_without_verify(self):
+        self.fetch()
+        pack, _ = self.pack()
+        self.unpack(pack)
+        with zipfile.ZipFile(pack) as zf:
+            meta = json.loads(zf.read(cr.PACK_META))
+        item = meta["isos"][0]
+        new = b"X" * item["size"]
+        item["sha256"] = sha(new)
+        newer = self.tmp / "newer.zip"
+        with zipfile.ZipFile(pack) as src, zipfile.ZipFile(newer, "w") as dst:
+            for m in src.infolist():
+                data = json.dumps(meta).encode() if m.filename == cr.PACK_META else (
+                    new if m.filename == f"stick/{item['rel']}" else src.read(m))
+                dst.writestr(m, data)
+        self.unpack(newer, verify=False)
+        self.assertEqual((self.stick / item["rel"]).read_bytes(), new)
+        # Older sticks lacking image records must hash existing bytes, not trust their size.
+        statepath = self.stick / cr.STATE_DIR / "state.json"
+        state = json.loads(statepath.read_text())
+        state.pop("images")
+        statepath.write_text(json.dumps(state))
+        (self.stick / item["rel"]).write_bytes(b"Y" * item["size"])
+        self.unpack(newer, verify=False)
+        self.assertEqual((self.stick / item["rel"]).read_bytes(), new)
+
+    def test_verify_reports_changed_apps_and_sync_unpack_restore_them(self):
+        self.fetch()
+        pack, _ = self.pack()
+        self.sync()
+        exe = self.stick / "Apps/sysinternals/procexp64.exe"
+        for operation in (self.sync, lambda **kw: self.unpack(pack, **kw)):
+            exe.write_bytes(b"changed")
+            args = type("A", (), dict(target=str(self.stick), json=True))()
+            rc, _ = self.run_quiet(cr.cmd_verify, self.cfg, args)
+            self.assertEqual(rc, 1)
+            operation(verify=True)
+            self.assertEqual(exe.read_bytes(), b"MZ procexp")
+            # The repair cannot depend on a previous verify command recording damage.
+            exe.unlink()
+            operation(verify=True)
+            self.assertEqual(exe.read_bytes(), b"MZ procexp")
+
+    def test_local_app_changes_on_same_day_are_copied(self):
+        (self.repo / "byo").mkdir()
+        src = self.repo / "byo/local.exe"
+        src.write_bytes(b"first")
+        (self.repo / "local.toml").write_text('[[tool]]\nname="local-app"\ntitle="Local"\n'
+            'kind="app"\nsource="local"\nbyo=true\npath="byo/local.exe"\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch("local-app")
+        self.sync(verify=False)
+        before = cr.load_lock(self.cfg)["local-app"]["version"]
+        src.write_bytes(b"other")
+        self.fetch("local-app")
+        after = cr.load_lock(self.cfg)["local-app"]["version"]
+        self.assertNotEqual(before, after)
+        self.sync(verify=False)
+        self.assertEqual((self.stick / "Apps/local-app/local.exe").read_bytes(), b"other")
+
+    def test_verified_preview_reports_app_repairs_without_writing(self):
+        self.fetch()
+        pack, _ = self.pack()
+        self.sync()
+        exe = self.stick / "Apps/sysinternals/procexp64.exe"
+        exe.write_bytes(b"changed")
+        for archive in (None, str(pack)):
+            plan = cr.update_plan(self.cfg, str(self.stick), pack=archive, verify=True)
+            self.assertTrue(any(action == "copy" for action, _, _ in plan))
+            self.assertEqual(exe.read_bytes(), b"changed")
+
+    def test_boot_hook_failure_cleanup_cannot_bypass_link_guard(self):
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        (self.stick / cr.STATE_DIR).symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(cr.RescueError, "linked path"):
+            cr.forget_keys_hook(self.cfg, self.stick)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_refresh_preview_accepts_explicit_directory(self):
+        self.fetch()
+        pack, _ = self.pack()
+        self.unpack(pack)
+        before = (self.stick / cr.STATE_DIR / "state.json").read_bytes()
+        env = dict(os.environ, HELIX_CACHE=str(self.tmp / "preview-cache"), HELIX_NO_BANNER="1")
+        got = subprocess.run(["bash", str(ROOT / "refresh.sh"), "--dry-run", "--from", str(pack),
+                              str(self.stick)], capture_output=True, text=True, env=env)
+        self.assertEqual(got.returncode, 0, got.stdout + got.stderr)
+        self.assertEqual((self.stick / cr.STATE_DIR / "state.json").read_bytes(), before)
+
+    def test_force_does_not_reset_tofu_and_explains_recovery(self):
+        tool = {"name": "pinned", "title": "Pinned", "kind": "app", "source": "url"}
+        res = {"file": "pinned.zip", "version": "1", "url": "https://example.invalid/pinned.zip"}
+        old = dict(version="1", source_file="pinned.zip", sha256_download=sha(b"trusted"))
+        lock = {"pinned": old.copy()}
+        with unittest.mock.patch.object(cr, "resolve", return_value=res), \
+             unittest.mock.patch.object(cr, "expected_hash", return_value=("tofu", None, "tofu")), \
+             unittest.mock.patch.object(cr, "download", side_effect=lambda url, dst: dst.write_bytes(b"changed")), \
+             self.assertRaisesRegex(cr.RescueError, "--force deliberately does not reset trust"):
+            cr.fetch_tool(self.cfg, tool, lock, force=True)
+        self.assertEqual(lock["pinned"], old)
+
+    def test_preview_does_not_migrate_legacy_state(self):
+        old = self.stick / cr.OLD_STATE_DIR
+        old.mkdir()
+        (old / "state.json").write_text('{}')
+        self.sync(dry_run=True)
+        cr.update_plan(self.cfg, str(self.stick), init=True)
+        self.assertTrue((old / "state.json").is_file())
+        self.assertFalse((self.stick / cr.STATE_DIR).exists())
+        self.sync()
+        self.assertFalse(old.exists())
+        self.assertTrue((self.stick / cr.STATE_DIR / "state.json").is_file())
+
+    def test_invalid_target_never_autodetects_another_stick(self):
+        script = 'source "$1"; lsblk() { echo SCANNED; }; find_stick "$2"'
+        got = subprocess.run(["bash", "-c", script, "test", str(ROOT / "scripts/common.sh"),
+                              str(self.tmp / "typo")], capture_output=True, text=True)
+        self.assertNotEqual(got.returncode, 0)
+        self.assertNotIn("SCANNED", got.stdout)
+        self.assertIn("target does not exist", got.stderr)
+
+    def test_dry_run_rejects_ventoy_upgrade_and_eject_before_any_work(self):
+        for flag in ("--upgrade-ventoy", "--eject"):
+            got = subprocess.run(["bash", str(ROOT / "refresh.sh"), "--dry-run", flag],
+                                 capture_output=True, text=True)
+            self.assertNotEqual(got.returncode, 0)
+            self.assertIn("--dry-run cannot be combined", got.stderr)
+            self.assertEqual(got.stdout, "")
+
+    def test_linux_disk_replacement_refused_before_write(self):
+        script = ('source "$1"; disk_identity() { echo replacement; }; '
+                  'check_disk_identity /dev/test original; echo WROTE')
+        got = subprocess.run(["bash", "-c", script, "test", str(ROOT / "scripts/common.sh")],
+                             capture_output=True, text=True)
+        self.assertNotEqual(got.returncode, 0)
+        self.assertNotIn("WROTE", got.stdout)
+        self.assertIn("disconnected or replaced", got.stderr)
+
+    def test_failed_theme_generation_preserves_previous_theme(self):
+        loader = importlib.machinery.SourceFileLoader("make_theme_review", str(ROOT / "portableapps/make-theme.py"))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        dest = self.tmp / "themes/Retro"
+        dest.mkdir(parents=True)
+        (dest / "keep").write_text("original")
+        with unittest.mock.patch.object(mod, "base_theme", return_value=self.tmp), \
+             unittest.mock.patch.object(sys, "argv", ["make-theme", str(self.tmp / "missing.png"),
+                 "Test", "--slot", "Retro", "--out", str(dest.parent)]), self.assertRaises(OSError):
+            mod.main()
+        self.assertEqual((dest / "keep").read_text(), "original")
+        self.assertEqual(list(dest.parent.iterdir()), [dest])
+        art = self.tmp / "art.png"
+        mod.Image.new("RGB", (406, 558)).save(art)
+        with unittest.mock.patch.object(mod, "base_theme", return_value=ROOT / "portableapps/themes/Retro"), \
+             unittest.mock.patch.object(mod, "chrome", return_value=mod.Image.new("RGB", (406, 558))), \
+             unittest.mock.patch.object(sys, "argv", ["make-theme", str(art), "Test", "--slot", "Retro",
+                                                    "--out", str(dest.parent)]), redirect_stdout(io.StringIO()):
+            mod.main()
+        self.assertTrue((dest / "chrome.png").is_file())
+        self.assertIn("Name=Test", (dest / "PATheme.ini").read_text())
+        self.assertFalse((dest / "keep").exists())
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ Options:
 EOF
 }
 
-upgrade=0 skip_fetch=0 eject=0 target='' sync_args=() from=''
+dry_run=0 upgrade=0 skip_fetch=0 eject=0 target='' sync_args=() from=''
 while (($#)); do
   case $1 in
     --upgrade-ventoy) upgrade=1 ;;
@@ -41,7 +41,7 @@ while (($#)); do
     --from) from=${2:?--from needs a pack .zip}; shift ;;
     --verify) sync_args+=(--verify) ;;
     --prune-unknown) sync_args+=(--prune-unknown) ;;
-    --dry-run) sync_args+=(--dry-run) ;;
+    --dry-run) dry_run=1; sync_args+=(--dry-run) ;;
     --eject) eject=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) usage; die "unknown option: $1" ;;
@@ -49,6 +49,8 @@ while (($#)); do
   esac
   shift
 done
+
+((dry_run && (upgrade || eject))) && die "--dry-run cannot be combined with --upgrade-ventoy or --eject"
 
 banner "refresh"
 [[ $EUID -ne 0 ]] || die "run this as your normal user"
@@ -63,9 +65,23 @@ need findmnt util-linux
 
 # ── Find the stick ───────────────────────────────────────────────────────
 find_stick "$target"
+selected_disk='' identity=''
+if ! ((dry_run)) && [[ $part == /dev/* ]] && findmnt -rn --mountpoint "$mnt" >/dev/null; then
+  parent=$(lsblk -no PKNAME "${part%%\[*}" | head -n1)
+  [[ -n $parent ]] || die "cannot identify the disk holding $part"
+  selected_disk=$(readlink -f -- "/dev/$parent")
+  identity=$(disk_identity "$selected_disk") || die "cannot establish disk identity; refusing to write"
+fi
+check_target() {
+  ((dry_run)) && return 0
+  [[ -n $selected_disk ]] || return 0
+  check_disk_identity "$selected_disk" "$identity"
+  [[ $(findmnt -no SOURCE --target "$mnt") == "$part" ]] || die "the target mount changed; refusing to write"
+}
 
 # ── Ventoy upgrade (optional) ────────────────────────────────────────────
 if ((upgrade)); then
+  [[ -n $selected_disk ]] || die "--upgrade-ventoy needs the mounted data partition of a USB stick"
   need sudo
   if [[ -n $from ]]; then
     vdir=$("$HELIX" ventoy-path --from "$from")
@@ -76,6 +92,7 @@ if ((upgrade)); then
   disk=/dev/$(lsblk -no PKNAME "$part" | head -n1)
   [[ -b $disk ]] || die "can't work out which disk $part is on"
   want=$(basename "$vdir" | sed 's/^ventoy-//')
+  check_target
   unmount_part "$part"
   old=$(ventoy_info "$vdir" "$disk")
   [[ -n $old ]] || die "Ventoy can't find its install on $disk"
@@ -86,24 +103,30 @@ if ((upgrade)); then
     # -u turns Secure Boot support on unless told otherwise; keep the stick's setting.
     flags=(-u)
     [[ ${old#*$'\t'} == NO ]] && flags+=(-S)
+    check_disk_identity "$selected_disk" "$identity"
     (cd "$vdir" && printf 'y\n' | sudo ./Ventoy2Disk.sh "${flags[@]}" "$disk")
     sudo udevadm settle 2>/dev/null || sleep 3
     got=$(ventoy_info "$vdir" "$disk")
     [[ ${got%%$'\t'*} == "$want" ]] || die "Ventoy upgrade on $disk didn't finish — see $vdir/log.txt"
     ok "Ventoy upgraded to $want"
   fi
+  check_disk_identity "$selected_disk" "$identity"
   mnt=$(mount_part "$part")
 fi
 
 # ── Fetch + sync ─────────────────────────────────────────────────────────
 if [[ -n $from ]]; then
+  check_target
   "$HELIX" unpack "$from" "$mnt" "${sync_args[@]}"
 else
   if ! ((skip_fetch)); then
     "$HELIX" fetch || warn "some downloads failed — syncing everything else"
   fi
+  check_target
   "$HELIX" sync "$mnt" "${sync_args[@]}"
 fi
+
+check_target
 
 # The splash before the Ventoy menu (again after a Ventoy upgrade, which replaces it)
 if [[ -n $part && " ${sync_args[*]} " != *" --dry-run "* ]]; then

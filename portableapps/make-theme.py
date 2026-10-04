@@ -21,6 +21,8 @@ bounds"), so each theme takes over a built-in theme's folder, --slot, e.g.
 Retro or SmoothDark, and is picked under that name ("Retro Light"). Needs Pillow.
 """
 import argparse
+import os
+import tempfile
 import re
 import shutil
 import sys
@@ -130,47 +132,57 @@ def main() -> None:
     accent = tuple(int(args.accent[i:i + 2], 16) for i in (0, 2, 4))
 
     base = base_theme()
-    dest = args.out / args.slot
-    shutil.rmtree(dest, ignore_errors=True)
-    dest.mkdir(parents=True)
+    final = args.out / args.slot
+    args.out.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".theme-", dir=args.out) as staging:
+        dest = Path(staging) / args.slot
+        dest.mkdir()
+        art = Image.open(args.art).convert("RGB")
+        if args.hue:
+            art = shift_hue(art, args.hue)
+        menu = chrome(art, args.clear_bottom)
+        menu.save(dest / "chrome.png", optimize=True)
+        # The Options > Themes preview (the Platform's own placeholder is 406x190)
+        thumb = menu.resize((round(W * 190 / H), 190), Image.LANCZOS)
+        prev = Image.new("RGB", (406, 190), (24, 24, 24))
+        prev.paste(thumb, ((406 - thumb.width) // 2, 0))
+        prev.save(dest / "preview.png", optimize=True)
+        tint(base / "drive_space_slider.png", dest / "drive_space_slider.png", accent)
+        # The folder-button icons (Material Design, CC-BY 4.0: licence alongside), lightened toward
+        # the accent. Without them the Platform falls back to its beige ones.
+        light = tuple(round(c * .45 + 255 * .55) for c in accent)
+        (dest / "menu_icons").mkdir()
+        for icon in sorted((base / "menu_icons").glob("*.png")):
+            if not icon.stem.endswith("_16"):                         # the _16 ones are PortableApps' own
+                recolour(icon, dest / "menu_icons" / icon.name, light)
+        shutil.copy2(base / "MaterialIconLicense.txt", dest / "MaterialIconLicense.txt")
 
-    art = Image.open(args.art).convert("RGB")
-    if args.hue:
-        art = shift_hue(art, args.hue)
-    menu = chrome(art, args.clear_bottom)
-    menu.save(dest / "chrome.png", optimize=True)
-    # The Options > Themes preview (the Platform's own placeholder is 406x190)
-    thumb = menu.resize((round(W * 190 / H), 190), Image.LANCZOS)
-    prev = Image.new("RGB", (406, 190), (24, 24, 24))
-    prev.paste(thumb, ((406 - thumb.width) // 2, 0))
-    prev.save(dest / "preview.png", optimize=True)
-    tint(base / "drive_space_slider.png", dest / "drive_space_slider.png", accent)
-    # The folder-button icons (Material Design, CC-BY 4.0: licence alongside), lightened toward
-    # the accent. Without them the Platform falls back to its beige ones.
-    light = tuple(round(c * .45 + 255 * .55) for c in accent)
-    (dest / "menu_icons").mkdir()
-    for icon in sorted((base / "menu_icons").glob("*.png")):
-        if not icon.stem.endswith("_16"):                         # the _16 ones are PortableApps' own
-            recolour(icon, dest / "menu_icons" / icon.name, light)
-    shutil.copy2(base / "MaterialIconLicense.txt", dest / "MaterialIconLicense.txt")
-
-    # Light text over the dark art; the search box stays white with dark text, as in the mockups
-    dim = "".join(f"{int(c * .55):02X}" for c in accent)
-    ini = (base / "PATheme.ini").read_text(encoding="utf-8-sig")
-    for section, key, value in (("ThemeDetails", "Name", args.name), ("ThemeDetails", "Author", "Helix Boot"),
-                                ("ButtonApplications", "FontColor", "FFFFFF"), ("ButtonApplications", "DividerColor", dim),
-                                ("ButtonFolders", "FontColor", "FFFFFF"), ("ButtonFolders", "FontColorWhite", "FFFFFF"),
-                                ("DriveSpace", "FontColor", "E6EDF3"), ("DriveSpace", "FontShadowColor", "000000"),
-                                ("SearchBox", "BorderColor", args.accent.upper())) + (
-                               (("SearchBox", "BackgroundColor", "".join(f"{int(c * .12):02X}" for c in accent)),
-                                ("SearchBox", "FontColor", "E6F7FA")) if args.search == "dark" else ()):
-        block = re.search(rf"^\[{section}\][^\[]*", ini, re.M)
-        body = block.group(0)
-        new = re.sub(rf"^{key}=[^\r\n]*", f"{key}={value}", body, flags=re.M) if re.search(rf"^{key}=", body, re.M) \
-            else body.rstrip("\r\n") + f"\r\n{key}={value}\r\n\r\n"
-        ini = ini[:block.start()] + new + ini[block.end():]
-    (dest / "PATheme.ini").write_text(ini, encoding="utf-8")
-    print(f"{args.name}: {dest}")
+        # Light text over the dark art; the search box stays white with dark text, as in the mockups
+        dim = "".join(f"{int(c * .55):02X}" for c in accent)
+        ini = (base / "PATheme.ini").read_text(encoding="utf-8-sig")
+        for section, key, value in (("ThemeDetails", "Name", args.name), ("ThemeDetails", "Author", "Helix Boot"),
+                                    ("ButtonApplications", "FontColor", "FFFFFF"), ("ButtonApplications", "DividerColor", dim),
+                                    ("ButtonFolders", "FontColor", "FFFFFF"), ("ButtonFolders", "FontColorWhite", "FFFFFF"),
+                                    ("DriveSpace", "FontColor", "E6EDF3"), ("DriveSpace", "FontShadowColor", "000000"),
+                                    ("SearchBox", "BorderColor", args.accent.upper())) + (
+                                   (("SearchBox", "BackgroundColor", "".join(f"{int(c * .12):02X}" for c in accent)),
+                                    ("SearchBox", "FontColor", "E6F7FA")) if args.search == "dark" else ()):
+            block = re.search(rf"^\[{section}\][^\[]*", ini, re.M)
+            body = block.group(0)
+            new = re.sub(rf"^{key}=[^\r\n]*", f"{key}={value}", body, flags=re.M) if re.search(rf"^{key}=", body, re.M) \
+                else body.rstrip("\r\n") + f"\r\n{key}={value}\r\n\r\n"
+            ini = ini[:block.start()] + new + ini[block.end():]
+        (dest / "PATheme.ini").write_text(ini, encoding="utf-8")
+        backup = Path(staging) / "previous"
+        if final.exists():
+            os.replace(final, backup)
+        try:
+            os.replace(dest, final)
+        except OSError:
+            if backup.exists():
+                os.replace(backup, final)
+            raise
+    print(f"{args.name}: {final}")
 
 
 if __name__ == "__main__":

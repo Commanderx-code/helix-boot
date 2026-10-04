@@ -47,6 +47,7 @@ import http.client  # noqa: F401
 import re  # noqa: F401
 import struct  # noqa: F401
 import tarfile  # noqa: F401
+import tempfile  # noqa: F401
 import tomllib  # noqa: F401
 import urllib.error  # noqa: F401
 import urllib.parse  # noqa: F401
@@ -156,6 +157,7 @@ Get-Disk | ForEach-Object {
   [pscustomobject]@{
     Number  = [int]$_.Number
     Name    = "$($_.FriendlyName)"
+    Serial  = "$($_.SerialNumber)"
     Size    = [int64]$_.Size
     Bus     = "$($_.BusType)"
     System  = [bool]($_.IsSystem -or $_.IsBoot)
@@ -210,11 +212,29 @@ def pick(disk_no: int, run=powershell) -> dict:
     raise RescueError(f"there's no disk {disk_no}")
 
 
-def wait_for_ventoy_letter(disk_no: int, run=powershell, timeout: float = 90) -> str:
+def disk_identity(d: dict) -> tuple:
+    serial = str(d.get("Serial") or "").strip()
+    if not serial:
+        raise RescueError("Windows did not report a hardware serial for this disk; refusing to write")
+    return serial, d["Size"], d["Bus"]
+
+
+def recheck_disk(expected: dict, run=powershell, *, same_volume: bool = False) -> dict:
+    current = pick(expected["Number"], run)
+    if disk_identity(current) != disk_identity(expected):
+        raise RescueError("The selected disk was replaced. Select and confirm it again.")
+    if same_volume and (current.get("Ventoy") != expected.get("Ventoy") or not current.get("IsVentoy")):
+        raise RescueError("The stick's drive letter changed. Preview and confirm the update again.")
+    return current
+
+
+def wait_for_ventoy_letter(disk_no: int, run=powershell, timeout: float = 90, expected: dict | None = None) -> str:
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         d = next((d for d in all_disks(run) if d["Number"] == disk_no), None)
-        if d and d.get("Ventoy"):
+        if d and expected is not None:
+            d = recheck_disk(expected, run)
+        if d and d.get("Ventoy") and d.get("IsVentoy"):
             return f"{d['Ventoy']}:\\"
         time.sleep(2)
     raise RescueError(f"the Ventoy partition on disk {disk_no} didn't get a drive letter. "
@@ -334,58 +354,74 @@ def name_stick(letter: str, label: str, run=powershell) -> None:
 
 def update_summary(cfg, target: str, pack=None) -> str:
     """What an update would copy, remove and keep, in plain words."""
-    return cr.plan_text(cr.update_plan(cfg, target, str(pack) if pack else None, init=True))
+    return cr.plan_text(cr.update_plan(cfg, target, str(pack) if pack else None, init=True, verify=True))
 
 
 def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None, run=powershell,
-            ventoy=run_ventoy, keep_going=lambda: True, pack=None) -> str:
+            ventoy=run_ventoy, keep_going=lambda: True, pack=None, expected=None) -> str:
     """Erase disk N, put Ventoy on it, fill it (from the internet, or from a pack).
     Returns the stick's drive letter."""
     cfg = config()
-    d = pick(disk_no, run)
+    d = recheck_disk(expected, run) if expected is not None else pick(disk_no, run)
+    disk_identity(d)
     if pack:   # everything comes out of the pack: check it has Ventoy for Windows before erasing
         vdir = pack_ventoy_dir(cfg, pack)
     else:
         if not fetch(cfg) and not keep_going():
             raise RescueError("stopped — nothing was written to any disk")
         vdir = ventoy_dir(cfg)
+    recheck_disk(d, run)
     print(f"\nInstalling Ventoy on disk {disk_no} ({d['Name']}, {human(d['Size'])}) …")
     ventoy(ventoy_command(vdir, "/I", disk_no, gpt, secure_boot), vdir, progress)
-    letter = wait_for_ventoy_letter(disk_no, run)
+    letter = wait_for_ventoy_letter(disk_no, run, expected=d)
     print(f"✓ Ventoy installed, stick is {letter}")
     name_stick(letter, getattr(cfg, "stick_label", ""), run)
+    d = recheck_disk(d, run)
+    if f"{d['Ventoy']}:\\" != letter:
+        raise RescueError("The stick drive letter changed before copying")
     if pack:
         unpack(cfg, letter, pack, init=True)
     else:
         sync(cfg, letter, init=True)
+    recheck_disk(d, run)
+    if wait_for_ventoy_letter(disk_no, run, expected=d) != letter:
+        raise RescueError("The stick drive letter changed; refusing to write its boot script")
     boot_script(letter, disk_no=disk_no, run=run)
     return letter
 
 
 def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda pct: None,
-           run=powershell, ventoy=run_ventoy, pack=None, confirm=lambda summary: True) -> str:
+           run=powershell, ventoy=run_ventoy, pack=None, confirm=lambda summary: True, expected=None) -> str:
     """Refresh a Helix Boot / Ventoy stick in place. Never erases. `confirm` is shown what the
     update will copy, remove and keep before anything is written, and can call it off."""
     cfg = config()
-    d = pick(disk_no, run)
+    d = recheck_disk(expected, run) if expected is not None else pick(disk_no, run)
+    disk_identity(d)
     if not d.get("IsVentoy") or not d.get("Ventoy"):
         raise RescueError(f"disk {disk_no} doesn't have Ventoy on it (or no drive letter) — use Install")
     if not pack:
         fetch(cfg)
+    recheck_disk(d, run, same_volume=True)
     # (init=True below: this disk was just checked to be a Ventoy stick, whatever it has been named)
     summary = update_summary(cfg, f"{d['Ventoy']}:\\", pack)
     print(f"\nThis update will:\n{summary}\n")
     if not confirm(summary):
         raise RescueError("stopped — nothing on the stick was changed")
+    recheck_disk(d, run, same_volume=True)
     if upgrade_ventoy:
         vdir = pack_ventoy_dir(cfg, pack) if pack else ventoy_dir(cfg)
+        recheck_disk(d, run, same_volume=True)
         print(f"\nUpdating Ventoy on disk {disk_no} (your files are kept) …")
         ventoy(ventoy_command(vdir, "/U", disk_no, secure_boot=secure_boot), vdir, progress)
-    letter = wait_for_ventoy_letter(disk_no, run)
+    letter = wait_for_ventoy_letter(disk_no, run, expected=d)
+    recheck_disk(d, run, same_volume=True)
     if pack:
         unpack(cfg, letter, pack, init=True)
     else:
         sync(cfg, letter, init=True)
+    recheck_disk(d, run)
+    if wait_for_ventoy_letter(disk_no, run, expected=d) != letter:
+        raise RescueError("The stick drive letter changed; refusing to write its boot script")
     boot_script(letter, disk_no=disk_no, run=run)      # again after a Ventoy upgrade, which replaces it
     return letter
 
@@ -434,7 +470,7 @@ def check(target: str, progress=lambda pct: None) -> str:
     found = cr.check_stick(Path(target), hook=progress)
     text = cr.check_text(found)
     print(text)
-    if found["damaged"] or found["missing"] or found["menu"]:
+    if found["damaged"] or found["missing"] or found["menu"] or found["changed"]:
         raise RescueError(text)
     return text
 
@@ -772,14 +808,14 @@ def gui(selftest: bool = False) -> int:
         if typed is None or typed.strip() != str(d["Number"]):
             status.config(text="Cancelled — nothing was changed.")
             return
-        work(install, d["Number"], gpt=gpt.get(), secure_boot=secure.get(), keep_going=keep_going, pack=pack)
+        work(install, d["Number"], gpt=gpt.get(), secure_boot=secure.get(), keep_going=keep_going, pack=pack, expected=d)
 
     def do_update():
         d = selected()
         pack = chosen_pack() if d else None
         if d and pack is not False:
             work(update, d["Number"], upgrade_ventoy=upv.get(), secure_boot=secure.get(), pack=pack,
-                 confirm=confirm_update)
+                 confirm=confirm_update, expected=d)
 
     def do_look():
         d = selected()

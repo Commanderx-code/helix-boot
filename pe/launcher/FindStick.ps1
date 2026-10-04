@@ -3,8 +3,7 @@
 
   A tag file alone proves nothing: the PC being repaired can have C:\helix-boot.tag planted
   on its own disks, and whatever this picks, Lazarus PE runs as SYSTEM. So a drive counts
-  only if its tag is a file (not a folder), it holds no installed Windows, and - whenever
-  Windows can tell - its disk is on a USB, SD or MMC bus (a USB SSD enclosure included).
+  only if its tag is a file (not a folder), it holds no installed Windows, and its disk is on a USB, SD or MMC bus (a USB SSD enclosure included).
 
   Used by StartPortableApps.cmd and HelixApps.cmd. -Letters and -BusOf are for testing.
 #>
@@ -44,6 +43,6 @@ function Get-BusMap {
 }
 
 $found = @($Letters | Where-Object { Test-Candidate $_ })
-$bus = if ($BusOf) { $BusOf } else { Get-BusMap }
-if ($bus.Count) { $found = @($found | Where-Object { $bus["$_"] -in 'USB', 'SD', 'MMC' }) }
+$bus = if ($PSBoundParameters.ContainsKey('BusOf')) { $BusOf } else { Get-BusMap }
+$found = @($found | Where-Object { $bus["$_"] -in 'USB', 'SD', 'MMC' })
 if ($found.Count) { "$($found[0]):" }

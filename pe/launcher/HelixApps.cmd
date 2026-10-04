@@ -22,13 +22,6 @@ if exist "%FIND%" if exist "%PS%" set "USEPS=1"
 if not defined CR if defined USEPS (
   for /f "delims=" %%S in ('%PS% -NoProfile -ExecutionPolicy Bypass -File "%FIND%"') do set "CR=%%S"
 )
-if not defined CR if not defined USEPS (
-  for %%D in (C D E F G H I J K L M N O P Q R S T U V W Y Z) do if not defined CR (
-    for %%G in (helix-boot.tag commander-rescue.tag) do if not defined CR (
-      if exist "%%D:\%%G" if not exist "%%D:\%%G\" if not exist "%%D:\Windows\System32\config\SYSTEM" set "CR=%%D:"
-    )
-  )
-)
 if not defined CR (
   echo.
   echo  Helix Boot USB not found. Plug it in, wait a few seconds, and try again.

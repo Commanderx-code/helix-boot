@@ -138,6 +138,7 @@ apply_splash() {  # apply_splash <disk> [mount point of its data partition]
 # labelled VTOYEFI: the data partition before it may have been renamed.
 find_stick() {  # find_stick [/dev/sdX1 | /mount/point]
   local target=${1:-} found
+  [[ -z $target || -d $target || -b $target ]] || die "target does not exist or is not a folder/block device: $target"
   part=''
   if [[ -d $target ]]; then
     mnt=$target
@@ -201,4 +202,24 @@ try:
     sys.exit(sys.argv[2] not in zipfile.ZipFile(sys.argv[1]).namelist())
 except (OSError, zipfile.BadZipFile):
     sys.exit(1)' "$1" "$2"
+}
+
+# DISKSEQ changes when a device is unplugged/replaced, even when /dev/sdX is reused.
+# Refuse older kernels without it: a name or size alone cannot bind an erase confirmation.
+disk_identity() {
+  local dev seq
+  dev=$(readlink -f -- "$1")
+  seq=$(cat "/sys/class/block/${dev##*/}/diskseq") || return 1
+  [[ $seq =~ ^[0-9]+$ ]] || return 1
+  printf '%s:%s:%s\n' "$dev" "$seq" "$(lsblk -bdno SIZE "$dev")"
+}
+
+check_disk_identity() {
+  local current disk
+  current=$(disk_identity "$1") || die "cannot establish disk identity for $1; refusing to write"
+  [[ $current == "$2" ]] || die "$1 was disconnected or replaced; select and confirm it again"
+  while read -r disk; do
+    [[ $disk != "$1" ]] || die "$1 now holds the running system; refusing to write"
+  done < <(system_disks)
+  usb_disks | cut -f1 | grep -Fxq -- "$1" || die "$1 is no longer a USB/removable disk"
 }

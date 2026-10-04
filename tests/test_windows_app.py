@@ -21,7 +21,7 @@ SYSTEM = {"Number": 0, "Name": "Samsung SSD 990", "Size": 1_000_204_886_016, "Bu
           "Labels": ["", "Windows"], "Letters": ["C"], "Ventoy": ""}
 USB_HDD = {"Number": 1, "Name": "WD Elements", "Size": 2_000_398_934_016, "Bus": "SATA", "System": False,
            "Labels": ["Backup"], "Letters": ["D"], "Ventoy": ""}
-STICK = {"Number": 2, "Name": "SanDisk Ultra", "Size": 32_010_928_128, "Bus": "USB", "System": False,
+STICK = {"Number": 2, "Name": "SanDisk Ultra", "Serial": "test-usb-123", "Size": 32_010_928_128, "Bus": "USB", "System": False,
          "Labels": ["STICK"], "Letters": ["E"], "Ventoy": ""}
 VENTOY = {**STICK, "Labels": ["Ventoy", "VTOYEFI"], "Letters": ["E"], "Ventoy": "E"}
 RENAMED = {**STICK, "Labels": ["HelixBoot", "VTOYEFI"], "Letters": ["E", "F"], "Ventoy": "E"}   # renamed in Explorer
@@ -126,6 +126,45 @@ class TestFlows(unittest.TestCase):
 
     def ventoy(self, args, vdir, progress):
         self.calls.append(("ventoy", args[1:]))
+
+    def test_install_binds_the_gui_selection_before_fetching(self):
+        with self.assertRaisesRegex(app.RescueError, "replaced"):
+            app.install(2, run=ps({**STICK, "Serial": "other"}), expected=STICK, ventoy=self.ventoy)
+        self.assertEqual(self.calls, [])
+
+    def test_install_refuses_replacement_during_download(self):
+        current = dict(STICK)
+        def fetch(cfg):
+            current["Serial"] = "replacement"
+            return True
+        with mock.patch.object(app, "fetch", fetch), self.assertRaisesRegex(app.RescueError, "replaced"):
+            app.install(2, run=lambda script: json.dumps(current), ventoy=self.ventoy)
+        self.assertEqual(self.calls, [])
+
+    def test_update_refuses_changes_during_confirmation(self):
+        for changed in ({"Serial": "replacement"}, {"System": True}, {"Ventoy": "G"}):
+            with self.subTest(changed=changed):
+                current = dict(VENTOY)
+                def confirm(summary):
+                    current.update(changed)
+                    return True
+                self.calls.clear()
+                with redirect_stdout(io.StringIO()), self.assertRaises(app.RescueError):
+                    app.update(2, run=lambda script: json.dumps(current), ventoy=self.ventoy, confirm=confirm)
+                self.assertEqual(self.calls, ["fetch"])
+
+    def test_install_refuses_replacement_after_ventoy_before_copying(self):
+        current = dict(STICK)
+        def ventoy(*args):
+            current.update(VENTOY, Serial="replacement")
+        with redirect_stdout(io.StringIO()), self.assertRaisesRegex(app.RescueError, "replaced"):
+            app.install(2, run=lambda script: json.dumps(current), ventoy=ventoy)
+        self.assertEqual(self.calls, ["fetch"])
+
+    def test_missing_hardware_identity_refuses_writes(self):
+        with self.assertRaisesRegex(app.RescueError, "hardware serial"):
+            app.install(2, run=ps({**STICK, "Serial": ""}), ventoy=self.ventoy)
+        self.assertEqual(self.calls, [])
 
     def test_install(self):
         states = iter([ps(STICK), ps(VENTOY)])                 # before, then after Ventoy
@@ -282,6 +321,13 @@ class TestFlows(unittest.TestCase):
                 self.assertIn("stay Ventoy's Language and Help", out.getvalue())
                 self.assertFalse((stick / app.cr.KEYS_HOOK).exists())
 
+    def test_changed_apps_fail_windows_verification(self):
+        found = dict(damaged=[], missing=[], menu=None, changed={"app": ["app.exe"]})
+        with redirect_stdout(io.StringIO()), mock.patch.object(app.cr, "check_stick", return_value=found), \
+             mock.patch.object(app.cr, "check_text", return_value="changed app"), \
+             self.assertRaisesRegex(app.RescueError, "changed app"):
+            app.check("E:\\")
+
     def test_check_stick(self):
         good = {"damaged": [], "missing": [], "changed": {}, "checked": 9, "unrecorded": [], "images": 3,
                 "apps": 2, "menu": None}
@@ -296,6 +342,13 @@ class TestFlows(unittest.TestCase):
                 else:
                     self.assertIn("Everything checks out", app.check("E:\\", progress=print))
         self.assertEqual(seen, [print, print])        # the window's progress bar follows the reading
+
+
+class TestPreview(unittest.TestCase):
+    def test_preview_uses_the_same_verification_as_update(self):
+        with mock.patch.object(app.cr, "update_plan", return_value=[]) as plan:
+            app.update_summary("cfg", "E:\\")
+        plan.assert_called_once_with("cfg", "E:\\", None, init=True, verify=True)
 
 
 class TestFindPack(unittest.TestCase):
