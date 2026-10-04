@@ -35,7 +35,7 @@ if sys.version_info < (3, 11):
     sys.exit("✗ helix needs Python 3.11 or newer (for tomllib).")
 import tomllib  # noqa: E402
 
-__version__ = "0.6.11"
+__version__ = "0.6.12"
 
 REPO = Path(__file__).resolve().parent
 def _env(name: str, default: str | None = None) -> str | None:
