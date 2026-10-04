@@ -36,18 +36,20 @@ jobs:
           function Check($want, $got, $what) { if ("$got" -ne $want) { throw "${what}: wanted '$want', got '$got'" } }
           Check 'R:' (& $find -Letters P, Q, R -BusOf @{ P = 'USB'; Q = 'USB'; R = 'USB' }) 'USB drives with decoys'
           Check ''   (& $find -Letters P, Q, R -BusOf @{ P = 'USB'; Q = 'USB'; R = 'NVMe' }) 'tagged internal disk'
-          Check 'R:' (& $find -Letters P, Q, R -BusOf @{}) 'no bus information'
+          Check ''   (& $find -Letters R -BusOf @{ P = 'USB' }) 'missing bus entry'
+          Check ''   (& $find -Letters P, Q, R -BusOf @{}) 'no bus information'
           Check ''   (& $find -Letters P, Q, R) "the runner's own bus information (subst drives aren't USB)"
 
           # The PE's startup helper, for real: with FindStick, a tagged drive that isn't USB is not run
           $spa = Resolve-Path pe\launcher\StartPortableApps.cmd
           cmd /c "$spa"
           if (Test-Path "$base\started-from.txt") { throw "StartPortableApps.cmd ran a script from a non-USB drive" }
-          # ...and without PowerShell's help (no FindStick.ps1 beside it), the fallback skips both decoys
+          # Missing verification helper must refuse automatic execution too
           New-Item -ItemType Directory -Force "$base\bare" | Out-Null
           Copy-Item $spa "$base\bare\"
           cmd /c "$base\bare\StartPortableApps.cmd"
-          Check 'R:' ((Get-Content "$base\started-from.txt" -ErrorAction SilentlyContinue) -join '').Trim() 'fallback scan'
+          if (Test-Path "$base\started-from.txt") { throw "unverified fallback executed a script" }
+          $global:LASTEXITCODE = 0
           subst P: /d; subst Q: /d; subst R: /d
           'stick detection ok'
 

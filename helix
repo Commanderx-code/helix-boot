@@ -21,6 +21,7 @@ import subprocess
 import struct
 import sys
 import tarfile
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -187,6 +188,7 @@ class Config:
             raise RescueError(f"{where} is defined twice")
         if t.get("kind") not in KINDS:
             raise RescueError(f"{where}: kind must be one of {sorted(KINDS)}")
+        _validate_tree_patch(t)
         for img, colour in (t.get("recolor") or {}).items():
             if not re.fullmatch(r"[0-9A-Fa-f]{6}", str(colour)):
                 raise RescueError(f"{where}: recolor.{img} must be a hex colour like 2AA9BE")
@@ -529,7 +531,7 @@ def same_build(a: str | None, b: str | None) -> bool:
     file on different days call it differently: the checksum is what counts there."""
     if a == b:
         return True
-    dated = re.compile(r"\d{4}-\d\d-\d\d-([0-9a-f]{8})")
+    dated = re.compile(r"\d{4}-\d\d-\d\d-([0-9a-f]{8}|[0-9a-f]{64})")
     ma, mb = dated.fullmatch(a or ""), dated.fullmatch(b or "")
     return bool(ma and mb and ma.group(1) == mb.group(1))
 
@@ -770,21 +772,16 @@ def load_lock(cfg: Config) -> dict:
 
 def save_lock(cfg: Config, lock: dict) -> None:
     cfg.cache.mkdir(parents=True, exist_ok=True)
-    tmp = cfg.cache / "lock.json.tmp"
-    tmp.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with _temporary_output(cfg.cache / "lock.json") as staged:
+        tmp = Path(staged.name)
+        staged.write((json.dumps(lock, indent=2, sort_keys=True) + "\n").encode("utf-8"))
     os.replace(tmp, cfg.cache / "lock.json")
 
 
 def _safe_extract_tar(tar: tarfile.TarFile, dest: Path) -> None:
-    if hasattr(tarfile, "data_filter"):
-        tar.extractall(dest, filter="data")
-        return
-    root = dest.resolve()
-    for m in tar.getmembers():
-        target = (dest / m.name).resolve()
-        if not str(target).startswith(str(root)) or m.issym() and os.path.isabs(m.linkname):
-            raise RescueError(f"refusing unsafe path in archive: {m.name}")
-    tar.extractall(dest)
+    if not hasattr(tarfile, "data_filter"):
+        raise RescueError("safe tar extraction needs an updated Python with tarfile.data_filter")
+    tar.extractall(dest, filter="data")
 
 
 def _top_dir(name: str) -> str | None:
@@ -820,6 +817,35 @@ def _safe_zip_members(zf: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     return zf.infolist()
 
 
+def _reject_links(root: Path) -> None:
+    """A writable rescue target must be a plain tree, including its management files.
+
+    Refuse links before any mutation. This also covers Windows reparse points and hard
+    links, which could otherwise redirect fixed metadata and theme writes off the stick.
+    The operator must keep the target exclusively mounted while updating it.
+    """
+    def check(p: Path) -> None:
+        st = p.lstat()
+        if p.is_symlink() or getattr(st, "st_file_attributes", 0) & 0x400 \
+                or (p.is_file() and st.st_nlink > 1):
+            raise RescueError(f"refusing linked path on the target: {p}")
+
+    check(root)
+
+    def failed(error):
+        raise error
+    for folder, dirs, files in os.walk(root, followlinks=False, onerror=failed):
+        for name in dirs + files:
+            check(Path(folder) / name)
+
+
+def _temporary_output(dst: Path):
+    """Exclusive staging: a preexisting predictable .part must never be opened."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    return tempfile.NamedTemporaryFile(mode="wb", prefix=f".{dst.name}.", suffix=".part",
+                                       dir=dst.parent, delete=False)
+
+
 def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
     """Fetch one tool. Returns 'new', 'current' or 'skipped'."""
     name = tool["name"]
@@ -835,6 +861,8 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
             return "skipped"
         kind = "your own file" if tool.get("byo") else "local build"
         sha = folder_hash(p) if p.is_dir() else file_hash(p)
+        if tool["kind"] == "app":
+            res["version"] = f"{res['version']}-{sha}"
         if prev and prev.get("sha256") == sha:
             ok(f"{tool['title']} {res['version']} — {kind}, unchanged")
             return "current"
@@ -864,7 +892,9 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
             dest.unlink()
             raise RescueError(
                 f"{tool['title']}: {res['file']} changed upstream without a version bump. That can be "
-                "a silent re-release — or tampering. Check the vendor's site, then rerun with --force."
+                "a silent re-release — or tampering. Restore the trusted file, or independently verify "
+                f"the vendor's new file before removing only the {name!r} entry from {cfg.cache / 'lock.json'} "
+                "and fetching again. --force deliberately does not reset trust."
             )
     else:
         got = sha256 if algo == "sha256" else file_hash(dest, algo)
@@ -1195,22 +1225,25 @@ FLUSH_EVERY = 256 << 20  # fsync this often while copying, so progress tracks wh
 
 
 def _copy(src: Path, dst: Path, progress: Progress | None = None) -> None:
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dst.with_name(dst.name + ".part")
-    with open(src, "rb") as s, open(tmp, "wb") as d:
-        since = 0
-        while chunk := s.read(8 << 20):
-            d.write(chunk)
-            since += len(chunk)
-            if since >= FLUSH_EVERY:
-                d.flush()
-                os.fsync(d.fileno())
-                since = 0
-            if progress:
-                progress.add(len(chunk))
-        d.flush()
-        os.fsync(d.fileno())
-    os.replace(tmp, dst)
+    staged = _temporary_output(dst)
+    tmp = Path(staged.name)
+    try:
+        with staged as d, open(src, "rb") as s:
+            since = 0
+            while chunk := s.read(8 << 20):
+                d.write(chunk)
+                since += len(chunk)
+                if since >= FLUSH_EVERY:
+                    d.flush()
+                    os.fsync(d.fileno())
+                    since = 0
+                if progress:
+                    progress.add(len(chunk))
+            d.flush()
+            os.fsync(d.fileno())
+        os.replace(tmp, dst)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _iso_has_file(f, want: list[str]) -> bool:
@@ -1489,18 +1522,38 @@ def _restyle_platform(exe: Path, backup: Path, recolor: dict | None = None) -> s
     if not any(mark in orig for mark in PA_MARKS):           # keep the untouched original, not a patched one
         backup.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(exe, backup)
-    tmp = exe.with_name(exe.name + ".part")
-    tmp.write_bytes(bytes(data))
+    with _temporary_output(exe) as staged:
+        tmp = Path(staged.name)
+        staged.write(bytes(data))
     shutil.copystat(exe, tmp)
     os.replace(tmp, exe)                                     # a running copy keeps the old file
     return "patched" + (f" (not found: {', '.join(missing)})" if missing else "")
+
+
+def _validate_tree_patch(t: dict) -> None:
+    if t.get("hide_logo") is not None:
+        _safe_rel(t["hide_logo"], "tree executable")
+    colours = t.get("recolor") or {}
+    if not isinstance(colours, dict) or any(not isinstance(c, str) or not re.fullmatch(
+            r"[0-9A-Fa-f]{6}", c) for c in colours.values()):
+        raise RescueError("tree recolor must map image names to six-digit hex colours")
+
+
+def _app_matches(base: Path, files: dict) -> bool:
+    for rel, expected in files.items():
+        p = _inside(base, rel, "app file")
+        if not p.is_file() or file_hash(p) != expected:
+            return False
+    return True
 
 
 def _tree_patches(t: dict, base: Path, dry_run: bool) -> None:
     rel = t.get("hide_logo")
     if not rel or dry_run:
         return
-    exe = base / rel
+    _validate_tree_patch(t)
+    _reject_links(base)
+    exe = _inside(base, rel, "tree executable")
     result = _restyle_platform(exe, exe.parent / "Data" / (exe.name + ".original"), t.get("recolor"))
     if result.startswith("patched"):
         ok(f"{t['title']}: restyled (logo hidden{', icons recoloured' if t.get('recolor') else ''}; original kept in Data)"
@@ -1609,13 +1662,17 @@ def _beside_vtoyefi(mnt: Path) -> bool:
         return False
 
 
-def _open_stick(mnt: Path, init: bool, cfg: Config | None = None) -> tuple[Path, dict]:
+def _open_stick(mnt: Path, init: bool, cfg: Config | None = None, *, migrate: bool = False) -> tuple[Path, dict]:
     """Check the target is a Ventoy stick (or one we've filled before); return its state."""
     if not mnt.is_dir():
         raise RescueError(f"{mnt} isn't a mounted folder. Plug the stick in and pass its mount point.")
+    _reject_links(mnt)
     state_dir = mnt / STATE_DIR
     if not state_dir.exists() and (mnt / OLD_STATE_DIR).is_dir():
-        os.rename(mnt / OLD_STATE_DIR, state_dir)          # a stick from before the rename to Helix Boot
+        if migrate:
+            os.rename(mnt / OLD_STATE_DIR, state_dir)
+        else:
+            state_dir = mnt / OLD_STATE_DIR
     if not state_dir.exists():
         label = _label_of(mnt)
         names = {"Ventoy", STICK_LABEL} | ({cfg.stick_label} if cfg else set())
@@ -1762,11 +1819,11 @@ def plan_text(plan: list[tuple[str, str, int]]) -> str:
 
 
 def update_plan(cfg: Config, target: str, pack: str | None = None, prune_unknown: bool = False,
-                init: bool = False) -> list:
+                init: bool = False, verify: bool = False) -> list:
     """What `sync` (or `unpack`, given a pack) would do to the stick, without doing it or
     printing anything: a list of (copy | remove | keep, what, bytes) for plan_text."""
     global _PLAN
-    args = argparse.Namespace(target=target, pack=pack, init=init, dry_run=True, verify=False,
+    args = argparse.Namespace(target=target, pack=pack, init=init, dry_run=True, verify=verify,
                               no_prune=False, prune_unknown=prune_unknown)
     _PLAN, streams = [], (sys.stdout, sys.stderr)
     try:
@@ -1962,7 +2019,7 @@ def cmd_sync(cfg: Config, args) -> int:
     if args.dry_run and _PLAN is None:
         _PLAN = []                      # a dry run ends by saying what it would do, in one piece
     mnt = Path(args.target).expanduser().resolve()
-    state_dir, state = _open_stick(mnt, args.init, cfg)
+    state_dir, state = _open_stick(mnt, args.init, cfg, migrate=not args.dry_run)
     placed, apps, missing = _plan(cfg, load_lock(cfg))
     want_files = {p["rel"] for p in placed}
     for m in missing:
@@ -1983,7 +2040,7 @@ def cmd_sync(cfg: Config, args) -> int:
     me, wrote, wrote_apps = cfg.pc_id(), set(), set()      # what this PC puts on the stick in this run
     moved: set[str] = set()                                 # old paths of images that only change folder
     for n, p in enumerate(placed, 1):
-        dst = mnt / p["rel"]
+        dst = _inside(mnt, p["rel"], "boot image path")
         old = moved_from.get(p["file"])
         if old and not dst.exists():
             src_old = (mnt / old).resolve()
@@ -2039,7 +2096,7 @@ def cmd_sync(cfg: Config, args) -> int:
         dst = root / t["name"]
         unzip = zipfile.is_zipfile(src) and t.get("platform") != "mac"
         rec = hashes.get(t["name"])
-        if not args.dry_run and not (rec and same_build(rec.get("version"), entry["version"])):
+        if args.verify or (not args.dry_run and not (rec and same_build(rec.get("version"), entry["version"]))):
             if unzip:
                 with zipfile.ZipFile(src) as zf:
                     files = _zip_hashes(zf)
@@ -2047,7 +2104,8 @@ def cmd_sync(cfg: Config, args) -> int:
                 files = {src.name: file_hash(src)}
             hashes[t["name"]] = {"version": entry["version"], "dir": f"{_app_root(cfg, t)}/{t['name']}",
                                  "files": files}
-        if same_build(app_state.get(t["name"]), entry["version"]) and dst.exists() and t["name"] not in bad_apps:
+        if (same_build(app_state.get(t["name"]), entry["version"]) and dst.exists() and t["name"] not in bad_apps
+                and (not args.verify or _app_matches(dst, hashes[t["name"]]["files"]))):
             ok(f"{t['title']} {entry['version']} — already on stick")
             continue
         info(f"{t['title']} {entry['version']} → {_app_root(cfg, t)}/{t['name']}/")
@@ -2065,6 +2123,8 @@ def cmd_sync(cfg: Config, args) -> int:
         if dst.exists():
             shutil.rmtree(dst)
         os.replace(new, dst)
+        if args.verify and not _app_matches(dst, hashes[t["name"]]["files"]):
+            raise RescueError(f"{t['name']}: app files do not match after copying")
         app_state[t["name"]] = entry["version"]
         wrote_apps.add(t["name"])
         ok(f"{t['title']} {'unpacked' if unzip else 'copied'}")
@@ -2113,7 +2173,7 @@ def cmd_sync(cfg: Config, args) -> int:
         prog = Progress(sum(f.stat().st_size for _, f in files))
         prog.file(t["title"], 0)
         for rel, f in files:
-            _copy(f, base / rel, prog)
+            _copy(f, _inside(base, rel, "tree file"), prog)
         prog.clear()
         ok(f"{t['title']} installed")
         _tree_patches(t, base, args.dry_run)
@@ -2229,7 +2289,8 @@ def cmd_pack(cfg: Config, args) -> int:
         raise RescueError(f"the pack needs {_fmt_bytes(size)} but {out.parent} has {_fmt_bytes(free)} free")
 
     head(f"Packing {len(placed)} boot image(s) and {len(apps)} app(s) into {out} (~{_fmt_bytes(size)})")
-    part = out.with_name(out.name + ".part")
+    with _temporary_output(out) as staged:
+        part = Path(staged.name)
     isos = []
     try:
         with zipfile.ZipFile(part, "w", allowZip64=True) as zf:
@@ -2336,6 +2397,15 @@ def _read_pack(zf: zipfile.ZipFile) -> dict:
                 + list(meta.get("app_roots", {}).values())
                 + [t[k] for t in meta.get("trees", []) for k in ("dest", "once") if t[k]]):
         _safe_rel(rel, "path in pack")
+    for key in ("ventoy", "ventoy_windows"):
+        v = meta.get(key)
+        if v is not None:
+            if not isinstance(v, dict) or not isinstance(v.get("version"), str) or not re.fullmatch(
+                    r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", v["version"]):
+                raise RescueError(f"refusing unsafe {key} version in pack")
+            _safe_rel(v.get("file"), "Ventoy archive in pack")
+    for t in meta.get("trees", []):
+        _validate_tree_patch(t)
     for name in list(meta["apps"]) + [t["name"] for t in meta.get("trees", [])]:
         if not isinstance(name, str) or not SAFE_NAME.fullmatch(name):
             raise RescueError(f"refusing unsafe name in pack: {name!r}")
@@ -2354,11 +2424,11 @@ def _open_pack(path: str) -> zipfile.ZipFile:
 
 def _unzip_to(zf: zipfile.ZipFile, member: str, dst: Path, progress: Progress | None = None) -> str:
     """Stream one member to dst (via a .part file, fsynced); return its sha256."""
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dst.with_name(dst.name + ".part")
+    staged = _temporary_output(dst)
+    tmp = Path(staged.name)
     h = hashlib.sha256()
     try:
-        with zf.open(member) as s, open(tmp, "wb") as d:  # zipfile checks the CRC as it reads
+        with staged as d, zf.open(member) as s:  # zipfile checks the CRC as it reads
             since = 0
             while chunk := s.read(8 << 20):
                 h.update(chunk)
@@ -2375,7 +2445,10 @@ def _unzip_to(zf: zipfile.ZipFile, member: str, dst: Path, progress: Progress | 
     except zipfile.BadZipFile as e:
         tmp.unlink(missing_ok=True)
         raise RescueError(f"the pack is damaged ({member}: {e})") from None
-    os.replace(tmp, dst)
+    else:
+        os.replace(tmp, dst)
+    finally:
+        tmp.unlink(missing_ok=True)
     return h.hexdigest()
 
 
@@ -2384,7 +2457,7 @@ def cmd_unpack(cfg: Config, args) -> int:
     if args.dry_run and _PLAN is None:
         _PLAN = []
     mnt = Path(args.target).expanduser().resolve()
-    state_dir, state = _open_stick(mnt, args.init, cfg)
+    state_dir, state = _open_stick(mnt, args.init, cfg, migrate=not args.dry_run)
     with _open_pack(args.pack) as zf:
         meta = _read_pack(zf)
         names = set(zf.namelist())
@@ -2397,7 +2470,8 @@ def cmd_unpack(cfg: Config, args) -> int:
         bad_images, bad_apps = _damaged(state)          # found by `helix verify`: copied again
         todo = [i for i in meta["isos"]
                 if not (dests[i["rel"]].is_file() and dests[i["rel"]].stat().st_size == i["size"])
-                or (args.verify and file_hash(dests[i["rel"]]) != i["sha256"])
+                or ((file_hash(dests[i["rel"]]) if args.verify or i["rel"] not in state.get("images", {})
+                     else state["images"][i["rel"]]) != i["sha256"])
                 or (i["rel"] in bad_images and not args.verify)]
         need = sum(i["size"] for i in todo)
         free = shutil.disk_usage(mnt).free
@@ -2446,7 +2520,9 @@ def cmd_unpack(cfg: Config, args) -> int:
             prefix = f"stick/{roots.get(name, apps_root)}/{name}/"
             rec = hashes.get(name)
             fresh = not args.dry_run and not (rec and same_build(rec.get("version"), version))
-            if same_build(app_state.get(name), version) and dst.exists() and name not in bad_apps:
+            expected = _zip_hashes(zf, prefix) if args.verify else {}
+            if (same_build(app_state.get(name), version) and dst.exists() and name not in bad_apps
+                    and (not args.verify or _app_matches(dst, expected))):
                 if fresh:
                     hashes[name] = {"version": version, "dir": f"{roots.get(name, apps_root)}/{name}",
                                     "files": _zip_hashes(zf, prefix)}
@@ -2466,6 +2542,8 @@ def cmd_unpack(cfg: Config, args) -> int:
             if dst.exists():
                 shutil.rmtree(dst)
             os.replace(new, dst)
+            if args.verify and not _app_matches(dst, expected):
+                raise RescueError(f"{name}: app files do not match after copying")
             app_state[name] = version
             wrote_apps.add(name)
             ok(f"{name} unpacked")
@@ -2638,7 +2716,7 @@ def cmd_verify(cfg: Config, args) -> int:
         print(json.dumps(found, indent=2))
     else:
         print(check_text(found))
-    return 1 if found["damaged"] or found["missing"] or found["menu"] else 0
+    return 1 if found["damaged"] or found["missing"] or found["menu"] or found["changed"] else 0
 
 
 def _ventoy_from_pack(cfg: Config, pack: str, windows: bool | None = None) -> Path:
@@ -2655,7 +2733,13 @@ def _ventoy_from_pack(cfg: Config, pack: str, windows: bool | None = None) -> Pa
                 raise RescueError("this pack has Ventoy for Linux only. Make it again with this version of "
                                   "Helix Boot to set up sticks from Windows.")
             raise RescueError("this pack has no Ventoy installer. Make it again after `helix fetch ventoy`.")
-        dest = cfg.cache / "ventoy-from-pack" / f"{v['version']}-{'windows' if windows else 'linux'}"
+        cfg.cache.mkdir(parents=True, exist_ok=True)
+        cache_root = cfg.cache.resolve()
+        dest = _inside(cache_root, f"ventoy-from-pack/{v['version']}-{'windows' if windows else 'linux'}",
+                       "Ventoy cache folder")
+        managed = cache_root / "ventoy-from-pack"
+        if managed.exists() or managed.is_symlink():
+            _reject_links(managed)
         tops = [d for d in dest.iterdir() if d.is_dir()] if dest.is_dir() else []
         if len(tops) == 1 and (tops[0] / tool).exists():
             return tops[0]
@@ -2755,9 +2839,8 @@ def _splash_frames(cfg: Config, splash: Path, bar: tuple[str, str] = SPLASH_BAR)
         for x in range(bw):
             t = x / (bw - 1)
             gd.line((x, 0, x, bh), fill=tuple(round(c + (d - c) * t) for c, d in zip(left, right)))
-        tmp = out.with_name(out.name + ".part")
-        shutil.rmtree(tmp, ignore_errors=True)
-        tmp.mkdir(parents=True)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        tmp = Path(tempfile.mkdtemp(prefix=".splash-", dir=out.parent))
         for k, name in enumerate(names):
             img, fill = base, round(bw * k / SPLASH_FRAMES)
             if fill:
@@ -2995,6 +3078,7 @@ def set_keys_hook(mnt: Path, on: bool) -> bool:
 
 def forget_keys_hook(cfg: Config, mnt: Path) -> None:
     """The hook is gone, or couldn't be put there: the menu's row shows Ventoy's own keys again."""
+    _reject_links(mnt)
     if set_keys_hook(mnt, False):
         _apply_look(cfg, mnt)
         _flush_volume(mnt)
@@ -3107,8 +3191,9 @@ def _own_picture(src: Path, dst: Path, dim: int = 0) -> None:
         raise RescueError(f"{src} isn't a picture this can read: {e}") from None
     if dim:
         img = Image.blend(img, Image.new("RGB", img.size, (0, 0, 0)), dim / 100)
-    tmp = dst.with_name(dst.name + ".part")
-    img.save(tmp, format="PNG", optimize=True)
+    with _temporary_output(dst) as staged:
+        tmp = Path(staged.name)
+        img.save(staged, format="PNG", optimize=True)
     os.replace(tmp, dst)
 
 
@@ -3167,7 +3252,7 @@ def set_look(cfg: Config, mnt: Path, look: dict, pictures: dict[str, Path] | Non
              force: bool = False) -> bool:
     """Put a look on the stick (False: it already has it). The choice is kept there."""
     pictures = pictures or {}
-    state_dir, state = _open_stick(mnt, False, cfg)
+    state_dir, state = _open_stick(mnt, False, cfg, migrate=True)
     if look == _look(mnt) and not pictures and not force:
         return False
     for what, picture in pictures.items():
@@ -3197,7 +3282,8 @@ def export_look(mnt: Path, out: Path) -> Path:
     files = [p for d in (mnt / LOOK_DIR, mnt / THEME_SRC / "mine") if d.is_dir() for p in sorted(d.rglob("*.png"))]
     out = out if out.suffix.lower() == ".zip" else out.with_name(out.name + ".zip")
     out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_name(out.name + ".part")
+    with _temporary_output(out) as staged:
+        tmp = Path(staged.name)
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(LOOK_SAVE, json.dumps({"format": 1, "look": _look(mnt), "helix": __version__,
                                            "saved": dt.date.today().isoformat()}, indent=2) + "\n")
@@ -3249,7 +3335,7 @@ def import_look(cfg: Config, mnt: Path, saved: Path) -> list[str]:
         if value in known and (value != "custom" or f"look/{key}.png" in data):
             look[key] = value
 
-    _open_stick(mnt, False, cfg)
+    _open_stick(mnt, False, cfg, migrate=True)
     for d in (mnt / LOOK_DIR, mnt / THEME_SRC / "mine"):   # the saved look replaces your pictures and icons
         shutil.rmtree(d, ignore_errors=True)
     for name, blob in data.items():
@@ -3527,6 +3613,9 @@ def cmd_splash(cfg: Config, args) -> int:
     this afterwards. With --stick, the stick is told whether the keys' hook is there, so its
     menu shows what they really do."""
     efi = Path(args.efi).expanduser()
+    _reject_links(efi)
+    if getattr(args, "stick", None):
+        _reject_links(Path(args.stick).expanduser())
     script = efi / "grub" / "grub.cfg"
     if not script.is_file():
         raise RescueError(f"{efi} isn't Ventoy's boot partition (VTOYEFI): it has no grub/grub.cfg")
@@ -3563,8 +3652,9 @@ def cmd_splash(cfg: Config, args) -> int:
     if args.dry_run:
         info(f"would {'set the splash to ' + str(seconds) + ' s' if shown != 'none' else 'remove the splash'}")
         return 0
-    tmp = script.with_name("grub.cfg.helix-boot")
-    with open(tmp, "wb") as f:               # on the stick for good before it takes the script's place
+    with _temporary_output(script) as f:
+        tmp = Path(f.name)
+        # On the stick for good before it takes the script's place.
         f.write(text.encode("utf-8"))
         f.flush()
         os.fsync(f.fileno())

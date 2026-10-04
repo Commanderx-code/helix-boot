@@ -99,6 +99,7 @@ if [[ -z $dev ]]; then
   dev=${sticks[$((n - 1))]%%$'\t'*}
 fi
 
+dev=$(readlink -f -- "$dev")
 [[ -b $dev ]] || die "$dev isn't a block device"
 [[ $(lsblk -dno TYPE "$dev") == disk ]] || die "$dev is a partition — pass the whole disk (e.g. /dev/sdb)"
 for p in "${protected[@]}"; do
@@ -107,6 +108,8 @@ done
 is_usb=0
 for s in "${sticks[@]}"; do [[ ${s%%$'\t'*} == "$dev" ]] && is_usb=1; done
 ((is_usb)) || die "$dev isn't a USB/removable disk. Refusing (edit install.sh if you really mean it)."
+
+identity=$(disk_identity "$dev") || die "cannot establish disk identity; refusing to erase"
 
 # ── 3. Confirm ───────────────────────────────────────────────────────────
 section "This will ERASE everything on:"
@@ -118,6 +121,7 @@ read -rp "Type ${B}$(basename "$dev")${X} to erase it: " typed
 [[ $typed == "$(basename "$dev")" ]] || die "didn't match — nothing was changed"
 
 # ── 4. Ventoy ────────────────────────────────────────────────────────────
+check_disk_identity "$dev" "$identity"
 while read -r part; do
   [[ -n $part ]] && unmount_part "$part"
 done < <(lsblk -lnpo NAME,TYPE "$dev" | awk '$2=="part"{print $1}')
@@ -132,17 +136,21 @@ if ((secure)); then flags+=(-s); else flags+=(-S); fi
 want=$(basename "$vdir" | sed 's/^ventoy-//')
 section "Installing Ventoy $want"
 # Ventoy2Disk.sh asks "Continue?" twice; we've already confirmed above.
+check_disk_identity "$dev" "$identity"
 (cd "$vdir" && printf 'y\ny\n' | sudo ./Ventoy2Disk.sh "${flags[@]}" "$dev")
 sudo udevadm settle 2>/dev/null || sleep 3
+check_disk_identity "$dev" "$identity"
 got=$(ventoy_info "$vdir" "$dev")
 [[ ${got%%$'\t'*} == "$want" ]] || die "Ventoy didn't install on $dev — see $vdir/log.txt"
 
+check_disk_identity "$dev" "$identity"
 part=$(first_partition "$dev")
 [[ -n $part ]] || die "can't find the Ventoy data partition on $dev"
 mnt=$(mount_part "$part")
 [[ -n $mnt ]] || die "couldn't mount $part"
 ok "Ventoy installed, data partition mounted at $mnt"
 
+check_disk_identity "$dev" "$identity"
 # ── 5. Fill it ───────────────────────────────────────────────────────────
 if [[ -n $from ]]; then
   "$HELIX" unpack "$from" "$mnt" --init --verify
@@ -150,6 +158,7 @@ else
   "$HELIX" sync "$mnt" --init --verify
 fi
 
+check_disk_identity "$dev" "$identity"
 section "Finishing"
 apply_splash "$dev" "$mnt"
 unmount_part "$part"
