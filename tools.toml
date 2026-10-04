@@ -906,7 +906,7 @@ repo = "dortania/OpenCore-Legacy-Patcher"
 asset = ['^OpenCore-Patcher\.pkg$']
 checksum = ["github-digest"]
 
-# On hold upstream: macOS no longer lets it change much. Unsigned, so macOS asks before opening it.
+# On hold upstream: macOS no longer lets it change much.
 [[tool]]
 name = "macutil"
 title = "Chris Titus Tech MacUtil"
@@ -916,4 +916,114 @@ platform = "mac"
 source = "github"
 repo = "ChrisTitusTech/macutil"
 asset = ['^MacUtil-Universal\.app\.zip$']
+checksum = ["github-digest"]
+
+# ── More for a Mac: recovery, backup, maintenance, cleanup ──
+[[tool]]
+name = "dmde-mac"
+title = "DMDE for Mac"
+description = "Find lost partitions and recover files; the free edition recovers up to 4000 files at a time"
+kind = "app"
+platform = "mac"
+source = "page"
+page = "https://dmde.com/download.html"
+asset = ['dmde-\d+-\d+-\d+-\d+-mac64-gui\.dmg$']        # (not the betas, nor the console build)
+version = 'dmde-(\d+)-(\d+)-(\d+)-(\d+)-mac64'
+checksum = ["tofu"]
+
+[[tool]]
+name = "vorta-arm"
+title = "Vorta (Apple Silicon)"
+description = "Backups to any drive or server, encrypted and versioned (a window onto Borg); for M-series Macs"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "borgbase/vorta"
+asset = ['^Vorta-v[\d.]+-arm\.dmg$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "vorta-intel"
+title = "Vorta (Intel)"
+description = "Backups to any drive or server, encrypted and versioned (a window onto Borg); for Intel Macs"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "borgbase/vorta"
+asset = ['^Vorta-v[\d.]+-intel\.dmg$']
+checksum = ["github-digest"]
+
+# Maintenance, like OnyX, has one build per macOS version.
+[[tool]]
+name = "maintenance-tahoe"
+title = "Maintenance for macOS 26 Tahoe"
+description = "OnyX's simpler sibling: run the usual clean-up and repair tasks in one go"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://www.titanium-software.fr/download/26/Maintenance.dmg"
+checksum = ["tofu"]
+
+[[tool]]
+name = "maintenance-sequoia"
+title = "Maintenance for macOS 15 Sequoia"
+description = "OnyX's simpler sibling: run the usual clean-up and repair tasks in one go"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://www.titanium-software.fr/download/15/Maintenance.dmg"
+checksum = ["tofu"]
+
+[[tool]]
+name = "maintenance-sonoma"
+title = "Maintenance for macOS 14 Sonoma"
+description = "OnyX's simpler sibling: run the usual clean-up and repair tasks in one go"
+kind = "app"
+platform = "mac"
+source = "url"
+url = "https://www.titanium-software.fr/download/14/Maintenance.dmg"
+checksum = ["tofu"]
+
+[[tool]]
+name = "pearcleaner"
+title = "Pearcleaner"
+description = "Uninstall an app and its leftovers; open source, and runs on older macOS than AppCleaner now does"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "alienator88/Pearcleaner"
+asset = ['^Pearcleaner\.dmg$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "keka"
+title = "Keka"
+description = "Open and make archives macOS can't by itself: 7z, rar, split and password-protected ones"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "aonez/Keka"
+asset = ['^Keka-[\d.]+\.dmg$']
+checksum = ["github-digest"]
+
+[[tool]]
+name = "netiquette"
+title = "Netiquette"
+description = "Objective-See: every network connection the Mac has open, and which program made it"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "objective-see/Netiquette"
+asset = ['^Netiquette_[\d.]+\.zip$']
+checksum = ["github-digest", "tofu"]
+
+[[tool]]
+name = "blockblock"
+title = "BlockBlock"
+description = "Objective-See: warns when something installs itself to start with the Mac (installs a helper)"
+kind = "app"
+platform = "mac"
+source = "github"
+repo = "objective-see/BlockBlock"
+asset = ['^BlockBlock_[\d.]+\.zip$']
 checksum = ["github-digest"]

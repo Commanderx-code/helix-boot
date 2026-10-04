@@ -147,11 +147,15 @@ app doesn't survive the stick's exFAT file system.
 | For | Tools |
 |---|---|
 | Finding the problem | EtreCheck, Stats, Macs Fan Control, coconutBattery, GrandPerspective |
-| Malware | Malwarebytes for Mac, KnockKnock, TaskExplorer, LuLu (the last three from [Objective-See](https://objective-see.org)) |
-| Cleaning up | OnyX (one each for macOS 26, 15 and 14), AppCleaner |
-| Data | SuperDuper!, TestDisk & PhotoRec |
+| Malware | Malwarebytes for Mac, and from [Objective-See](https://objective-see.org): KnockKnock, TaskExplorer, LuLu, Netiquette, BlockBlock |
+| Cleaning up | OnyX and Maintenance (one each for macOS 26, 15 and 14), AppCleaner, Pearcleaner |
+| Data | SuperDuper! and Vorta (backup), TestDisk & PhotoRec and DMDE (recovery) |
 | Reinstalling | Mist (macOS installers), OpenCore Legacy Patcher (newer macOS on older Intel Macs) |
-| Tweaks | [Chris Titus Tech's MacUtil](https://github.com/ChrisTitusTech/macutil) *(on hold upstream, and unsigned: macOS asks before opening it)* |
+| Handy | Keka (archives macOS can't open by itself) |
+| Tweaks | [Chris Titus Tech's MacUtil](https://github.com/ChrisTitusTech/macutil) *(on hold upstream)* |
+
+CI opens every one of these on a real Mac, and checks that what is inside is
+whole, signed by its developer and accepted by Gatekeeper.
 
 <details>
 <summary><b>Notes on unverified tools, antivirus and Kaspersky</b></summary>
