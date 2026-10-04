@@ -166,7 +166,7 @@ those against the apps too.
 
 *Unverified* means the publisher offers no checksum. The file is trusted on
 first download and refused if it later changes without a new version (see
-[verification](#verification)). Antivirus tools carry their virus
+[verification](docs/engine.md#verification)). Antivirus tools carry their virus
 definitions, so `./refresh.sh` before a job keeps them current. Microsoft
 Safety Scanner stops working 10 days after download.
 
@@ -266,7 +266,7 @@ the Mac tools, every theme preset and your own icons and splash. Extracting
 streams files straight onto the stick and checks every image, so a damaged pack
 is caught, not booted. A stick filled from a pack refreshes normally
 afterwards, keeps the look it had, and keeps tools the pack doesn't have
-([why](#updating-from-more-than-one-pc)).
+([why](docs/engine.md#updating-from-more-than-one-pc)).
 
 > [!IMPORTANT]
 > A pack holds your licensed tools, so keep it private: a drive, a NAS or your
@@ -274,6 +274,8 @@ afterwards, keeps the look it had, and keeps tools the pack doesn't have
 > are git-ignored.
 
 ## Windows app
+
+<img src="docs/windows-app.png" alt="The Helix Boot app on Windows" width="560">
 
 `HelixBoot.exe` asks for admin rights, because installing Ventoy writes
 to the disk.
@@ -354,102 +356,25 @@ refresh updates it without a PE rebuild. Categories, sorting rules, names and
 quick actions are in [`launcher.json`](pe/lazarus/launcher.json). Without it,
 Lazarus PE opens the PortableApps.com menu instead.
 
-## `helix`, the engine
+## How it works
 
-`install.sh` and `refresh.sh` are thin wrappers around `helix`, a single
-standard-library Python script:
+`install.sh`, `refresh.sh` and the Windows app are thin wrappers around `helix`,
+a single standard-library Python script: `helix fetch` downloads and verifies,
+`helix sync` fills a stick, `helix pack` makes an offline pack, `helix verify`
+reads a stick back to find damage.
 
-| Command | Does |
-|---|---|
-| `helix list` | every tool, its source, and whether it's enabled |
-| `helix check [--json]` | compares your cache against upstream, no downloads |
-| `helix fetch [tool…] [--force]` | downloads, verifies and caches (`~/.cache/helix-boot`); resumes interrupted downloads |
-| `helix sync <mount> [--dry-run] [--verify] [--prune-unknown]` | copies the cache to a Ventoy stick, replaces old versions, writes the menu; `--dry-run` ends with what it would copy, remove and keep |
-| `helix pack [file.zip]` | the whole stick, your own tools and Ventoy in one zip |
-| `helix unpack <pack.zip> <mount> [--dry-run] [--verify] [--prune-unknown]` | fills a Ventoy stick from a pack, no downloads |
-| `helix theme <mount> [--theme ID] [--icons ID] [--background PIC] [--splash PIC] [--menu] [--preview FILE]` | shows or changes a stick's look ([themes](#the-boot-menus-look)); `--export ZIP` / `--import ZIP` save and load it |
-| `helix verify <mount> [--json]` | reads the stick back and finds damaged or missing files, no downloads ([checking a stick](#checking-a-stick)) |
-| `helix splash <VTOYEFI mount>` | adds the splash to Ventoy's boot script (`install.sh` and `refresh.sh` run it) |
+- **Verified downloads.** Each tool is checked against its publisher's own
+  checksum, or GitHub's recorded digest. One with neither is refused unless
+  the tool list says, in so many words, to trust it on first use.
+- **Nothing touches a disk until everything is downloaded and checked.**
+- **Only USB disks are offered**, never the one your system runs from, and the
+  disk you confirm is checked to be the same device before each write.
+- **An update keeps what it didn't bring.** Tools another PC put on the stick
+  stay, with their menu entries.
+- **A crafted pack or a tampered stick can't write outside the stick.**
 
-`theme.sh` and `check.sh` wrap `helix theme` and `helix verify` the same way:
-they find and mount the stick first.
-Pillow is the one optional extra: with it the engine draws previews, the
-splash's loading bar and greyscale icons, and resizes your pictures; without it
-those are skipped and everything else works.
-
-### Verification
-
-Each tool lists checksum strategies in order of preference. The first one
-that yields a hash is used; a mismatch deletes the file and stops:
-
-1. the publisher's checksum file (`sha256.txt`, `CHECKSUMS.TXT`, `*.sha512`)
-2. GitHub's recorded sha256 digest for the release asset
-3. SourceForge's md5 (integrity only)
-4. `tofu`: trust-on-first-use, **only if the manifest explicitly says so**.
-   The hash is recorded, and a re-download of the same version with a
-   different hash is refused as possible tampering.
-
-If no strategy works, the tool is refused rather than silently used.
-
-### Checking a stick
-
-Cheap USB sticks can go bad without warning: a file reads back wrong, and a
-tool fails to boot just when you need it. `./check.sh` (or **Check stick** in
-the app) reads every boot image and app back off the stick. It compares them
-with the checksums recorded when they were copied. Those come from the download
-or the pack, never from the stick itself. It needs no cache and no internet,
-so any PC can check any Helix Boot stick. It takes about as long as copying
-the stick.
-
-A damaged image is noted on the stick, and the next update copies it again,
-even a quick one. An app file that differs is reported separately, because
-some tools save their settings in their own folder; it still counts as a
-finding (`helix verify` exits non-zero, and the app shows it as a problem),
-since a changed program file looks the same. If a fresh copy goes bad again,
-replace the stick.
-
-An update with `--verify` (`install.sh` always, `refresh.sh --verify`, and
-every Update from the Windows app) checks the apps' files as well as the boot
-images, and copies an app again when any of its files is missing or differs.
-That puts back settings a tool saved in its own folder, so copy those off
-first if you want to keep them.
-
-Apps copied by Helix Boot 0.6.5 or older aren't recorded yet. The next update
-records them.
-
-### Safety
-
-- `install.sh` downloads and verifies everything **before** touching any disk.
-- It lists only USB/removable disks and refuses any disk holding your running
-  system, following LUKS, LVM and btrfs back to the physical disk.
-- You type the device name to confirm, and it warns if the "stick" is
-  suspiciously large. A new stick is named `HelixBoot` (`stick_label` under
-  `[settings]`), and is recognised later whatever you rename it to.
-- `refresh.sh` removes a tool from the stick only when it brings a newer copy of
-  it, the tool is switched off, or this PC put it there and no longer has it.
-  The stick records which PC put each tool on it, so updating from a second PC
-  leaves the first one's tools alone ([more](#updating-from-more-than-one-pc)).
-- Nothing read from a pack or from a stick (paths, app names) can reach outside
-  the stick: a crafted pack or a stick tampered with on an infected PC can't
-  write or delete anything else.
-- Lazarus PE and the Helix Apps menu only accept a USB/SD disk as the stick
-  (tag file, no Windows on it), so a tag planted on the PC being repaired can't
-  get its script run. They need PowerShell to tell which disks are USB; where
-  it's missing they run nothing by themselves, and you open the stick's `Apps`
-  folder by hand.
-- The disk you confirm is the disk that gets written. Between your confirmation
-  and each write, the scripts and the Windows app check it is still the same
-  device (Linux: the kernel's disk sequence number; Windows: its serial, or the
-  device id Windows gave it), still USB, and not the system disk. A stick
-  swapped under the same name stops the run.
-- A stick is only written if it is a plain file tree. A symlink, a Windows
-  reparse point or a hard link anywhere on it is refused before anything is
-  changed, since one could send a write somewhere else. Keep the stick mounted
-  by one system only while it's updated.
-- Files are written under a fresh, unguessable temporary name and then moved
-  into place, so nothing planted under a predictable name gets written through.
-- `refresh.sh --dry-run` changes nothing, so it can't be combined with
-  `--upgrade-ventoy` or `--eject`.
+[The engine in full](docs/engine.md): every command, how verification works,
+checking a stick for damage, the safety rules, and updating from more than one PC.
 
 ## Customising
 
@@ -472,148 +397,23 @@ checksum = [{ url = "https://cdimage.kali.org/current/SHA256SUMS" }]
 
 ISOs you copy onto the stick by hand (e.g. into `ISO/Custom/`) are never touched.
 
-### Updating from more than one PC
-
-An update removes a tool from the stick only when it brings a newer copy of
-that tool, you switched the tool off in `local.toml` (`enabled = false`), or
-the PC that put it there no longer has it. Tools from another PC stay where they are, with their
-names, tips and icons in the menu: your paid tools when you update from the
-Windows app on a second machine, or a tool whose download just failed. The run
-lists what it kept; `./refresh.sh --prune-unknown` removes them. The stick's own
-icons and splash stay the same way when the updating PC has none of its own.
-
 ### The boot menu's look
 
-`./theme.sh` changes a finished stick's look without rebuilding anything. The
-choice is kept on the stick, so a refresh doesn't undo it:
+`./theme.sh` (or **Look…** in the Windows app) changes a finished stick's look
+without rebuilding anything, and the choice survives a refresh: seven themes,
+icon styles, your own background and splash, with a preview first.
 
 ```sh
-./theme.sh                                  # how it looks now, and what there is to choose
 ./theme.sh --menu                           # choose from numbered lists, with a preview
-./theme.sh --theme midnight                 # a preset: midnight, ember, terminal, slate (default: Helix Neon)
-./theme.sh --theme standby                  # the plain one (also --theme off); poly-dark is another
-./theme.sh --icons off                      # no icons, just names (--icons grey, --icons badges)
-./theme.sh --background ~/pic.jpg --dim 40  # your own picture behind the menu, darkened 40 %
-./theme.sh --splash ~/pic.png               # your own picture before the menu (--splash off: none)
-./theme.sh --preview out.png --theme ember  # a picture of how it would look; the stick is untouched
-./theme.sh --reset                          # back to the default look
-./theme.sh --export my-look.zip             # save the look, with your own pictures and icons
-./theme.sh --import my-look.zip             # put it on this stick, or a new one
+./theme.sh --theme midnight                 # or ember, terminal, slate, standby, poly-dark
+./theme.sh --background ~/pic.jpg --dim 40  # your own picture behind the menu
+./theme.sh --export my-look.zip             # save the look; --import puts it on any stick
 ```
-
-A saved look holds only the choices and pictures, so it's small. Keep one in
-case the stick is lost. Loading it onto a stick that lacks its theme uses the
-default theme and says so. Its icons and splash stay on the stick through
-updates, unless the updating PC has its own in `byo/`.
-
-On Windows it is the app's **Look…** button, with a live preview, or
-`HelixBoot.exe --look E:\ --theme midnight`. Its **Save look…** and
-**Load look…** buttons save and load a look. `HelixBoot.sh` has it in its menu
-as **Change a stick's look**.
 
 ![The Midnight, Ember, Terminal and Slate presets](docs/themes.jpg)
 
-| Theme | |
-|---|---|
-| `default` | **Helix Neon**: purple and cyan over the helix artwork |
-| `midnight` | deep navy with ice blue and cyan |
-| `ember` | charcoal with orange and amber |
-| `terminal` | black with phosphor green |
-| `slate` | plain graphite and steel |
-| `standby` | black cubes, a power symbol, grey icons; the plain choice (`--theme off` gives it) |
-| `poly-dark` | dark polygons and a plain list, in greys |
-
-Midnight, Ember, Terminal and Slate are the same menu in other colours, over
-artwork drawn by `theme/build-theme.py`, so all of it can be shared. **Standby**
-(by Llewelyn Trahaearn, GPL) and **Poly dark** (by Andrei Shevchuk, MIT) are
-other people's GRUB themes with their own layout, adapted for Ventoy. Standby
-takes the place of Ventoy's own white look, which `theme = ""` under
-`[settings]` in `local.toml` still gives.
-
-![The Standby and Poly dark themes](docs/themes-imported.jpg)
-
-| Icons | |
-|---|---|
-| `auto` | the theme's own style: the icons in colour, or grey on Standby and Poly dark (the default) |
-| `logos` | the default icons in colour, and yours from `byo/icons/` |
-| `grey` | the same icons in shades of grey; a flat one-colour icon turns white |
-| `badges` | two-letter badges in place of the tools' icons |
-| `off` | no icons, just the names |
-
-Your own pictures are resized to 1920×1080 with Pillow; without it, a PNG is
-used as it is. See the [theme notes](docs/theming.md) for how the stick stores
-its look, and for adding a preset or an icon pack of your own.
-
-### Your own icons and splash
-
-To give a tool your own icon, save a square PNG as
-`byo/icons/<tool name>.png`; `byo/icons/cat-<category id>.png` replaces a
-category icon, and Ventoy's own (`vtoyiso`, `vtoydir`, `vtoyret` for "back", …)
-can be replaced the same way. Yours win over a preset's. Ventoy shows icons at
-40×40, and big ones use up its memory at boot so later icons don't appear:
-`theme/build-theme.py --fit-icons` shrinks yours to 40×40, keeping the
-originals in `byo/icons/originals/`. A whole set of your own goes in
-`byo/icon-packs/<name>/` and is picked with `./theme.sh --icons <name>`. Put
-icons there, not straight onto the stick: the stick's theme folder is rebuilt
-on every refresh.
-
-When the stick boots, a splash shows for about a second before the Ventoy
-menu, with a loading bar filling up along the bottom: the HELIXBOOT logo over
-the theme's artwork, or your own picture saved as `byo/splash.png` (1920×1080
-works best). `splash_seconds` under `[settings]` in `local.toml` sets how long
-(0 turns it off). The boot loader only counts whole seconds, so the bar is a set
-of frames drawn one after another, and a slower PC takes a little longer.
-Refresh makes the frames with Pillow (`python-pillow`); without it the splash
-is a still picture. Ventoy has no setting for a splash, so `install.sh` and
-`refresh.sh` add a few marked lines to Ventoy's own boot script on the stick's
-small VTOYEFI partition, and re-add them after a Ventoy upgrade.
-
-### The default theme
-
-**Helix Neon** is purple/cyan DNA artwork, the HELIXBOOT wordmark and a purple
-selection with a cyan edge. The menu, scrolling,
-timeout, hotkeys and boot-mode indicators are real Ventoy components; no menu
-entries are painted into the wallpaper. Lazarus PE keeps its separate green
-PortableApps theme.
-
-Every tool, category and Ventoy entry has an icon from one glossy set, the
-HELIXBOOT icon collection, the same on every theme. The
-[icon notes](docs/tool-icons.md) show the set and say how to change an icon or
-use one of the collection's extras.
-
-![Helix Neon layout preview](docs/artwork/helix-neon-preview.jpg)
-
-The image above is a layout preview; the screenshots at the top are the real
-thing. The themes target 1920×1080; other screen modes use Ventoy's resolution
-fallback, and longer menus scroll.
-
-The theme lives in [`theme/`](theme/). Edit `theme.txt` for layout, or the
-colours and text in `theme/build-theme.py`, and re-run it to regenerate the
-images, icons, presets and fonts (`--skip-fonts` reuses the committed fonts).
-`./refresh.sh` then puts it on a stick; no PE rebuild is needed. See the
-[theme notes](docs/theming.md) for rebuilding assets and checking the result on
-your hardware.
-
-<details>
-<summary><b>Layout on the stick</b></summary>
-
-```
-ISO/1-Antivirus/  ISO/2-Backup-and-Recovery/  ISO/3-Boot-Repair/
-ISO/4-Diagnostic-Tools/  ISO/5-Disk-Wipe/  ISO/6-Live-Operating-Systems/
-ISO/7-Partition-Tools/  ISO/8-Password-Removal/  ISO/9-Windows-Recovery/
-ISO/OSimages/       your own installer ISOs (never touched; hidden while empty)
-Apps/               portable apps, the Helix Apps menu and LazarusStartup.cmd
-Apps/Lazarus/       the Lazarus launcher (Lazarus PE's start screen)
-HelixBoot/          HelixBoot.exe and HelixBoot.sh: update the stick or change its look from any PC
-Mac/                tools for a working Mac, as downloaded, with a README.txt
-PortableApps/       the PortableApps.com Platform's apps (Start.exe at the root)
-ventoy/ventoy.json  generated menu: tree view, friendly names, icons, tips
-ventoy/theme/       the look in use, built from .helix-boot (rebuilt on every refresh)
-.helix-boot/        what this project manages: which tool each file is and which PC put
-                    it there, the theme with its presets, and the look you chose
-```
-
-</details>
+[The look in full](docs/look.md): every theme and icon style, your own icons
+and splash, saving a look, and how the default theme is put together.
 
 ## Roadmap
 
