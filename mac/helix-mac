@@ -197,6 +197,25 @@ def sudo(*cmd: str) -> None:
         raise cr.RescueError(f"{cmd[0]} failed: {(r.stderr or r.stdout).strip()[-300:]}")
 
 
+def write_disk(disk: str, src: Path, *where: str, run=diskutil, root=sudo, tries: int = 6) -> None:
+    """dd a file onto the disk. macOS keeps hold of a disk for a moment after it is unmounted
+    ("Resource busy"), so this unmounts and tries again; if the raw device stays busy, the
+    buffered one is used."""
+    said = ""
+    for n in range(tries):
+        dev = f"/dev/r{disk}" if n < tries - 2 else f"/dev/{disk}"
+        try:
+            run("unmountDisk", "force", disk)
+            root("dd", f"if={src}", f"of={dev}", *where)
+            return
+        except cr.RescueError as e:
+            said = str(e)
+            if "busy" not in said.lower():
+                raise
+            time.sleep(2)
+    raise cr.RescueError(f"{disk} stayed busy ({said}). Close anything using it, or unplug it and plug it in again.")
+
+
 def erasable(disk: str, run=diskutil, disk_images: bool = False) -> dict:
     """The disk to erase, if it may be: a whole USB or SD disk that isn't inside the Mac and
     holds nothing the Mac is running from. Raises RescueError otherwise."""
@@ -255,11 +274,10 @@ def install(a, run=diskutil, ask=input, root=sudo) -> int:
     try:
         (work / "head.bin").write_bytes(layout["head"])
         (work / "efi.img").write_bytes(layout["efi"])
-        raw, part1, part2 = f"/dev/r{disk}", f"{disk}s1", f"{disk}s2"
+        part1, part2 = f"{disk}s1", f"{disk}s2"
         cr.info("writing Ventoy …")
-        run("unmountDisk", "force", disk)
-        root("dd", f"if={work / 'head.bin'}", f"of={raw}", "bs=1m")
-        root("dd", f"if={work / 'efi.img'}", f"of={raw}", "bs=4096", f"seek={layout['efi_start'] // 8}")
+        write_disk(disk, work / "head.bin", "bs=1m", run=run, root=root)
+        write_disk(disk, work / "efi.img", "bs=4096", f"seek={layout['efi_start'] // 8}", run=run, root=root)
         root("sync")
         for _ in range(30):                              # macOS reads the new partition table
             names = {p.get("DeviceIdentifier") for d in run("list", "-plist", disk).get("AllDisksAndPartitions", [])
@@ -271,9 +289,8 @@ def install(a, run=diskutil, ask=input, root=sudo) -> int:
             raise cr.RescueError(f"macOS doesn't see the new partitions on {disk}; unplug it, plug it in and try again")
         cr.info("formatting the data partition …")
         run("eraseVolume", "ExFAT", cfg.stick_label, part1)
-        run("unmountDisk", "force", disk)
         (work / "sector0.bin").write_bytes(layout["head"][:512])    # formatting may touch the table: ours again
-        root("dd", f"if={work / 'sector0.bin'}", f"of={raw}", "bs=512", "count=1")
+        write_disk(disk, work / "sector0.bin", "bs=512", "count=1", run=run, root=root)
         root("sync")
     finally:
         for f in work.glob("*"):

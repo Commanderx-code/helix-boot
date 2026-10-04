@@ -213,6 +213,27 @@ class TestMacFront(unittest.TestCase):
         self.assertEqual(steps[1:], [("sync", str(self.stick), True, True), ("splash", str(self.efi), str(self.stick))])
         self.assertEqual(list(Path(tempfile.gettempdir()).glob("helix-install-*")), [])          # its work files are gone
 
+    def test_a_busy_disk_is_tried_again(self):
+        tried = []
+
+        def root(*cmd):
+            tried.append(cmd[2])
+            if len(tried) < 3:
+                raise mac.cr.RescueError("dd failed: dd: /dev/rdisk4: Resource busy")
+        with mock.patch.object(mac.time, "sleep"):
+            mac.write_disk("disk4", Path("head.bin"), "bs=1m", run=self.run, root=root)
+            self.assertEqual(tried, ["of=/dev/rdisk4"] * 3)
+            self.assertEqual(self.run.calls.count(("unmountDisk", "force", "disk4")), 3)      # let go of each time
+            tried.clear()
+            with self.assertRaisesRegex(mac.cr.RescueError, "stayed busy"):
+                mac.write_disk("disk4", Path("head.bin"), run=self.run,
+                               root=lambda *c: tried.append(c[2]) or (_ for _ in ()).throw(
+                                   mac.cr.RescueError("dd: Resource busy")))
+            self.assertEqual(tried[-2:], ["of=/dev/disk4"] * 2)                                # the buffered device last
+            with self.assertRaisesRegex(mac.cr.RescueError, "Permission denied"):             # anything else: at once
+                mac.write_disk("disk4", Path("head.bin"), run=self.run,
+                               root=lambda *c: (_ for _ in ()).throw(mac.cr.RescueError("dd: Permission denied")))
+
     def test_install_stops_if_the_disk_changes_after_the_question(self):
         def swap(question):
             self.run.info["disk4"] = {"Internal": False, "TotalSize": 128 * GB, "MediaName": "Another", "BusProtocol": "USB"}
