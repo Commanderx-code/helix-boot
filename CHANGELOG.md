@@ -6,6 +6,14 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Changed
+- Release pages carry that version's section of this changelog, and how to
+  check a download (`scripts/release-notes.sh`).
+- The README is shorter: the engine's commands, verification, checking a stick
+  and the safety rules are in [`docs/engine.md`](docs/engine.md); themes, icons
+  and splash in full are in [`docs/look.md`](docs/look.md). Its screenshots
+  are retaken, and it shows the Windows app.
+
 ## [0.6.13] - 2026-10-04
 
 ### Security
