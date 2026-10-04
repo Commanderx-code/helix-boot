@@ -6,6 +6,12 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Fixed
+- An app with no version number of its own (Sysinternals, ProduKey, OnyX, …)
+  was copied again whenever the stick was updated from a PC that had fetched
+  it on a different day, though the files were the same. They are now compared
+  by their checksum.
+
 ## [0.6.9] - 2026-10-04
 
 ### Changed
