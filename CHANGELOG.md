@@ -6,12 +6,16 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.14] - 2026-10-04
+
 ### Added
 - **Updating a stick from a Mac:** `mac/helix-mac` finds the stick, shows what
   an update will copy, remove and keep, asks, updates it (from the internet or
   a pack), and adds the splash and the L / F1 keys, as on Linux. Also
   `helix-mac check`, `look` and `list`. CI runs a whole update on a real Mac,
-  against a disk image partitioned like a stick.
+  against a disk image partitioned like a stick. On most sticks macOS won't
+  mount Ventoy's partition by itself, so it is mounted directly, which asks
+  for your password.
 - **Creating a stick on a Mac (experimental):** `mac/helix-mac install --disk
   disk4`. Ventoy has no installer for macOS, so the engine writes Ventoy's MBR
   layout itself (`ventoy_layout`), as Ventoy's installer does on Linux, with
@@ -594,7 +598,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.13...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.14...HEAD
+[0.6.14]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.13...v0.6.14
 [0.6.13]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.12...v0.6.13
 [0.6.12]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.11...v0.6.12
 [0.6.11]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.10...v0.6.11

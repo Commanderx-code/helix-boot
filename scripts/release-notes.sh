@@ -24,4 +24,6 @@ printf '%s\n' "$notes" | awk '
   /^[[:space:]]*([-*]|[0-9]+\.) / { flush(); line = $0; next }
                                 { sub(/^[[:space:]]+/, ""); line = (line == "" ? $0 : line " " $0) }
   function flush() { if (line != "") { print line; line = "" } }
-  END { flush() }'
+  END { flush() }' |
+  # … and a link to a file in the repo has to say where the repo is, at this version
+  sed -E "s#\\]\\((docs|scripts|theme|pe|mac|tests|windows|linux|byo)/#](https://github.com/${GITHUB_REPOSITORY:-Commanderx-code/helix-boot}/blob/v$version/\\1/#g"
