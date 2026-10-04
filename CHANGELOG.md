@@ -6,6 +6,12 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- CI checks the tools for a Mac on a real Mac: each download is opened as
+  macOS would open it, and the app or installer inside must be whole. It
+  reports who signed each one and whether Gatekeeper accepts it
+  (`tests/mac/check_tools.py`).
+
 ## [0.6.10] - 2026-10-04
 
 ### Fixed
