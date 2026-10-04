@@ -305,6 +305,23 @@ class TestConfig(Base):
         self.assertEqual((res["file"], res["version"]), ("tool_76.iso", "76"))
         self.assertEqual(res["url"], f"{BASE}/dyna/?software=tool_76.iso&x=1")
 
+    def test_page_source_only_takes_links_to_its_own_site(self):
+        # A link elsewhere that carries the right text (a newer-looking one, even) isn't a download of this tool
+        put("dlpage2/index.html", '<a href="files/tool_75.iso">75</a>'
+                                  '<a href="https://elsewhere.example/tool_99.iso">99</a>'
+                                  '<a href="//elsewhere.example/x?f=tool_98.iso">98</a>')
+        tool = {"name": "t", "title": "T", "kind": "iso", "category": "rescue", "source": "page",
+                "page": f"{BASE}/dlpage2/index.html", "asset": [r"tool_\d+\.iso$"],
+                "version": r"tool_(\d+)", "checksum": ["tofu"]}
+        res = cr.resolve(tool, self.cfg)
+        self.assertEqual((res["version"], res["url"]), ("75", f"{BASE}/dlpage2/files/tool_75.iso"))
+        tool["hosts"] = ["elsewhere.example"]                          # named by the tool: now it counts
+        self.assertEqual(cr.resolve(tool, self.cfg)["url"], "https://elsewhere.example/tool_99.iso")
+        put("dlpage3/index.html", '<a href="https://elsewhere.example/tool_99.iso">99</a>')
+        tool.update(page=f"{BASE}/dlpage3/index.html", hosts=[])
+        with self.assertRaisesRegex(cr.RescueError, "no link on"):
+            cr.resolve(tool, self.cfg)
+
     def test_sourceforge_unversioned_file_uses_upload_date(self):
         sf_feed("brd", "/", [("/brd-64bit.iso", b"iso", "Sat, 23 Dec 2023 11:59:10 UT")])
         tool = {"name": "brd", "title": "BRD", "kind": "iso", "category": "rescue", "source": "sourceforge",

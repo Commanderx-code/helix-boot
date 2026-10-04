@@ -6,6 +6,13 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Security
+- A tool whose download link is read from a web page (`source = "page"`) took
+  any link on that page that matched its pattern, whatever site it pointed to.
+  Only links to the page's own site are taken now, or to a site the tool names
+  in `hosts`, and never one that drops from https. No shipped tool resolved to
+  a wrong link; this closes the gap.
+
 ### Added
 - Ten more tools for a Mac: DMDE (recovery), Vorta for Apple Silicon and for
   Intel (backup), Maintenance for macOS 26, 15 and 14, Pearcleaner

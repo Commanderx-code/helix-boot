@@ -222,6 +222,10 @@ class Config:
                 f"{where}: no checksum strategy. Add one, or checksum = [\"tofu\"] to accept "
                 "unverified downloads explicitly."
             )
+        hosts = t.get("hosts", [])
+        if not isinstance(hosts, list) or not all(isinstance(h, str) and re.fullmatch(r"[A-Za-z0-9.-]+(:\d+)?", h)
+                                                  for h in hosts):
+            raise RescueError(f"{where}: hosts is a list of site names, such as [\"downloads.example.org\"]")
         for pat in t.get("asset", []) + [t.get("version") or "", t.get("extract") or ""]:
             try:
                 re.compile(pat.replace("{name}", "x"))
@@ -648,6 +652,12 @@ def resolve(tool: dict, cfg: Config) -> dict:
         text = http_get(tool["page"], _ua(tool)).decode("utf-8", "replace")
         hrefs = [urllib.parse.urljoin(tool["page"], html.unescape(h))
                  for h in re.findall(r"""href\s*=\s*["']([^"']+)""", text, re.I)]
+        # Only a link to the page's own site counts, or to one the tool names (`hosts`), and never
+        # one that drops from https: a pattern matches text, and any site's link can carry that text.
+        home = urllib.parse.urlsplit(tool["page"])
+        allowed = {home.netloc.lower(), *(str(h).lower() for h in tool.get("hosts", []))}
+        hrefs = [h for h in hrefs if (u := urllib.parse.urlsplit(h)).netloc.lower() in allowed
+                 and u.scheme in ("https", home.scheme)]
         hits: list[tuple[str, str]] = []
         for pat in tool["asset"]:  # first pattern that matches anything wins, as for releases
             hits = [(m.group(0), h) for h in hrefs if (m := re.search(pat, h))]

@@ -21,11 +21,14 @@
 #   category    one of the [[category]] ids below (iso only)
 #               icon: theme/icons/<name>.png, or your own in byo/icons/<name>.png
 #   enabled     include in fetch/sync (default true)
-#   source      "github" | "sourceforge" | "url" | "local"
+#   source      "github" | "sourceforge" | "url" | "page" | "local"
 #     github:       repo = "owner/name"   (+ optional download_template when the
 #                   release has no files: "https://site/v{version}/file-{version}.iso")
 #     sourceforge:  project = "name", path = "/folder"
 #     url:          url = "https://..."
+#     page:         page = "https://site/downloads", a page whose links carry the version; `asset`
+#                   picks among its links. Only links to the page's own site count, or to one named
+#                   in hosts = ["downloads.example.org"], and never one that drops from https.
 #     local:        path = "relative/to/repo.iso"
 #   asset       list of regexes tried in order against release file names;
 #               the first regex that matches anything wins
@@ -520,6 +523,7 @@ recolor = { imgLiveSearchIcon = "2AA9BE", imgLiveSearchClose = "2AA9BE" }
 drop = ['^\$PLUGINSDIR(/|$)']
 source = "page"
 page = "https://portableapps.com/download"
+hosts = ["downloads.sourceforge.net"]      # where its download link points; other sites' links are ignored
 user_agent = "browser"     # portableapps.com turns away other user agents
 asset = ['(?<=downloads\.sourceforge\.net/portableapps/)PortableApps\.com_Platform_Setup_[\d.]+\.paf\.exe$']
 version = 'Platform_Setup_([\d.]+)\.paf'
