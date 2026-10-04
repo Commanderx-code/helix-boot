@@ -617,34 +617,38 @@ ventoy/theme/       the look in use, built from .helix-boot (rebuilt on every re
 
 ## Roadmap
 
-- [x] Manifest, fetch/verify engine, installer, refresher, Ventoy menu and theme
-- [x] PE app launcher (works in any WinPE)
-- [x] CI: tests, ShellCheck, weekly live resolve + download + verify of every tool
-- [x] Windows app (`HelixBoot.exe`)
-- [x] Packs: offline, self-installing zip of the whole stick
-- [x] PhoenixPE preset, Helix Boot add-on and build VM ([guide](pe/README.md))
-- [x] First Lazarus PE build
-- [x] PortableApps.com Platform with custom menu themes
-- [x] Packs in the Windows app
-- [x] Renamed to Helix Boot (0.5.0), Helix Neon boot-menu theme
-- [x] Lazarus PE look and the Lazarus launcher
-- [x] One-file Linux installer (`HelixBoot.sh`)
-- [x] Splash before the menu, with a loading bar
-- [x] Theme builder: presets, icon styles, your own background and splash
-      (`theme.sh`, the Look window in `HelixBoot.exe`), with a preview (0.6.0)
-- [x] Standby and Poly dark themes, greyscale icons, tools for a Mac (0.6.1)
-- [x] Updates that keep another PC's tools; a renamed stick is still recognised (0.6.2)
-- [x] New default icons (0.6.3)
-- [x] Helix Boot on the stick itself, an update summary, and a boot test of every theme in CI (0.6.4)
-- [x] A review of everything since 0.5.3, and its fixes (0.6.5)
-- [x] Checking a stick for damage, saved looks, newer-version notices in the app,
-      and checksums and build attestations on every release (0.6.6)
-- [x] One icon set from the HELIXBOOT collection, and a new default splash (0.6.7)
-- [x] A row of icons for the menu's hotkeys, with a power menu on L and Memtest86+ on F1;
-      the Windows app adds the splash and those keys too (0.6.8)
-- [x] A new look for the Windows app, and the HB logo (0.6.9)
-- [x] Fourteen more tools for a Mac, all checked on a real Mac in CI (0.6.11)
-- [x] A security hardening pass: the confirmed disk is the one written, plain file trees only (0.6.13)
+**Next**
+
+| Planned | |
+|---|---|
+| A code-signed `HelixBoot.exe` | So Windows shows a verified publisher. The [signing policy](docs/code-signing.md) is in place; the application to SignPath Foundation is next. |
+| A category for legacy PCs | 32-bit and BIOS-only tools, for machines too old for the rest of the stick. |
+| Icon sets per theme | The same icons redrawn in each theme's colours. |
+
+**Shipped**
+
+| Area | What's there | Since |
+|---|---|---|
+| The stick | Manifest of tools, verified downloads, installer and refresher, Ventoy menu | 0.1 |
+| | Packs: the whole stick in one offline, self-installing zip | 0.3 |
+| | Updates that keep another PC's tools; a renamed stick is still recognised | 0.6.2 |
+| | Checking a stick for damage; Helix Boot on the stick itself | 0.6.4 – 0.6.6 |
+| Boot menu | Helix Neon theme | 0.5 |
+| | A splash with a loading bar | 0.6.0 |
+| | Theme builder: seven themes, icon styles, your own background and splash, saved looks | 0.6.0 – 0.6.6 |
+| | One icon set from the HELIXBOOT collection | 0.6.7 |
+| | Hotkeys as a row of icons; a power menu on L, Memtest86+ on F1 | 0.6.8 |
+| Windows app | `HelixBoot.exe`: install, update, packs, an update summary first | 0.1 – 0.6.4 |
+| | The Look window, Check stick, newer-version notices | 0.6.0 – 0.6.6 |
+| | A dark, compact look and the HB logo; adds the splash and menu keys like Linux | 0.6.8 – 0.6.9 |
+| Linux | One-file installer (`HelixBoot.sh`) | 0.5.2 |
+| Lazarus PE | PhoenixPE preset and build VM, the Lazarus launcher, PortableApps.com with Helix themes | 0.1 – 0.5.1 |
+| Mac | 32 tools for a working Mac, each opened and checked on a real Mac in CI | 0.6.1 – 0.6.12 |
+| Trust | CI: tests, a boot test of every theme, a weekly live download and verify of every tool | 0.1 – 0.6.4 |
+| | Checksums and build attestations on every release | 0.6.6 |
+| | Hardening: the confirmed disk is the one written, plain file trees only, pinned download sites | 0.6.11 – 0.6.13 |
+
+The [changelog](CHANGELOG.md) has every release in detail.
 
 ## Contributing
 
