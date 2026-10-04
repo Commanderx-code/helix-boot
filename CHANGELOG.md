@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.6.13] - 2026-10-04
+
 ### Security
 A hardening pass over what gets written, and where:
 - **The disk you confirm is the disk that is written.** `install.sh`,
@@ -570,7 +572,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.12...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.13...HEAD
+[0.6.13]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.12...v0.6.13
 [0.6.12]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.11...v0.6.12
 [0.6.11]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.10...v0.6.11
 [0.6.10]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.9...v0.6.10
