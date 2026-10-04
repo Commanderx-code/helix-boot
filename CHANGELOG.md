@@ -18,6 +18,8 @@ tagged releases also publish the Windows app.
   Intel (backup), Maintenance for macOS 26, 15 and 14, Pearcleaner
   (uninstaller), Keka (archives), and Objective-See's Netiquette and
   BlockBlock.
+- RustDesk (remote support) and balenaEtcher (writes boot sticks) for a Mac,
+  each for Apple Silicon and for Intel.
 - CI checks the tools for a Mac on a real Mac: each download is opened as
   macOS would open it, and the app or installer inside must be whole. It
   reports who signed each one and whether Gatekeeper accepts it
