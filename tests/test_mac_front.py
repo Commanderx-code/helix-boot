@@ -271,6 +271,23 @@ class TestMacFront(unittest.TestCase):
         self.assertIn("unplugged or replaced", rc)
         self.assertEqual(root, [])
 
+    def test_partitions_are_waited_for_after_the_table_is_written(self):
+        calls = []
+
+        def run(*args):
+            calls.append(args)
+            if args[0] == "list":
+                return {"AllDisksAndPartitions": [{"Partitions": [{"DeviceIdentifier": "disk9s1"},
+                                                                  {"DeviceIdentifier": "disk9s2"}]}]}
+            if sum(1 for c in calls if c[0] == "info") < 2:
+                raise mac.cr.RescueError("Could not find disk: disk9s1")
+            return {}
+        with mock.patch.object(mac.time, "sleep"):
+            mac.partitions_seen("disk9", "disk9s1", "disk9s2", run=run)
+            with self.assertRaises(mac.cr.RescueError) as e:
+                mac.partitions_seen("disk9", "disk9s3", run=run, tries=3)
+        self.assertIn("doesn't see the new partitions", str(e.exception))
+
     def test_the_one_file_program_makes_your_byo_folder_for_engine_commands_too(self):
         seen = {}
         with mock.patch.object(mac, "FROZEN", True), mock.patch.object(mac, "user_dir", lambda: self.tmp), \

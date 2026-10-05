@@ -296,6 +296,23 @@ def write_disk(disk: str, src: Path, *where: str, run=diskutil, root=sudo, tries
     raise cr.RescueError(f"{disk} stayed busy ({said}). Close anything using it, or unplug it and plug it in again.")
 
 
+def partitions_seen(disk: str, *parts: str, run=diskutil, tries: int = 30) -> None:
+    """Wait until macOS has read the disk's partition table and answers for each partition:
+    after a write to the table they are gone for a moment."""
+    for _ in range(tries):
+        try:
+            names = {p.get("DeviceIdentifier") for d in run("list", "-plist", disk).get("AllDisksAndPartitions", [])
+                     for p in d.get("Partitions", [])}
+            if set(parts) <= names:
+                for part in parts:
+                    run("info", "-plist", part)
+                return
+        except cr.RescueError:
+            pass
+        time.sleep(1)
+    raise cr.RescueError(f"macOS doesn't see the new partitions on {disk}; unplug it, plug it in and try again")
+
+
 def erasable(disk: str, run=diskutil, disk_images: bool = False) -> dict:
     """The disk to erase, if it may be: a whole USB or SD disk that isn't inside the Mac and
     holds nothing the Mac is running from. Raises RescueError otherwise."""
@@ -359,19 +376,13 @@ def install(a, run=diskutil, ask=input, root=sudo) -> int:
         write_disk(disk, work / "head.bin", "bs=1m", run=run, root=root)
         write_disk(disk, work / "efi.img", "bs=4096", f"seek={layout['efi_start'] // 8}", run=run, root=root)
         root("sync")
-        for _ in range(30):                              # macOS reads the new partition table
-            names = {p.get("DeviceIdentifier") for d in run("list", "-plist", disk).get("AllDisksAndPartitions", [])
-                     for p in d.get("Partitions", [])}
-            if {part1, part2} <= names:
-                break
-            time.sleep(1)
-        else:
-            raise cr.RescueError(f"macOS doesn't see the new partitions on {disk}; unplug it, plug it in and try again")
+        partitions_seen(disk, part1, part2, run=run)
         cr.info("formatting the data partition …")
         run("eraseVolume", "ExFAT", cfg.stick_label, part1)
         (work / "sector0.bin").write_bytes(layout["head"][:512])    # formatting may touch the table: ours again
         write_disk(disk, work / "sector0.bin", "bs=512", "count=1", run=run, root=root)
         root("sync")
+        partitions_seen(disk, part1, part2, run=run)     # the table was written again: read again
     finally:
         for f in work.glob("*"):
             f.unlink()
