@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-04
+
 ### Security
 - The released programs are built with pinned, checksummed versions of their
   build tools (PyInstaller, Pillow, certifi), where the build took whatever
@@ -633,7 +635,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.14...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.14...v0.7.0
 [0.6.14]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.13...v0.6.14
 [0.6.13]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.12...v0.6.13
 [0.6.12]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.11...v0.6.12
