@@ -33,12 +33,30 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    redirects = {}  # URL path -> where it sends you (302)
+    seen = []       # every path asked for
+
     def do_GET(self):
+        self.seen.append(self.path)
         if self.fail.get(self.path, 0) > 0:
             self.fail[self.path] -= 1
             self.send_error(500)
             return
+        if self.path in self.redirects:
+            self.send_response(302)
+            self.send_header("Location", self.redirects[self.path])
+            self.end_headers()
+            return
         super().do_GET()
+
+    def do_HEAD(self):
+        self.seen.append(self.path)
+        if self.path in self.redirects:
+            self.send_response(302)
+            self.send_header("Location", self.redirects[self.path])
+            self.end_headers()
+            return
+        super().do_HEAD()
 
 
 SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(WEB)))
@@ -46,6 +64,7 @@ BASE = f"http://127.0.0.1:{SERVER.server_address[1]}"
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 
 os.environ["HELIX_GITHUB_API"] = f"{BASE}/gh"
+os.environ["HELIX_GITHUB_WEB"] = f"{BASE}/ghweb"      # (nothing there unless a test puts it: the API is asked)
 os.environ["HELIX_SF_RSS"] = BASE + "/sf/{project}/rss{path}/feed.xml"
 os.environ["HELIX_SF_DL"] = BASE + "/dl/{project}{path}"
 os.environ["NO_COLOR"] = "1"
@@ -292,6 +311,45 @@ class TestConfig(Base):
         with self.assertRaisesRegex(cr.RescueError, "add file ="):
             cr.resolve(tool, self.cfg)
 
+    def test_github_is_only_asked_through_its_api_when_the_latest_tag_changed(self):
+        # The API allows 60 requests an hour; the website's "latest release" redirect isn't one of them
+        tool = next(t for t in self.cfg.tools if t["name"] == "ventoy")
+        api, web = "/gh/repos/ventoy/Ventoy/releases/latest", "/ghweb/ventoy/Ventoy/releases/latest"
+        asked = lambda: Quiet.seen.count(api)                                       # noqa: E731
+        Quiet.redirects[web] = f"{BASE}/ghweb/ventoy/Ventoy/releases/tag/v1.1.17"
+        try:
+            Quiet.seen.clear()
+            self.assertEqual(cr.resolve(tool, self.cfg)["version"], "1.1.17")
+            self.assertEqual(asked(), 1)                                            # first time: the API
+            for _ in range(3):
+                self.assertEqual(cr.resolve(tool, self.cfg)["version"], "1.1.17")
+            self.assertEqual((asked(), Quiet.seen.count(web)), (1, 4))              # then only the redirect
+            kept = json.loads((self.cfg.cache / cr.RELEASES_FILE).read_text())
+            self.assertEqual(kept["ventoy/Ventoy"]["release"]["tag_name"], "v1.1.17")
+
+            new = targz({"./ventoy-1.1.18/Ventoy2Disk.sh": b"#!/bin/sh\n"})          # a new release: asked once more
+            gh_release("ventoy/Ventoy", "v1.1.18", {"ventoy-1.1.18-linux.tar.gz": new,
+                                                    "sha256.txt": f"{sha(new)}  ventoy-1.1.18-linux.tar.gz\n".encode()})
+            Quiet.redirects[web] = f"{BASE}/ghweb/ventoy/Ventoy/releases/tag/v1.1.18"
+            self.assertEqual(cr.resolve(tool, self.cfg)["version"], "1.1.18")
+            self.assertEqual(cr.resolve(tool, self.cfg)["version"], "1.1.18")
+            self.assertEqual(asked(), 2)
+
+            kept = json.loads((self.cfg.cache / cr.RELEASES_FILE).read_text())      # a week on: asked again anyway
+            kept["ventoy/Ventoy"]["at"] -= cr.RELEASES_MAX_AGE + 1
+            (self.cfg.cache / cr.RELEASES_FILE).write_text(json.dumps(kept))
+            cr.resolve(tool, self.cfg)
+            self.assertEqual(asked(), 3)
+
+            Quiet.redirects[web] = f"{BASE}/ghweb/ventoy/Ventoy/releases"            # no tag to be had: the API, as before
+            cr.resolve(tool, self.cfg)
+            self.assertEqual(asked(), 4)
+            (self.cfg.cache / cr.RELEASES_FILE).write_text("not json")              # a spoiled cache is no obstacle
+            Quiet.redirects[web] = f"{BASE}/ghweb/ventoy/Ventoy/releases/tag/v1.1.18"
+            self.assertEqual(cr.resolve(tool, self.cfg)["version"], "1.1.18")
+        finally:
+            Quiet.redirects.clear()
+
     def test_page_source_picks_newest_link(self):
         put("dlpage/index.html", '<a href="files/tool_75.iso">75</a> <a href="files/tool_lite_77.iso">lite</a>'
                                  '<a href="/dyna/?software=tool_76.iso&amp;x=1">76</a>')
@@ -483,6 +541,64 @@ class TestFetchAndSync(Base):
         self.assertNotIn("damaged", json.loads((self.stick / cr.STATE_DIR / "state.json").read_text()))
         rc, out = self.verify()
         self.assertEqual(rc, 0, out)
+
+    def test_a_tools_own_settings_arent_taken_for_damage(self):
+        # Sysinternals with a settings file in its zip, as a tool that keeps its settings beside it has
+        put("web/SysinternalsSuite.zip", zipped({"procexp64.exe": b"MZ procexp", "Eula.txt": b"eula",
+                                                 "procexp.ini": b"[defaults]", "layout.xml": b"<layout/>"}))
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync()[0], 0)
+        app = self.stick / "Apps/sysinternals"
+        (app / "procexp.ini").write_bytes(b"[mine]\nfont=big")             # the tool saved its settings
+        rc, out = self.verify()
+        self.assertEqual(rc, 0, out)                                         # not a finding …
+        self.assertIn("1 settings file(s) were changed by the tools themselves (sysinternals)", out)
+        self.assertNotIn("damaged", json.loads((self.stick / cr.STATE_DIR / "state.json").read_text()))
+        rc, out = self.sync(init=False, verify=True)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Sysinternals Suite", out)
+        self.assertNotIn("unpacked", out)                                    # … and an update leaves them be
+        self.assertEqual((app / "procexp.ini").read_bytes(), b"[mine]\nfont=big")
+
+        (app / "layout.xml").write_bytes(b"<layout mine='1'/>")              # not a settings file unless the tool says so
+        rc, out = self.verify()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("sysinternals: 1 file(s) differ from when it was copied (layout.xml)", out)
+        rc, out = self.sync(init=False, verify=True)
+        self.assertIn("unpacked", out)                                       # copied again, as it came
+        self.assertEqual((app / "layout.xml").read_bytes(), b"<layout/>")
+
+        (app / "procexp64.exe").write_bytes(b"MZ procexX")                   # a program is never settings
+        self.assertEqual(self.verify()[0], 1)
+        self.assertFalse(cr._is_settings("tool/setup.ini.exe") or cr._is_settings("x/run.cmd", ["*.cmd"]))
+        self.assertTrue(cr._is_settings("Data/Settings.INI") and cr._is_settings("config/a.xml", ["*.xml"]))
+        (self.repo / "local.toml").write_text('[overrides.sysinternals]\nsettings = "*.xml"\n')
+        with self.assertRaisesRegex(cr.RescueError, "settings is a list"):
+            cr.Config(repo=self.repo)
+
+    def test_an_update_that_verifies_reads_the_stick_once(self):
+        # The summary shown before the update reads every file; doing the update doesn't read them again
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync()[0], 0)
+        cr._SEEN.clear()
+        read, real = [], cr.file_hash
+
+        def counted(path, *a, **k):
+            if self.stick in Path(path).parents and Path(path).name != "ventoy.json":      # (the menu: a few KB)
+                read.append(Path(path).name)
+            return real(path, *a, **k)
+        with unittest.mock.patch.object(cr, "file_hash", counted):
+            plan = cr.update_plan(self.cfg, str(self.stick), init=True, verify=True)
+            first = sorted(read)
+            self.assertIn("memtest.iso", first)
+            self.assertIn("procexp64.exe", first)
+            self.assertFalse(any(kind == "copy" for kind, _, _ in plan))
+            rc, out = self.sync(init=False, verify=True)
+            self.assertEqual(rc, 0, out)
+            self.assertEqual(sorted(read), first)                            # nothing read a second time
+            (self.stick / "ISO/5-Diagnostics/memtest.iso").write_bytes(b"memtest isX")   # changed since: read again
+            self.sync(init=False, verify=True)
+            self.assertEqual(read.count("memtest.iso"), 3)                   # the changed one, then its fresh copy
 
     def test_verify_a_stick_from_an_older_helix_boot(self):
         self.assertEqual(self.fetch()[0], 0)

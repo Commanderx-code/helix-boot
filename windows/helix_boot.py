@@ -41,6 +41,7 @@ from pathlib import Path
 # (tests/test_windows_app.py checks this list against helix.)
 import ctypes  # noqa: F401
 import email.utils  # noqa: F401
+import fnmatch  # noqa: F401
 import hashlib  # noqa: F401
 import html  # noqa: F401
 import http.client  # noqa: F401
