@@ -118,7 +118,7 @@ class TestFlows(unittest.TestCase):
             mock.patch.object(app, "fetch", lambda cfg, tools=(): self.calls.append("fetch") or True),
             mock.patch.object(app, "ventoy_dir", lambda cfg: self.vdir),
             mock.patch.object(app, "sync", lambda cfg, target, init: self.calls.append(("sync", target, init))),
-            mock.patch.object(app, "update_summary", lambda cfg, target, pack=None: "Copy 1 (1.0 GiB): Clonezilla 3.3"),
+            mock.patch.object(app, "update_summary", lambda cfg, target, pack=None, **kw: "Copy 1 (1.0 GiB): Clonezilla 3.3"),
         ]
         for p in patches:
             p.start()
@@ -339,6 +339,19 @@ class TestFlows(unittest.TestCase):
              self.assertRaisesRegex(app.RescueError, "changed app"):
             app.check("E:\\")
 
+    def test_the_engine_reports_each_chunk_copied(self):
+        seen = []
+        app.cr.Progress.watch = lambda n, label: seen.append((n, label))
+        try:
+            p = app.cr.Progress()
+            p.file("(1/2) memtest.iso", 10)
+            p.add(4)
+            p.add(6)
+        finally:
+            app.cr.Progress.watch = None
+        self.assertEqual(seen, [(4, "(1/2) memtest.iso"), (6, "(1/2) memtest.iso")])
+        app.cr.Progress().add(1)                      # nobody watching: nothing happens
+
     def test_check_stick(self):
         good = {"damaged": [], "missing": [], "changed": {}, "checked": 9, "unrecorded": [], "images": 3,
                 "apps": 2, "menu": None}
@@ -356,6 +369,16 @@ class TestFlows(unittest.TestCase):
 
 
 class TestPreview(unittest.TestCase):
+    def test_an_updates_size_reaches_the_window(self):
+        plan = [("copy", "Clonezilla 3.3", 3 << 30), ("copy", "Sysinternals", 50 << 20), ("remove", "old.iso", 0),
+                ("keep", "paid.iso", 0)]
+        self.assertEqual(app.copy_bytes(plan), (3 << 30) + (50 << 20))
+        told = []
+        with mock.patch.object(app.cr, "update_plan", return_value=plan):
+            text = app.update_summary("cfg", "E:\\", on_plan=told.append)
+        self.assertEqual(told, [(3 << 30) + (50 << 20)])
+        self.assertIn("Clonezilla 3.3", text)
+
     def test_preview_uses_the_same_verification_as_update(self):
         with mock.patch.object(app.cr, "update_plan", return_value=[]) as plan:
             app.update_summary("cfg", "E:\\")

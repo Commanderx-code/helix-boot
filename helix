@@ -365,6 +365,8 @@ class Progress:
     job (bar, bytes, speed, ETA); otherwise just the current file. Silent unless stderr
     is a terminal, so logs and the Windows app stay clean."""
 
+    watch = None        # watch(bytes, label), for every step of every Progress: the Windows app's "12 GB / 37 GB"
+
     def __init__(self, total: int = 0, hook=None):
         self.total, self.done = total, 0
         self.hook = hook            # hook(percent): the Windows app's progress bar
@@ -378,6 +380,8 @@ class Progress:
     def add(self, n: int) -> None:
         self.done += n
         self.fdone += n
+        if Progress.watch:
+            Progress.watch(n, self.label)
         now = time.monotonic()
         if (self.tty or self.hook) and now - self.last > 0.25:
             self.last = now
@@ -508,6 +512,45 @@ def folder_hash(path: Path) -> str:
     h = hashlib.sha256()
     for f in sorted(p for p in path.rglob("*") if p.is_file()):
         h.update(f"{f.relative_to(path).as_posix()}\0{file_hash(f)}\n".encode("utf-8"))
+    return h.hexdigest()
+
+
+def _read_from_disk(path: Path, algo: str = "sha256", progress: "Progress | None" = None) -> str:
+    """file_hash, with the bytes really read from the disk: on Windows, where there is no way to
+    drop a file from the OS's cache (see _uncached), the file is opened unbuffered. Anything that
+    doesn't allow that (an odd drive, a network share) is read the ordinary way."""
+    if os.name != "nt":
+        _uncached(path)
+        return file_hash(path, algo, progress)
+    try:
+        import ctypes
+        import mmap
+        import msvcrt
+        k32 = ctypes.windll.kernel32
+        k32.CreateFileW.restype = ctypes.c_void_p
+        # GENERIC_READ, share everything, OPEN_EXISTING, NO_BUFFERING | SEQUENTIAL_SCAN
+        handle = k32.CreateFileW(str(path), 0x80000000, 0x7, None, 3, 0x20000000 | 0x08000000, None)
+        if handle in (None, ctypes.c_void_p(-1).value):
+            raise OSError("can't open it unbuffered")
+        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    except (OSError, AttributeError, ImportError, ValueError):
+        return file_hash(path, algo, progress)
+    h, sofar = hashlib.new(algo), 0
+    try:
+        with os.fdopen(fd, "rb", buffering=0) as f, mmap.mmap(-1, 1 << 20) as buf:   # (a page-aligned buffer, as
+            view = memoryview(buf)                                                  # unbuffered reads need)
+            try:
+                while n := f.readinto(buf):
+                    h.update(view[:n])
+                    sofar += n
+                    if progress:
+                        progress.add(n)
+            finally:
+                view.release()
+    except OSError:
+        if progress and sofar:
+            progress.add(-sofar)                # start over, the ordinary way
+        return file_hash(path, algo, progress)
     return h.hexdigest()
 
 
@@ -1678,6 +1721,38 @@ def _tree_files(src: Path) -> list[tuple[str, Path]]:
     return [(f.relative_to(src).as_posix(), f) for f in sorted(src.rglob("*")) if f.is_file()]
 
 
+TOOLS_TXT = "Tools.txt"       # at the top of the stick: everything on it, and which version
+
+
+def _plain_version(version) -> str:
+    """A version as a person reads it: a download with none of its own is named after the day it
+    was fetched and its checksum (2026-10-04-b16ecbf6), and the day is the part that says something."""
+    version = str(version or "")
+    m = re.fullmatch(r"(\d{4}-\d\d-\d\d)-[0-9a-f]{8,64}", version)
+    return m.group(1) if m else version
+
+
+def _tools_txt(cfg: Config, placed: list[dict], apps: list[tuple]) -> bytes:
+    """Tools.txt: what this update put on the stick, by where it is in the boot menu."""
+    groups: dict[str, list[tuple[str, str]]] = {}
+    for item in placed:
+        cat = cfg.categories.get(item.get("category"), {})
+        groups.setdefault(str(cat.get("title") or "Boot menu"), []).append((item["title"], _plain_version(item.get("version"))))
+    for t, entry, _ in apps:
+        where = "Tools for a Mac (the Mac folder)" if t.get("platform") == "mac" else "Apps for Windows (the Apps folder)"
+        groups.setdefault(where, []).append((t["title"], _plain_version(entry.get("version"))))
+    order = [str(c.get("title")) for c in cfg.categories.values()]
+    lines = [f"Helix Boot {__version__}: what is on this stick", "=" * 44, "",
+             "Each tool and its version (a date is the day a tool with no version number was",
+             "fetched). Update the stick to bring them up to date: see the HelixBoot folder.", ""]
+    for name in sorted(groups, key=lambda g: (order.index(g) if g in order else len(order), g)):
+        lines.append(name)
+        width = max(len(title) for title, _ in groups[name])
+        lines += [f"  {title:<{width}}  {version}".rstrip() for title, version in sorted(groups[name], key=lambda r: r[0].lower())]
+        lines.append("")
+    return "\r\n".join(lines).encode("utf-8")
+
+
 def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tuple[str, Path | bytes]]:
     """The small files that go with the boot images: app launcher, theme, boot menu and
     `kind = "file"` tools such as Ventoy's wimboot plugin."""
@@ -1707,6 +1782,7 @@ def _stick_extras(cfg: Config, placed: list[dict], apps: list[tuple]) -> list[tu
              + " ".join(t.get("description", "").replace("|", "/").split())
              for t, _, _ in apps if t.get("entry")]
     out.append((f"{cfg.apps_root}/apps.txt", ("\r\n".join(lines) + "\r\n").encode("utf-8")))
+    out.append((TOOLS_TXT, _tools_txt(cfg, placed, apps)))
     readme = _mac_readme(cfg, apps)
     if readme:
         out.append((f"{cfg.mac_root}/README.txt", readme))
@@ -1876,6 +1952,10 @@ def _carry_extras(mnt: Path, extras: list[tuple[str, Path | bytes]], kept: list[
                 lines = [ln for ln in (mnt / rel).read_text(encoding="utf-8").splitlines()
                          if ln.split("|")[1:2] and ln.split("|")[1].split("\\")[0] in kept_apps]
                 data += ("\r\n".join(lines) + "\r\n").encode("utf-8") if lines else b""
+            elif rel == TOOLS_TXT and (kept or kept_apps) and isinstance(data, bytes):
+                names = sorted([k.rpartition("/")[2] for k in kept] + list(kept_apps), key=str.lower)
+                data += ("\r\n".join(["From another PC (this one has no copy of them, so they stay as they are)",
+                                       *[f"  {n}" for n in names], ""]) + "\r\n").encode("utf-8")
         except (OSError, ValueError):
             pass        # nothing readable to carry over: the tools still boot, under their file names
         out.append((rel, data))
@@ -2189,9 +2269,8 @@ def cmd_sync(cfg: Config, args) -> int:
             prog.file(f"({n}/{len(placed)}) {p['file']}", p["src"].stat().st_size)
             _copy(p["src"], dst, prog)
             if args.verify and p["sha256"]:
-                _uncached(dst)
                 prog.file(f"({n}/{len(placed)}) verifying {p['file']}", dst.stat().st_size)
-                good = file_hash(dst, progress=prog) == p["sha256"]
+                good = _read_from_disk(dst, progress=prog) == p["sha256"]
                 prog.clear()
                 if not good:
                     raise RescueError(f"{p['rel']} doesn't match after copying — the stick may be failing.")
@@ -2615,9 +2694,8 @@ def cmd_unpack(cfg: Config, args) -> int:
                 raise RescueError(f"{i['title']}: the copy in the pack doesn't match its checksum. "
                                   "The pack is damaged; make a new one.")
             if args.verify:
-                _uncached(dst)
                 prog.file(f"({n}/{len(meta['isos'])}) verifying {name}", i["size"])
-                good = file_hash(dst, progress=prog) == i["sha256"]
+                good = _read_from_disk(dst, progress=prog) == i["sha256"]
                 if not good:
                     prog.clear()
                     raise RescueError(f"{i['rel']} doesn't match after copying — the stick may be failing.")
@@ -2820,8 +2898,7 @@ def check_stick(mnt: Path, hook=None) -> dict:
             found["missing"].append(what)
             continue
         prog.file(app or Path(what).name, path.stat().st_size)
-        _uncached(path)                             # read the stick, not what the OS kept in memory
-        good = file_hash(path, progress=prog) == sha
+        good = _read_from_disk(path, progress=prog) == sha    # the stick, not what the OS kept in memory
         found["checked"] += 1
         if good:
             continue

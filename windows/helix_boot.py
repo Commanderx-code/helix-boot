@@ -46,6 +46,7 @@ import hashlib  # noqa: F401
 import html  # noqa: F401
 import http.client  # noqa: F401
 import lzma  # noqa: F401
+import mmap  # noqa: F401
 import re  # noqa: F401
 import struct  # noqa: F401
 import tarfile  # noqa: F401
@@ -119,6 +120,9 @@ def load_helix():
     loader.exec_module(mod)
     return mod
 
+
+if os.name == "nt":
+    import msvcrt  # noqa: F401  (helix reads a stick back unbuffered with it)
 
 cr = load_helix()
 
@@ -361,13 +365,21 @@ def name_stick(letter: str, label: str, run=powershell) -> None:
         print(f"! couldn't name the stick {label}: {e}")
 
 
-def update_summary(cfg, target: str, pack=None) -> str:
-    """What an update would copy, remove and keep, in plain words."""
-    return cr.plan_text(cr.update_plan(cfg, target, str(pack) if pack else None, init=True, verify=True))
+def update_summary(cfg, target: str, pack=None, on_plan=lambda nbytes: None) -> str:
+    """What an update would copy, remove and keep, in plain words. `on_plan` is told how many
+    bytes that is, for the window's progress bar."""
+    plan = cr.update_plan(cfg, target, str(pack) if pack else None, init=True, verify=True)
+    on_plan(copy_bytes(plan))
+    return cr.plan_text(plan)
+
+
+def copy_bytes(plan: list) -> int:
+    """How many bytes an update's plan says it will copy."""
+    return sum(size for kind, _, size in plan if kind == "copy" and size > 0)
 
 
 def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None, run=powershell,
-            ventoy=run_ventoy, keep_going=lambda: True, pack=None, expected=None) -> str:
+            ventoy=run_ventoy, keep_going=lambda: True, pack=None, expected=None, on_plan=lambda nbytes: None) -> str:
     """Erase disk N, put Ventoy on it, fill it (from the internet, or from a pack).
     Returns the stick's drive letter."""
     cfg = config()
@@ -388,6 +400,10 @@ def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None,
     d = recheck_disk(d, run)
     if f"{d['Ventoy']}:\\" != letter:
         raise RescueError("The stick drive letter changed before copying")
+    try:        # how much there is to copy, for the window's progress bar
+        on_plan(copy_bytes(cr.update_plan(cfg, letter, str(pack) if pack else None, init=True)))
+    except cr.RescueError:
+        pass
     if pack:
         unpack(cfg, letter, pack, init=True)
     else:
@@ -400,7 +416,8 @@ def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None,
 
 
 def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda pct: None,
-           run=powershell, ventoy=run_ventoy, pack=None, confirm=lambda summary: True, expected=None) -> str:
+           run=powershell, ventoy=run_ventoy, pack=None, confirm=lambda summary: True, expected=None,
+           on_plan=lambda nbytes: None) -> str:
     """Refresh a Helix Boot / Ventoy stick in place. Never erases. `confirm` is shown what the
     update will copy, remove and keep before anything is written, and can call it off."""
     cfg = config()
@@ -412,7 +429,7 @@ def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda
         fetch(cfg)
     recheck_disk(d, run, same_volume=True)
     # (init=True below: this disk was just checked to be a Ventoy stick, whatever it has been named)
-    summary = update_summary(cfg, f"{d['Ventoy']}:\\", pack)
+    summary = update_summary(cfg, f"{d['Ventoy']}:\\", pack, on_plan=on_plan)
     print(f"\nThis update will:\n{summary}\n")
     if not confirm(summary):
         raise RescueError("stopped — nothing on the stick was changed")
@@ -772,21 +789,38 @@ def gui(selftest: bool = False) -> int:
             b.state(["disabled"] if on else ["!disabled"])
         drive.state(["disabled"] if on else ["!disabled", "readonly"])
 
+    copying = {"done": 0, "total": 0, "sent": 0.0, "pending": 0}
+
+    def watch(nbytes, label):
+        """From the engine, for every chunk copied (not the reading back afterwards): passed on to
+        the window a few times a second."""
+        if "verifying" in label:
+            return
+        copying["pending"] += nbytes
+        now = time.monotonic()
+        if now - copying["sent"] > 0.25:
+            q.put(("bytes", copying["pending"]))
+            copying.update(pending=0, sent=now)
+
     def work(fn, *a, done=lambda letter: f"✓ Done. The stick is {letter} — safe to remove once Windows says so.",
              **kw):
         set_busy(True)
         bar.config(mode="indeterminate")
         bar_text("Working…")
         bar.start(12)
+        copying.update(done=0, total=0, pending=0)
 
         def progress(pct):
             q.put(("pct", pct))
 
         def job():
+            cr.Progress.watch = watch
             try:
                 q.put(("done", done(fn(*a, progress=progress, **kw))))
             except Exception as e:  # noqa: BLE001
                 q.put(("fail", str(e)))
+            finally:
+                cr.Progress.watch = None
 
         threading.Thread(target=job, daemon=True).start()
 
@@ -817,14 +851,15 @@ def gui(selftest: bool = False) -> int:
         if typed is None or typed.strip() != str(d["Number"]):
             status.config(text="Cancelled — nothing was changed.")
             return
-        work(install, d["Number"], gpt=gpt.get(), secure_boot=secure.get(), keep_going=keep_going, pack=pack, expected=d)
+        work(install, d["Number"], gpt=gpt.get(), secure_boot=secure.get(), keep_going=keep_going, pack=pack, expected=d,
+             on_plan=lambda nbytes: q.put(("total", nbytes)))
 
     def do_update():
         d = selected()
         pack = chosen_pack() if d else None
         if d and pack is not False:
             work(update, d["Number"], upgrade_ventoy=upv.get(), secure_boot=secure.get(), pack=pack,
-                 confirm=confirm_update, expected=d)
+                 confirm=confirm_update, expected=d, on_plan=lambda nbytes: q.put(("total", nbytes)))
 
     def do_look():
         d = selected()
@@ -881,6 +916,17 @@ def gui(selftest: bool = False) -> int:
                         status.config(text=last[0][:110])
                 elif item[0] == "news":
                     news.config(text=item[1])
+                elif item[0] == "total":
+                    copying.update(total=item[1], done=0)
+                elif item[0] == "bytes":
+                    copying["done"] += item[1]
+                    if copying["total"]:           # "12.3 GB / 37.0 GB", as much of the bar filled
+                        bar.stop()
+                        share = min(copying["done"] / copying["total"], 1.0)
+                        bar.config(mode="determinate", value=share * 100)
+                        bar_text(f"{copying['done'] / 1024**3:.1f} GB / {copying['total'] / 1024**3:.1f} GB")
+                    else:
+                        bar_text(f"{copying['done'] / 1024**3:.1f} GB copied")
                 elif item[0] == "pct":
                     bar.stop()
                     bar.config(mode="determinate", value=item[1])
