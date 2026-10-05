@@ -6,6 +6,35 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **A stick with a damaged filesystem gets a repair command, not a raw error.**
+  When the stick answers with a disk error (an "Input/output error"), an
+  update or a check stops and says its filesystem is damaged, with the command
+  to repair it on that system: `fsck` on Linux, `chkdsk` on Windows, `diskutil
+  repairVolume` on a Mac. The Windows app and the Mac tool say the same.
+- **The stick remembers damage.** A check that finds files gone bad notes the
+  day on the stick, and updates keep that note. If files go bad again after an
+  update repaired them, the check says it is the second time and to replace the
+  stick.
+- **`scripts/release.sh`** cuts a release in the one order that works:
+  version, changelog, tag, the build on GitHub, and only then the pack. See
+  [Releasing](docs/engine.md#releasing).
+- CI lints with ruff, which also flags syntax that Python 3.11 doesn't accept.
+
+### Changed
+- **A site that is down no longer fails a fetch of a tool you already have.**
+  `helix fetch` keeps the copy it fetched and verified before, says so, and
+  carries on. `--outage-ok` (on `fetch` and `check`) makes a tool that was
+  never fetched a warning too; CI uses it on a push and stays strict in its
+  weekly run.
+- **Packs are named for their version:** `helix-boot-<version>-<date>.zip`,
+  so a pack of a new release doesn't overwrite the one made the same day.
+- `helix pack` warns when the `HelixBoot.exe` it carries is older than the
+  engine, which is what a pack made before a release is published gets;
+  `--need-app` refuses to make such a pack.
+- The Pillow the boot tests draw with is pinned and checksummed, like the
+  build tools.
+
 ## [0.7.0] - 2026-10-04
 
 ### Security
