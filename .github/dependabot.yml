@@ -1,6 +1,6 @@
 # Keeps what CI is pinned to up to date, a weekly pull request per group: the GitHub Actions
 # (exact commits, see .github/workflows), and what the released programs are built with
-# (exact, checksummed versions, see windows/requirements.txt and mac/requirements.txt).
+# and the tests draw with (exact, checksummed versions: the requirements.txt in windows/, mac/ and tests/).
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -11,7 +11,7 @@ updates:
       actions:
         patterns: ["*"]
   - package-ecosystem: pip
-    directories: ["/windows", "/mac"]
+    directories: ["/windows", "/mac", "/tests"]
     schedule:
       interval: weekly
     groups:

@@ -11,7 +11,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageChops, ImageOps
 N = 1024
 def radial(inner, outer, centre, radius):
-    g = Image.new("L", (256, 256)); px = g.load()
+    g = Image.new("L", (256, 256))
+    px = g.load()
     for y in range(256):
         for x in range(256):
             px[x, y] = max(0, min(255, round(255 * (1 - math.hypot(x / 255 - centre[0], y / 255 - centre[1]) / radius))))
@@ -21,10 +22,13 @@ def vertical(top, bottom):
     g = Image.linear_gradient("L").resize((N, N))
     return Image.composite(Image.new("RGB", (N, N), bottom), Image.new("RGB", (N, N), top), g)
 def disc(inset):
-    m = Image.new("L", (N, N), 0); ImageDraw.Draw(m).ellipse((inset, inset, N - inset, N - inset), fill=255); return m
+    m = Image.new("L", (N, N), 0)
+    ImageDraw.Draw(m).ellipse((inset, inset, N - inset, N - inset), fill=255)
+    return m
 def make(src, out):
     img = Image.new("RGBA", (N, N))
-    glow = Image.new("RGBA", (N, N)); ImageDraw.Draw(glow).ellipse((36, 44, N - 36, N - 28), fill=(0, 200, 235, 95))
+    glow = Image.new("RGBA", (N, N))
+    ImageDraw.Draw(glow).ellipse((36, 44, N - 36, N - 28), fill=(0, 200, 235, 95))
     img = Image.alpha_composite(img, glow.filter(ImageFilter.GaussianBlur(22)))
     img.paste(vertical((250, 252, 255), (70, 78, 92)), (0, 0), disc(52))            # steel ring, lit from above
     img.paste(vertical((60, 68, 82), (214, 222, 232)), (0, 0), disc(84))            # its inner bevel, the other way
@@ -37,7 +41,8 @@ def make(src, out):
     bright = Image.composite(Image.new("RGB", ph.size, (240, 255, 255)), Image.new("RGB", ph.size, (0, 190, 215)), lum)
     layer = Image.new("RGBA", (N, N))
     layer.alpha_composite(Image.merge("RGBA", (*bright.split(), a)), ((N - ph.width) // 2, (N - ph.height) // 2 + 18))
-    halo = Image.new("RGBA", (N, N)); halo.paste((0, 225, 255, 255), (0, 0), layer.getchannel("A"))
+    halo = Image.new("RGBA", (N, N))
+    halo.paste((0, 225, 255, 255), (0, 0), layer.getchannel("A"))
     img = Image.alpha_composite(img, halo.filter(ImageFilter.GaussianBlur(30)))
     img = Image.alpha_composite(img, halo.filter(ImageFilter.GaussianBlur(8)))
     img = Image.alpha_composite(img, layer)

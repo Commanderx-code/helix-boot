@@ -25,10 +25,15 @@ jobs:
           python-version: "3.11"
       - name: Unit + end-to-end tests
         run: python -m unittest discover -s tests -v
+      - name: Lint
+        run: |
+          # Also flags syntax that Python 3.11, the oldest the project runs on, doesn't accept (ruff.toml)
+          pip install --disable-pip-version-check -q --require-hashes -r tests/requirements.txt
+          ruff check --output-format github .
       - name: Shellcheck
         run: |
           # gcc format → annotations on the exact line
-          shellcheck -x -f gcc install.sh refresh.sh theme.sh check.sh scripts/common.sh scripts/release-notes.sh pe/vm/build-vm.sh \
+          shellcheck -x -f gcc install.sh refresh.sh theme.sh check.sh scripts/common.sh scripts/release-notes.sh scripts/release.sh pe/vm/build-vm.sh \
             linux/build.sh linux/HelixBoot.sh.in \
             | sed -E 's/^([^:]+):([0-9]+):([0-9]+): (error|warning|note): (.*)$/::\4 file=\1,line=\2,col=\3::\5/; s/^::note /::notice /'
           exit "${PIPESTATUS[0]}"
@@ -60,7 +65,7 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          pip install --disable-pip-version-check pillow
+          pip install --disable-pip-version-check --require-hashes -r tests/requirements.txt
       - name: Boot every theme
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -88,17 +93,24 @@ jobs:
       - name: Resolve latest releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A site that is down fails the weekly run and a run started by hand; on a push it is a warning:
+          # an outage somewhere else says nothing about the commit.
+          OUTAGE: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && '--outage-ok' || '' }}
         run: |
           set +e
-          ./helix check --json > upstream.json
+          ./helix check --json $OUTAGE > upstream.json
           rc=$?
           python - <<'EOF'
           import json, os
           d = json.load(open("upstream.json"))
-          good, bad = [], []
+          good, bad, down = [], [], []
+          lenient = bool(os.environ.get("OUTAGE"))
           rows = ["| tool | status | latest | file |", "|---|---|---|---|"]
           for k, v in sorted(d.items()):
-              if "error" in v:
+              if "error" in v and v.get("outage") and lenient:
+                  down.append(f"{k}: {v['error']}")
+                  rows.append(f"| {k} | ⚠️ site down | | {v['error'][:120]} |")
+              elif "error" in v:
                   bad.append(f"{k}: {v['error']}")
                   rows.append(f"| {k} | ❌ | | {v['error'][:120]} |")
               else:
@@ -106,6 +118,7 @@ jobs:
                   rows.append(f"| {k} | ✅ | {v.get('latest') or '—'} | {v.get('file') or ''} |")
           enc = lambda xs: "%0A".join(x.replace("%", "%25") for x in xs)
           if good: print(f"::notice title=resolved ({len(good)})::{enc(good)}")
+          if down: print(f"::warning title=site down ({len(down)})::{enc(down)}")
           if bad:  print(f"::error title=failed ({len(bad)})::{enc(bad)}")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write("\n".join(rows) + "\n")
@@ -129,9 +142,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HELIX_CACHE: ${{ runner.temp }}/helix
           NO_COLOR: "1"
+          # A site that is down fails the weekly run and a run started by hand; on a push it is a warning:
+          # an outage somewhere else says nothing about the commit.
+          OUTAGE: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && '--outage-ok' || '' }}
         run: |
           set +e
-          ./helix fetch > fetch.log 2>&1
+          ./helix fetch $OUTAGE > fetch.log 2>&1
           rc=$?
           cat fetch.log
           enc() { sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g'; }
@@ -141,7 +157,7 @@ jobs:
           [[ -n $err ]]  && echo "::error title=failed::$err"
           echo "::notice title=cache::$(du -sh "$HELIX_CACHE"/* 2>/dev/null | enc)"
           # Second run must be a no-op (proves "up to date" detection works upstream-side too)
-          ./helix fetch > again.log 2>&1
+          ./helix fetch $OUTAGE > again.log 2>&1
           echo "::notice title=second run::$(grep -c 'up to date' again.log) up to date, $(grep -c 'downloading' again.log) re-downloaded"
           exit $rc
 
@@ -250,7 +266,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq qemu-system-x86 ovmf >/dev/null
-          pip install --disable-pip-version-check -q pillow
+          pip install --disable-pip-version-check -q --require-hashes -r tests/requirements.txt
           sudo chmod 666 /dev/kvm 2>/dev/null || true
           gunzip "$RUNNER_TEMP/new-stick.img.gz"
           python tests/boot/boot_menu.py --image "$RUNNER_TEMP/new-stick.img" --firmware both --out boot-shots
