@@ -6,6 +6,11 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Security
+- The released programs are built with pinned, checksummed versions of their
+  build tools (PyInstaller, Pillow, certifi), where the build took whatever
+  was newest that day. Dependabot proposes updates.
+
 ### Added
 - **A one-file download for Mac:** `HelixBoot-mac-arm64` in each release is
   `helix-mac` with Python and the engine inside, for Apple Silicon. It isn't

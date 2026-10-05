@@ -1,5 +1,6 @@
-# Keeps the pinned GitHub Actions (exact commits, see .github/workflows) up to date:
-# a weekly pull request per update, with the new commit and its version.
+# Keeps what CI is pinned to up to date, a weekly pull request per group: the GitHub Actions
+# (exact commits, see .github/workflows), and what the released programs are built with
+# (exact, checksummed versions, see windows/requirements.txt and mac/requirements.txt).
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -8,4 +9,11 @@ updates:
       interval: weekly
     groups:
       actions:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directories: ["/windows", "/mac"]
+    schedule:
+      interval: weekly
+    groups:
+      build-tools:
         patterns: ["*"]
