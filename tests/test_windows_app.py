@@ -231,7 +231,10 @@ class TestFlows(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 text = app.repair("E:\\", run=lambda cmd, c=code: ran.append(cmd) or (c, "Windows has scanned\r\n\r\n"))
             self.assertIn(said, text)
-        self.assertEqual(ran[0], ["chkdsk.exe", "E:", "/f", "/x"])
+        self.assertEqual(ran[0][1:], ["E:", "/f", "/x"])
+        self.assertEqual(ran[0][0].lower().replace("\\", "/").rsplit("/", 1)[-1], "chkdsk.exe")
+        if os.name == "nt":                                     # (the real one, by its full path)
+            self.assertTrue(os.path.isabs(ran[0][0]) and os.path.isfile(ran[0][0]), ran[0][0])
         # On Windows it is run by its full path in the system folder, never looked up by name
         system32 = self.vdir / "System32"
         system32.mkdir()
