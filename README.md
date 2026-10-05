@@ -67,6 +67,12 @@ Keep it current later:
 ./check.sh                      # read the stick back: any damaged or missing files?
 ```
 
+`./install.sh --test` tests a stick before filling it: it writes the stick
+full, reads it all back and only then copies the tools on. That finds a stick
+that is failing, or a fake with less room than it says, before you rely on it.
+It is slow (the whole stick is written twice). An update tells you when a stick
+has gone a month without a check.
+
 **Linux, one file.** Or skip the clone: download **`HelixBoot.sh`** from
 [Releases](https://github.com/Commanderx-code/helix-boot/releases), put it in a
 folder of its own, then `chmod +x HelixBoot.sh && ./HelixBoot.sh`. A menu offers
@@ -89,10 +95,10 @@ The [code signing policy](docs/code-signing.md) says how signed releases are
 made, and has the privacy policy: what the app contacts, and what it changes
 on your PC.
 
-**Mac.** Download **`HelixBoot-mac-arm64`** from
-[Releases](https://github.com/Commanderx-code/helix-boot/releases) (Apple
-Silicon; nothing else to install), put it in a folder of its own, and in
-Terminal:
+**Mac.** Download **`HelixBoot-mac-arm64`** (Apple Silicon) or
+**`HelixBoot-mac-x86_64`** (Intel) from
+[Releases](https://github.com/Commanderx-code/helix-boot/releases). There is
+nothing else to install. Put it in a folder of its own, and in Terminal:
 
 ```sh
 chmod +x HelixBoot-mac-arm64
@@ -101,10 +107,11 @@ xattr -d com.apple.quarantine HelixBoot-mac-arm64   # it isn't signed by Apple, 
 ```
 
 `check` reads the stick back for damage and `look` changes its theme, as
-`check.sh` and `theme.sh` do. On an Intel Mac, or from a clone of this repo,
-run the same thing as `python3 mac/helix-mac` (Python 3.11 or newer).
+`check.sh` and `theme.sh` do. From a clone of this repo, run the same thing as
+`python3 mac/helix-mac` (Python 3.11 or newer).
 
-Creating a stick on a Mac is **experimental**: `./HelixBoot-mac-arm64 install --disk disk4`.
+Creating a stick on a Mac is **experimental**: `./HelixBoot-mac-arm64 install --disk disk4`
+(add `--test` to test the stick first).
 Ventoy has no installer for macOS, so this writes Ventoy's layout onto the disk
 itself, as Ventoy's own installer does on Linux. CI makes a stick this way on a
 Mac and boots it in a virtual PC, but it hasn't been tried on many real sticks.
@@ -305,7 +312,9 @@ to the disk.
    the one Windows is running from; a stick that already has Ventoy is picked
    for you.
 2. **Install** erases the stick (you type its disk number to confirm), installs
-   Ventoy and copies everything on. **Update** refreshes a stick you already
+   Ventoy and copies everything on. Tick **Install tests the stick first** to
+   have it written full and read back before that (slow, but it finds a failing
+   or fake stick). **Update** refreshes a stick you already
    have and keeps your files, including tools this PC has no copy of. It first
    shows what it will copy, remove and keep, and asks before changing anything.
 3. **Look…** changes the selected stick's look: a preset theme, the
@@ -316,7 +325,10 @@ to the disk.
 4. **Check stick** reads the whole stick back and compares every boot image and
    app with what was put there, so it finds a stick that's going bad. It needs
    no downloads. The next Update copies again whatever it finds damaged. If
-   files go bad again after that, it tells you to replace the stick.
+   files go bad again after that, it tells you to replace the stick. An update
+   reminds you when a stick has gone a month without a check.
+5. **Repair stick** has Windows repair the stick's filesystem (`chkdsk /f`),
+   for when an update or a check says it is damaged. It asks first.
 
 Under the title the app says whether newer versions of your tools are out. It
 looks at most every 6 hours, because GitHub limits how often a PC that isn't
@@ -468,6 +480,9 @@ and splash, saving a look, and how the default theme is put together.
 | Mac | 32 tools for a working Mac, each opened and checked on a real Mac in CI | 0.6.1 – 0.6.12 |
 | | Updating a stick from a Mac; creating one (experimental) | 0.6.14 |
 | | One-file download for Apple Silicon Macs | 0.7.0 |
+| | One-file download for Intel Macs | next |
+| Stick health | A repair command for a damaged filesystem; a memory of damage | 0.7.1 |
+| | Testing a stick before installing; check reminders; Repair stick in the Windows app | next |
 | Trust | CI: tests, a boot test of every theme, a weekly live download and verify of every tool | 0.1 – 0.6.4 |
 | | Checksums and build attestations on every release | 0.6.6 |
 | | Hardening: the confirmed disk is the one written, plain file trees only, pinned download sites | 0.6.11 – 0.6.13 |

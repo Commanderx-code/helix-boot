@@ -1759,6 +1759,64 @@ class TestFetchAndSync(Base):
                 cr._reject_links(self.stick)
 
 
+    def test_an_update_says_when_the_stick_is_overdue_for_a_check(self):
+        day = datetime.date
+        self.assertIsNone(cr.check_due({}))
+        self.assertIsNone(cr.check_due({"checked": "2026-09-20"}, day(2026, 10, 4)))
+        self.assertIn("last checked 40 days ago", cr.check_due({"checked": "2026-08-25"}, day(2026, 10, 4)))
+        self.assertIn("hasn't been checked in 31 days", cr.check_due({"unchecked_since": "2026-09-03"}, day(2026, 10, 4)))
+        self.assertIsNone(cr.check_due({"checked": "not a day"}))
+
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync(verify=False)[0], 0)
+        path = self.stick / cr.STATE_DIR / "state.json"
+        state = json.loads(path.read_text())
+        today = datetime.date.today().isoformat()
+        self.assertEqual(state["unchecked_since"], today)      # counted from the first update that kept track
+        self.assertNotIn("checked", state)
+
+        state["unchecked_since"] = "2026-01-01"
+        path.write_text(json.dumps(state))
+        rc, out = self.sync(init=False, verify=False)
+        self.assertIn("This stick hasn't been checked in", out)
+        self.assertIn("Check stick", out)
+        self.assertEqual(json.loads(path.read_text())["unchecked_since"], "2026-01-01")     # an update isn't a check
+
+        self.assertEqual(self.verify()[0], 0)
+        state = json.loads(path.read_text())
+        self.assertEqual(state["checked"], today)
+        self.assertNotIn("unchecked_since", state)
+        rc, out = self.sync(init=False, verify=False)
+        self.assertNotIn("been checked", out)
+        self.assertEqual(json.loads(path.read_text())["checked"], today)                    # kept through updates
+
+    def test_a_stick_can_be_tested_before_it_is_trusted(self):
+        (self.stick / "keep.txt").write_text("mine")
+        found = cr.test_stick(self.stick, limit=3 << 20)
+        self.assertEqual((found["written"], found["bad"], found["error"], found["pieces"]), (3 << 20, [], None, 1))
+        self.assertIn("3.0 MiB written and read back without a fault", cr.test_text(found))
+        self.assertEqual(sorted(p.name for p in self.stick.iterdir()), ["keep.txt"])        # its data is gone again
+        self.assertNotEqual(cr._test_block(b"s", 1), cr._test_block(b"s", 2))               # no two blocks alike
+
+        with unittest.mock.patch.object(cr, "TEST_PIECE", 1 << 20), \
+                unittest.mock.patch.object(cr, "_read_from_disk",
+                                           lambda path, progress=None: "wrong" if path.name == "0001.bin" else cr.file_hash(path)):
+            found = cr.test_stick(self.stick, limit=3 << 20)                                # the second MiB reads back wrong
+        self.assertEqual((found["pieces"], found["bad"]), (3, [1 << 20]))
+        text = cr.test_text(found)
+        self.assertIn("1 of 3 piece(s) of test data read back wrong, the first 1.0 MiB into the free space", text)
+        self.assertIn("Don't put a rescue stick on it", text)
+        self.assertFalse((self.stick / cr.TEST_DIR).exists())
+
+        with unittest.mock.patch.object(cr.os, "fsync", side_effect=OSError(5, "Input/output error")):
+            found = cr.test_stick(self.stick, limit=2 << 20)                                # the stick stops taking writes
+        self.assertIn("writing failed 0 B in: Input/output error", cr.test_text(found))
+        rc, out = self.run_quiet(cr.cmd_test, self.cfg, type("A", (), {"target": str(self.stick), "gb": 0.002})())
+        self.assertEqual(rc, 0, out)
+        with self.assertRaisesRegex(cr.RescueError, "isn't a mounted stick"):
+            cr.test_stick(self.stick / "nowhere")
+
+
 class TestPack(Base):
     def pack(self, out=None):
         out = out or self.tmp / "pack.zip"

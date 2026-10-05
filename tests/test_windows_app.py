@@ -194,6 +194,49 @@ class TestFlows(unittest.TestCase):
         self.assertEqual(self.calls, ["fetch", ("ventoy", ["VTOYCLI", "/I", "/PhyDrive:2", "/GPT"]),
                                       ("sync", "E:\\", True)])
 
+    def test_install_can_test_the_stick_first_and_stops_on_a_bad_one(self):
+        def flow():
+            states = iter([ps(STICK), ps(VENTOY)])
+            current = {"run": next(states)}
+
+            def ventoy(args, vdir, progress):
+                self.ventoy(args, vdir, progress)
+                current["run"] = next(states)
+            return (lambda script: current["run"](script)), ventoy
+
+        good = {"asked": 1 << 30, "written": 1 << 30, "bad": [], "pieces": 1, "error": None, "seconds": 61}
+        for found, fails in ((good, False), ({**good, "bad": [0]}, True)):
+            self.calls.clear()
+            run, ventoy = flow()
+            watch = app.cr.Progress.watch = object()                # the byte counter is put back afterwards
+            with redirect_stdout(io.StringIO()), mock.patch.dict(os.environ, {"PROCESSOR_ARCHITECTURE": "x86"}), \
+                    mock.patch.object(app.cr, "test_stick",
+                                      lambda mnt, hook=None, f=found: self.calls.append(("test", str(mnt))) or f):
+                try:
+                    if fails:
+                        with self.assertRaisesRegex(app.RescueError, "read back wrong"):
+                            app.install(2, run=run, ventoy=ventoy, test=True)
+                    else:
+                        app.install(2, run=run, ventoy=ventoy, test=True)
+                    self.assertIs(app.cr.Progress.watch, watch)
+                finally:
+                    app.cr.Progress.watch = None
+            self.assertEqual(self.calls[:3], ["fetch", ("ventoy", ["VTOYCLI", "/I", "/PhyDrive:2", "/GPT"]),
+                                              ("test", "E:\\")])
+            self.assertEqual(("sync", "E:\\", True) in self.calls, not fails)   # a stick that fails stays empty
+
+    def test_repair_runs_chkdsk_and_reads_its_answer(self):
+        ran = []
+        for code, said in ((0, "found nothing wrong"), (1, "had errors and Windows repaired them")):
+            with redirect_stdout(io.StringIO()):
+                text = app.repair("E:\\", run=lambda cmd, c=code: ran.append(cmd) or (c, "Windows has scanned\r\n\r\n"))
+            self.assertIn(said, text)
+        self.assertEqual(ran[0], ["chkdsk", "E:", "/f", "/x"])
+        with redirect_stdout(io.StringIO()), self.assertRaisesRegex(app.RescueError, "couldn't repair E:"):
+            app.repair("E:", run=lambda cmd: (3, "Cannot open volume for direct access."))
+        with self.assertRaisesRegex(app.RescueError, "isn't a drive letter"):
+            app.repair("\\\\server\\share")
+
     def test_install_refuses_the_system_disk_before_anything(self):
         with self.assertRaises(app.RescueError):
             app.install(0, run=ps(SYSTEM, STICK), ventoy=self.ventoy)

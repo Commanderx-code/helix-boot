@@ -393,6 +393,13 @@ def install(a, run=diskutil, ask=input, root=sudo) -> int:
     mnt = mount(part1, run)
     cr.ok(f"Ventoy written, stick mounted at {mnt}")
     same_stick(stick, mnt, run)
+    if getattr(a, "test", False):
+        cr.head(f"Testing {disk}: writes it full and reads it back, so this takes a while")
+        found = cr.test_stick(mnt)
+        print(cr.test_text(found))
+        if found["bad"] or found["error"] or not found["written"]:
+            raise cr.RescueError(f"{disk} failed the test: it is left empty. Use another stick.")
+        same_stick(stick, mnt, run)
     common = dict(target=str(mnt), init=True, dry_run=False, verify=True, no_prune=False, prune_unknown=False)
     rc = cr.cmd_unpack(cfg, ns(pack=a.pack, **common)) if a.pack else cr.cmd_sync(cfg, ns(**common))
     if rc:
@@ -439,6 +446,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--from", dest="pack", metavar="PACK", help="fill it from a pack .zip, with no downloads")
     p.add_argument("--no-fetch", action="store_true", help="don't download: use what's already fetched")
     p.add_argument("--erase", metavar="diskN", help="confirm the erase here (the disk's name again) and don't ask")
+    p.add_argument("--test", action="store_true",
+                   help="test the stick before filling it: write it full and read it back (slow)")
     p.add_argument("--eject", action="store_true", help="eject the stick when finished")
     p.add_argument("--allow-disk-image", action="store_true", help=argparse.SUPPRESS)   # for the test in CI
     p = sub.add_parser("check", help="read the stick back and find damaged or missing files")

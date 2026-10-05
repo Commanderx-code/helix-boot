@@ -6,6 +6,23 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **Testing a stick before you rely on it.** `helix test <mount>` writes the
+  stick's free space full of data that is different in every megabyte, reads it
+  all back and deletes it. A failing stick and a fake one (less room than it
+  says) can't pass. `./install.sh --test`, `helix-mac install --test` and
+  **Install tests the stick first** in the Windows app run it on the new stick
+  before anything is copied on, and stop if it fails.
+- **A reminder to check the stick.** The stick records when it was last read
+  back in full. An update says so once that is over 30 days ago, since a check
+  nobody runs finds nothing.
+- **Repair stick** in the Windows app has Windows repair the stick's
+  filesystem (`chkdsk /f`), after asking. Also `HelixBoot.exe --repair E:`.
+- **A one-file download for Intel Macs:** `HelixBoot-mac-x86_64`, beside the
+  Apple Silicon one, built and tried on an Intel Mac in CI.
+- The weekly CI run opens an issue when it fails, naming the tools that
+  couldn't be resolved, since on a push a site that is down is only a warning.
+
 ## [0.7.1] - 2026-10-04
 
 ### Added

@@ -242,6 +242,21 @@ class TestMacFront(unittest.TestCase):
         self.assertEqual(steps[1:], [("sync", str(self.stick), True, True), ("splash", str(self.efi), str(self.stick))])
         self.assertEqual(list(Path(tempfile.gettempdir()).glob("helix-install-*")), [])          # its work files are gone
 
+    def test_install_can_test_the_stick_first_and_leaves_a_bad_one_empty(self):
+        good = {"asked": GB, "written": GB, "bad": [], "pieces": 1, "error": None, "seconds": 5}
+        for found, fails in ((good, False), ({**good, "bad": [0]}, True)):
+            tested = []
+            with mock.patch.object(mac.cr, "test_stick", lambda mnt, f=found: tested.append(str(mnt)) or f):
+                rc, steps, root, out = self.install(erase="disk4", test=True)
+            self.assertEqual(tested, [str(self.stick)])
+            self.assertEqual(("sync", str(self.stick), True, True) in steps, not fails)
+            if fails:
+                self.assertIn("failed the test: it is left empty", rc)
+                self.assertIn("read back wrong", out)
+            else:
+                self.assertEqual(rc, 0, out)
+                self.assertIn("read back without a fault", out)
+
     def test_a_busy_disk_is_tried_again(self):
         tried = []
 

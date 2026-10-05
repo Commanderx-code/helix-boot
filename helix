@@ -2289,7 +2289,38 @@ def _still_damaged(state: dict, mnt: Path, fixed_images: set[str], fixed_apps: s
     left = {"images": sorted(r for r in images - fixed_images if (mnt / r).is_file()),
             "apps": sorted(a for a in apps - fixed_apps if a in app_state)}
     seen = _damage_seen(state)                      # kept through every update: the stick's history
-    return {**({"damaged": left} if left["images"] or left["apps"] else {}), **({"damage_seen": seen} if seen else {})}
+    return {**({"damaged": left} if left["images"] or left["apps"] else {}), **({"damage_seen": seen} if seen else {}),
+            **_checked(state)}
+
+
+CHECK_EVERY = 30        # days: after that an update suggests reading the stick back
+
+
+def _checked(state: dict) -> dict:
+    """When the stick was last read back in full, or since when it hasn't been: kept through updates."""
+    if _a_day(state.get("checked")):
+        return {"checked": state["checked"]}
+    return {"unchecked_since": state["unchecked_since"] if _a_day(state.get("unchecked_since"))
+            else dt.date.today().isoformat()}
+
+
+def _a_day(text) -> dt.date | None:
+    try:
+        return dt.date.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def check_due(state: dict, today: dt.date | None = None) -> str | None:
+    """A line suggesting a check, once the stick has gone CHECK_EVERY days without one; else None."""
+    today = today or dt.date.today()
+    last, since = _a_day(state.get("checked")), _a_day(state.get("unchecked_since"))
+    days = (today - (last or since)).days if (last or since) else 0
+    if days < CHECK_EVERY:
+        return None
+    return (f"This stick was last checked {days} days ago." if last else
+            f"This stick hasn't been checked in {days} days.") + \
+        " Sticks go bad quietly: Check stick (./check.sh, helix-mac check) reads it all back."
 
 
 def _damage_seen(state: dict) -> list[str]:
@@ -2495,6 +2526,8 @@ def cmd_sync(cfg: Config, args) -> int:
         **_still_damaged(state, mnt, wrote | (want_files if args.verify else set()), wrote_apps, app_state),
         **_put_by(state, me, want_files, wrote, kept, {t["name"] for t, _, _ in apps}, wrote_apps, kept_apps)})
     ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
+    if due := check_due(state):
+        warn(due)
     return 0
 
 
@@ -2936,6 +2969,8 @@ def cmd_unpack(cfg: Config, args) -> int:
                          wrote_apps, app_state),
         **_put_by(state, me, want_files, {i["rel"] for i in todo}, kept, set(meta["apps"]), wrote_apps, kept_apps)})
     ok(f"Stick is up to date from the pack: {len(meta['isos'])} boot image(s), {len(meta['apps'])} app(s).")
+    if due := check_due(state):
+        warn(due)
     return 0
 
 
@@ -3049,17 +3084,108 @@ def check_stick(mnt: Path, hook=None) -> dict:
         seen = (seen + [dt.date.today().isoformat()])[-10:]
         state["damage_seen"] = seen
     found["seen"] = seen
-    if bad["images"] or bad["apps"] or "damaged" in state:
-        state.pop("damaged", None)
-        if bad["images"] or bad["apps"]:
-            state["damaged"] = bad
-        (state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-        _flush_volume(mnt)
+    state.pop("damaged", None)
+    if bad["images"] or bad["apps"]:
+        state["damaged"] = bad
+    state.pop("unchecked_since", None)
+    state["checked"] = dt.date.today().isoformat()  # read back in full today, whatever it found
+    (state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    _flush_volume(mnt)
     return found
 
 
 def _nth(n: int) -> str:
     return {2: "second", 3: "third", 4: "fourth", 5: "fifth"}.get(n, f"{n}th")
+
+
+TEST_DIR = ".helix-test"
+TEST_PIECE = 1 << 30        # one file of the test: under FAT32's 4 GiB, and small enough to say where a fault is
+
+
+def _test_block(seed: bytes, n: int) -> bytes:
+    """1 MiB that is different for every n: a stick that wraps round and overwrites can't pass."""
+    return hashlib.shake_256(seed + n.to_bytes(8, "big")).digest(1 << 20)
+
+
+def test_stick(mnt: Path, limit: int | None = None, hook=None) -> dict:
+    """Fill the stick's free space (or `limit` bytes of it) with known data, read it all back and
+    delete it. A stick that claims more room than it has, or that loses what is written to it,
+    can't pass. Nothing already on the stick is touched."""
+    mnt, folder = Path(mnt), Path(mnt) / TEST_DIR
+    if not mnt.is_dir():
+        raise RescueError(f"{mnt} isn't a mounted stick")
+    shutil.rmtree(folder, ignore_errors=True)       # left by a test that was interrupted
+    free = shutil.disk_usage(mnt).free - (32 << 20)
+    blocks = max(min(free, limit) if limit else free, 0) >> 20
+    if blocks < 1:
+        raise RescueError(f"{mnt} has no free space to test")
+    seed, start = os.urandom(16), time.monotonic()
+    found = {"asked": blocks << 20, "written": 0, "bad": [], "pieces": 0, "error": None}
+    prog, pieces, done = Progress((blocks << 20) * 2, hook=hook), [], 0
+    try:
+        folder.mkdir()
+        try:
+            while done < blocks:
+                n, sha = min(TEST_PIECE >> 20, blocks - done), hashlib.sha256()
+                path = folder / f"{len(pieces):04d}.bin"
+                prog.file("writing test data", n << 20)
+                with open(path, "wb") as f:
+                    for i in range(done, done + n):
+                        block = _test_block(seed, i)
+                        f.write(block)
+                        sha.update(block)
+                        prog.add(len(block))
+                    f.flush()
+                    os.fsync(f.fileno())
+                pieces.append((path, done << 20, sha.hexdigest()))
+                done += n
+        except OSError as e:
+            if e.errno != 28:                       # out of room a little early is the estimate's fault
+                found["error"] = f"writing failed {_fmt_bytes(done << 20)} in: {e.strerror or e}"
+        _flush_volume(mnt)
+        found["written"], found["pieces"] = done << 20, len(pieces)
+        prog.total = found["written"] * 2
+        prog.done = found["written"]
+        for path, at, sha in pieces:
+            prog.file("reading it back", path.stat().st_size if path.is_file() else 0)
+            try:
+                good = _read_from_disk(path, progress=prog) == sha
+            except OSError:
+                good = False
+            if not good:
+                found["bad"].append(at)
+    finally:
+        prog.clear()
+        shutil.rmtree(folder, ignore_errors=True)
+        _flush_volume(mnt)
+    found["seconds"] = int(time.monotonic() - start)
+    return found
+
+
+def test_text(found: dict) -> str:
+    """What `test_stick` found, in plain words."""
+    took = _fmt_eta(found.get("seconds", 0))
+    if found["error"] or found["bad"]:
+        lines = []
+        if found["error"]:
+            lines.append(f"✗ {found['error']}.")
+        if found["bad"]:
+            lines.append(f"✗ {len(found['bad'])} of {found['pieces']} piece(s) of test data read back wrong, "
+                         f"the first {_fmt_bytes(found['bad'][0])} into the free space.")
+        lines.append("  This stick is failing, or is smaller than it says (a fake). Don't put a rescue stick on it.")
+        return "\n".join(lines)
+    if not found["written"]:
+        return "✗ Nothing could be written to test."
+    return f"✓ {_fmt_bytes(found['written'])} written and read back without a fault, in {took}."
+
+
+def cmd_test(cfg: Config, args) -> int:
+    mnt = Path(args.target).expanduser().resolve()
+    limit = int(args.gb * (1 << 30)) if args.gb else None
+    head(f"Testing {mnt}: writes {'%g GiB' % args.gb if args.gb else 'all its free space'} and reads it back")
+    found = test_stick(mnt, limit)
+    print(test_text(found))
+    return 0 if found["written"] and not (found["bad"] or found["error"]) else 1
 
 
 def _app_of(path: str, apps: dict) -> str | None:
@@ -4137,6 +4263,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("target", help="mount point of the Ventoy data partition")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.set_defaults(fn=cmd_verify)
+
+    p = sub.add_parser("test", help="write a stick's free space full, read it back and delete it: finds a "
+                                    "failing or fake stick before you rely on it")
+    p.add_argument("target", help="mount point of the stick")
+    p.add_argument("--gb", type=float, metavar="N", help="test only the first N GiB of free space (quicker, "
+                                                         "but a fake stick's missing room is at the end)")
+    p.set_defaults(fn=cmd_test)
 
     p = sub.add_parser("splash",help="show the splash picture before the Ventoy menu (on its VTOYEFI partition)")
     p.add_argument("efi", help="mount point of the stick's VTOYEFI partition")

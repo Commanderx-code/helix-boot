@@ -26,13 +26,15 @@ Options:
   --no-secure-boot   don't add Ventoy's Secure Boot shim
   --reserve MB       leave MB of unallocated space at the end of the stick
   --skip-fetch       use what's already cached; don't check upstream
+  --test             test the stick before filling it: write it full and read it
+                     back (slow). A failing or fake stick is found now, not later
   --from PACK        use a pack made by "helix pack" instead of downloading
   --list             just list USB sticks and exit
   -h, --help         this help
 EOF
 }
 
-gpt=1 secure=1 reserve='' skip_fetch=0 dev='' list_only=0 from=''
+gpt=1 secure=1 reserve='' skip_fetch=0 dev='' list_only=0 from='' test=0
 
 show_sticks() {
   local i p s m
@@ -47,6 +49,7 @@ while (($#)); do
     --no-secure-boot) secure=0 ;;
     --reserve) reserve=${2:?--reserve needs a size in MB}; shift ;;
     --skip-fetch) skip_fetch=1 ;;
+    --test) test=1 ;;
     --from) from=${2:?--from needs a pack .zip}; shift ;;
     --list) list_only=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -151,6 +154,10 @@ mnt=$(mount_part "$part")
 ok "Ventoy installed, data partition mounted at $mnt"
 
 check_disk_identity "$dev" "$identity"
+if ((test)); then
+  "$HELIX" test "$mnt" || die "this stick failed the test: it is left empty. Use another stick."
+  check_disk_identity "$dev" "$identity"
+fi
 # ── 5. Fill it ───────────────────────────────────────────────────────────
 if [[ -n $from ]]; then
   "$HELIX" unpack "$from" "$mnt" --init --verify

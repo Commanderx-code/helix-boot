@@ -379,8 +379,10 @@ def copy_bytes(plan: list) -> int:
 
 
 def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None, run=powershell,
-            ventoy=run_ventoy, keep_going=lambda: True, pack=None, expected=None, on_plan=lambda nbytes: None) -> str:
-    """Erase disk N, put Ventoy on it, fill it (from the internet, or from a pack).
+            ventoy=run_ventoy, keep_going=lambda: True, pack=None, expected=None, on_plan=lambda nbytes: None,
+            test=False) -> str:
+    """Erase disk N, put Ventoy on it, fill it (from the internet, or from a pack). With `test`,
+    the empty stick is written full and read back first, and a stick that fails is left empty.
     Returns the stick's drive letter."""
     cfg = config()
     d = recheck_disk(expected, run) if expected is not None else pick(disk_no, run)
@@ -400,6 +402,9 @@ def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None,
     d = recheck_disk(d, run)
     if f"{d['Ventoy']}:\\" != letter:
         raise RescueError("The stick drive letter changed before copying")
+    if test:
+        test_stick(letter, progress)
+        recheck_disk(d, run)
     try:        # how much there is to copy, for the window's progress bar
         on_plan(copy_bytes(cr.update_plan(cfg, letter, str(pack) if pack else None, init=True)))
     except cr.RescueError:
@@ -499,6 +504,48 @@ def check(target: str, progress=lambda pct: None) -> str:
     if found["damaged"] or found["missing"] or found["menu"] or found["changed"]:
         raise RescueError(text)
     return text
+
+
+def test_stick(target: str, progress=lambda pct: None) -> str:
+    """Write a stick's free space full, read it back and delete it. Raises RescueError for a
+    stick that loses what is written to it, or has less room than it says."""
+    print(f"\nTesting {target}: writes its free space full and reads it back, so this takes a while …")
+    watch, cr.Progress.watch = cr.Progress.watch, None      # the bar shows percent here, not bytes copied
+    try:
+        found = cr.test_stick(Path(target), hook=progress)
+    finally:
+        cr.Progress.watch = watch
+    text = cr.test_text(found)
+    print(text)
+    if found["bad"] or found["error"] or not found["written"]:
+        raise RescueError(text)
+    return text
+
+
+def repair(target: str, run=None) -> str:
+    """Have Windows repair the stick's filesystem (chkdsk /f; /x closes whatever has it open).
+    Returns what chkdsk said; raises RescueError if it couldn't repair it."""
+    drive = Path(target).drive or str(target).rstrip("\\")
+    if not re.fullmatch(r"[A-Za-z]:", drive):
+        raise RescueError(f"{target} isn't a drive letter")
+    print(f"\nRepairing the filesystem on {drive} (chkdsk {drive} /f /x) …")
+    if run is None:
+        def run(cmd):
+            r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="oem",
+                               errors="replace", timeout=3600, creationflags=NO_WINDOW if os.name == "nt" else 0)
+            return r.returncode, r.stdout + r.stderr
+    try:
+        code, said = run(["chkdsk", drive, "/f", "/x"])
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise RescueError(f"chkdsk couldn't be run: {e}") from None
+    said = "\n".join(line.rstrip() for line in said.splitlines() if line.strip())
+    print(said)
+    # 0: nothing wrong. 1: errors found and fixed. 2: tidied up. 3: couldn't check or couldn't fix.
+    if code >= 3:
+        raise RescueError(f"Windows couldn't repair {drive}. If it keeps failing, the stick is worn out: "
+                          f"make a new one.\n\n{said[-600:]}")
+    return (f"✓ {drive} had errors and Windows repaired them. Update the stick, then Check stick."
+            if code else f"✓ Windows found nothing wrong with the filesystem on {drive}.")
 
 
 # ── Output plumbing ────────────────────────────────────────────────────────
@@ -636,8 +683,8 @@ def gui(selftest: bool = False) -> int:
 
     root = tk.Tk()
     root.title(APP)
-    root.geometry("600x560")
-    root.minsize(560, 540)
+    root.geometry("600x584")
+    root.minsize(560, 564)
     apply_theme(root)
     set_icon(root)
     style = ttk.Style(root)
@@ -664,8 +711,11 @@ def gui(selftest: bool = False) -> int:
     secure = tk.BooleanVar(value=True)
     gpt = tk.BooleanVar(value=True)
     upv = tk.BooleanVar(value=False)
+    testv = tk.BooleanVar(value=False)
     ttk.Checkbutton(frm, text="Secure Boot support", variable=secure).pack(anchor="w")
     ttk.Checkbutton(frm, text="GPT partition table (untick for very old BIOS PCs)", variable=gpt).pack(anchor="w")
+    ttk.Checkbutton(frm, text="Install tests the stick first (slow: fills it and reads it back)",
+                    variable=testv).pack(anchor="w")
     ttk.Checkbutton(frm, text="Update also refreshes Ventoy", variable=upv).pack(anchor="w")
 
     # Where the tools come from: the internet, or a pack (picked up beside the app if there is one)
@@ -703,12 +753,13 @@ def gui(selftest: bool = False) -> int:
 
     foot = ttk.Frame(frm)
     foot.pack(fill="x", side="bottom")
-    foot.columnconfigure((0, 1, 2), weight=1, uniform="foot")
+    foot.columnconfigure((0, 1, 2, 3), weight=1, uniform="foot")
     b_look = ttk.Button(foot, text="Look…")
     b_check = ttk.Button(foot, text="Check stick")
+    b_repair = ttk.Button(foot, text="Repair stick")
     b_folder = ttk.Button(foot, text="My tools folder")
-    for i, b in enumerate((b_look, b_check, b_folder)):
-        b.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 4, 0 if i == 2 else 4))
+    for i, b in enumerate((b_look, b_check, b_repair, b_folder)):
+        b.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 4, 0 if i == 3 else 4))
     # The log: out of the way until asked for
     out = tk.Text(frm, height=10, wrap="word", font=("Consolas" if os.name == "nt" else "DejaVu Sans Mono", 9),
                   relief="flat", background="#0d0b16", foreground="#cfc8e6", insertbackground="#cfc8e6",
@@ -721,7 +772,7 @@ def gui(selftest: bool = False) -> int:
         if out.winfo_ismapped():
             out.pack_forget()
             b_log.config(text="Show log")
-            root.geometry(f"{root.winfo_width()}x{max(root.winfo_height() - 190, 540)}")
+            root.geometry(f"{root.winfo_width()}x{max(root.winfo_height() - 190, 564)}")
         else:
             out.pack(fill="both", expand=True, pady=(10, 10))
             b_log.config(text="Hide log")
@@ -785,7 +836,7 @@ def gui(selftest: bool = False) -> int:
 
     def set_busy(on):
         busy["on"] = on
-        for b in (b_refresh, b_install, b_update, b_pack, b_look, b_check):
+        for b in (b_refresh, b_install, b_update, b_pack, b_look, b_check, b_repair):
             b.state(["disabled"] if on else ["!disabled"])
         drive.state(["disabled"] if on else ["!disabled", "readonly"])
 
@@ -852,7 +903,7 @@ def gui(selftest: bool = False) -> int:
             status.config(text="Cancelled — nothing was changed.")
             return
         work(install, d["Number"], gpt=gpt.get(), secure_boot=secure.get(), keep_going=keep_going, pack=pack, expected=d,
-             on_plan=lambda nbytes: q.put(("total", nbytes)))
+             on_plan=lambda nbytes: q.put(("total", nbytes)), test=testv.get())
 
     def do_update():
         d = selected()
@@ -895,6 +946,20 @@ def gui(selftest: bool = False) -> int:
                                      "letter, so there's nothing to check.")
             return
         work(check, f"{d['Ventoy']}:\\", done=lambda text: text)
+
+    def do_repair():
+        d = selected()
+        if not d:
+            return
+        if not d.get("Ventoy"):
+            messagebox.showinfo(APP, "That disk has no Helix Boot stick on it yet, or Windows gave it no drive "
+                                     "letter, so there's nothing to repair.")
+            return
+        if messagebox.askokcancel(APP, f"Have Windows repair the filesystem on {d['Ventoy']}:?\n\n"
+                                       f"This runs chkdsk {d['Ventoy']}: /f. It is for a stick that an update or a "
+                                       "check says is damaged; it erases nothing, though a file that was damaged "
+                                       "may be lost. Close anything that has the stick open first."):
+            work(lambda target, progress: repair(target), f"{d['Ventoy']}:\\", done=lambda text: text)
 
     def open_folder():
         path = user_dir() / "byo"
@@ -960,6 +1025,7 @@ def gui(selftest: bool = False) -> int:
     b_folder.config(command=open_folder)
     b_look.config(command=do_look)
     b_check.config(command=do_check)
+    b_repair.config(command=do_repair)
     b_install.config(command=do_install)
     b_update.config(command=do_update)
     b_pack.config(command=choose_pack)
@@ -1306,6 +1372,10 @@ def cli(argv: list[str]) -> int:
     ap.add_argument("--import-look", metavar="ZIP", help="with --look: put a saved look on the stick")
     ap.add_argument("--selftest-look", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--check", metavar="DRIVE", help="read a stick back and find damaged or missing files")
+    ap.add_argument("--test-stick", metavar="DRIVE", help="write a stick's free space full, read it back and "
+                                                          "delete it: finds a failing or fake stick")
+    ap.add_argument("--test", action="store_true", help="with --install: test the stick first (slow)")
+    ap.add_argument("--repair", metavar="DRIVE", help="have Windows repair a stick's filesystem (chkdsk /f)")
     ap.add_argument("--boot-script", metavar="VOLUME", help=argparse.SUPPRESS)   # with --sync-to: Ventoy's partition
     ap.add_argument("--updates", action="store_true", help="say which tools have newer versions than this PC has")
     ap.add_argument("--yes", action="store_true", help="confirm --install")
@@ -1334,6 +1404,12 @@ def cli(argv: list[str]) -> int:
         if a.check:
             check(a.check)
             return 0
+        if a.test_stick:
+            test_stick(a.test_stick)
+            return 0
+        if a.repair:
+            print(repair(a.repair))
+            return 0
         if a.updates:
             print(updates_notice(config(), refresh=True))
             return 0
@@ -1354,7 +1430,7 @@ def cli(argv: list[str]) -> int:
             if not a.yes:
                 raise RescueError("--install erases the disk; add --yes to confirm")
             install(a.install, gpt=not a.mbr, secure_boot=not a.no_secure_boot, keep_going=lambda: True,
-                    pack=a.pack)
+                    pack=a.pack, test=a.test)
         elif a.update is not None:
             update(a.update, upgrade_ventoy=a.upgrade_ventoy, secure_boot=not a.no_secure_boot, pack=a.pack)
         else:

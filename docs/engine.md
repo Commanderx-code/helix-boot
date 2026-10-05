@@ -13,6 +13,7 @@ standard-library Python script:
 | `helix unpack <pack.zip> <mount> [--dry-run] [--verify] [--prune-unknown]` | fills a Ventoy stick from a pack, no downloads |
 | `helix theme <mount> [--theme ID] [--icons ID] [--background PIC] [--splash PIC] [--menu] [--preview FILE]` | shows or changes a stick's look ([themes](look.md#the-boot-menus-look)); `--export ZIP` / `--import ZIP` save and load it |
 | `helix verify <mount> [--json]` | reads the stick back and finds damaged or missing files, no downloads ([checking a stick](#checking-a-stick)) |
+| `helix test <mount> [--gb N]` | writes the stick's free space full, reads it back and deletes it: finds a failing or fake stick ([testing a stick](#testing-a-stick)) |
 | `helix splash <VTOYEFI mount>` | adds the splash to Ventoy's boot script (`install.sh` and `refresh.sh` run it) |
 
 `theme.sh` and `check.sh` wrap `helix theme` and `helix verify` the same way:
@@ -60,6 +61,22 @@ all (an "Input/output error"), and an update can't fix that. The engine, the
 Windows app and the Mac tool then stop and give the repair command for the
 system they run on (`fsck` on Linux, `chkdsk` on Windows, `diskutil
 repairVolume` on a Mac). Repair it, update, and check the stick.
+
+A check is only useful if it happens. The stick records the day it was last
+read back in full, and an update says so once that is over 30 days ago.
+
+## Testing a stick
+
+`helix test <mount>` (`./install.sh --test`, `helix-mac install --test`, or
+**Install tests the stick first** in the Windows app) is for a stick you are
+about to trust. It fills the free space with data that is different in every
+megabyte, reads all of it back from the stick itself, and deletes it. A stick
+that drops writes fails, and so does a fake that claims more room than it has:
+those wrap round and overwrite what they were given, so the first megabytes
+read back wrong. Nothing already on the stick is touched. An installer that
+runs the test stops before copying anything onto a stick that fails. It writes
+and reads the whole stick, so expect it to take as long as two full copies.
+`--gb N` tests only the first N GiB, which is quicker but can't find a fake.
 
 ## When a tool's site is down
 
