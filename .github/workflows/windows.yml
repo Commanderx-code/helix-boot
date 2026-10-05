@@ -33,7 +33,7 @@ jobs:
       - name: Build HelixBoot.exe
         run: |
           # Pillow: the Look window's previews. certifi: HTTPS to sites whose root Windows hasn't fetched yet
-          pip install --disable-pip-version-check pyinstaller pillow certifi
+          pip install --disable-pip-version-check --require-hashes -r windows/requirements.txt
           pyinstaller --noconfirm windows/HelixBoot.spec
 
       - name: The .exe says what it is (Properties > Details)
@@ -185,7 +185,7 @@ jobs:
           python-version: "3.12"
       - name: Build HelixBoot-mac
         run: |
-          pip install --disable-pip-version-check pyinstaller pillow
+          pip install --disable-pip-version-check --require-hashes -r mac/requirements.txt
           pyinstaller --noconfirm mac/HelixBoot-mac.spec
           mv dist/HelixBoot-mac "dist/HelixBoot-mac-$(uname -m)"
           ls -l dist
