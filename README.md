@@ -480,9 +480,9 @@ and splash, saving a look, and how the default theme is put together.
 | Mac | 32 tools for a working Mac, each opened and checked on a real Mac in CI | 0.6.1 – 0.6.12 |
 | | Updating a stick from a Mac; creating one (experimental) | 0.6.14 |
 | | One-file download for Apple Silicon Macs | 0.7.0 |
-| | One-file download for Intel Macs | next |
+| | One-file download for Intel Macs | 0.7.2 |
 | Stick health | A repair command for a damaged filesystem; a memory of damage | 0.7.1 |
-| | Testing a stick before installing; check reminders; Repair stick in the Windows app | next |
+| | Testing a stick before installing; check reminders; Repair stick in the Windows app | 0.7.2 |
 | Trust | CI: tests, a boot test of every theme, a weekly live download and verify of every tool | 0.1 – 0.6.4 |
 | | Checksums and build attestations on every release | 0.6.6 |
 | | Hardening: the confirmed disk is the one written, plain file trees only, pinned download sites | 0.6.11 – 0.6.13 |

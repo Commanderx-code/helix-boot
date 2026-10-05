@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-05
+
 ### Security
 - The Windows app runs Windows' own programs (PowerShell, and `chkdsk` for
   Repair stick) by their full path in the system folder. It runs with admin
@@ -697,7 +699,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.14...v0.7.0
 [0.6.14]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.13...v0.6.14
