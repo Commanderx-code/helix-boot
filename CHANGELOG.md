@@ -6,6 +6,21 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Changed
+- **GitHub's hourly limit is no longer in the way.** A PC that isn't signed in
+  gets 60 API requests an hour, and there are over 30 GitHub-hosted tools. The
+  engine now asks github.com where a repo's "latest release" leads, which is
+  not an API request, and only asks the API when that tag isn't the one it
+  saw last. A refresh with nothing new costs no API requests.
+- **An update that verifies reads the stick once.** The summary shown first
+  read every file, and the update then read them all again. What was read for
+  the summary now stands, for half an hour and while a file is unchanged.
+- **A tool's own settings aren't taken for damage.** A `.ini`, `.cfg`, `.conf`
+  or `.log` file a tool rewrote in its folder (and any file a tool names with
+  `settings = [...]`, as Notepad++ does for its `.xml`) no longer makes an
+  update copy the tool again, or Check stick report it. A changed program file
+  still does both.
+
 ## [0.6.14] - 2026-10-04
 
 ### Added

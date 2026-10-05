@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fnmatch
 import hashlib
 import http.client
 import html
@@ -46,6 +47,9 @@ def _env(name: str, default: str | None = None) -> str | None:
 
 
 GITHUB_API = _env("GITHUB_API", "https://api.github.com")
+GITHUB_WEB = _env("GITHUB_WEB", "https://github.com")
+RELEASES_FILE = "github-releases.json"      # in the cache: each repo's latest release, as last asked of the API
+RELEASES_MAX_AGE = 7 * 86400                # … and asked again after a week, whatever the tag says
 SF_RSS = _env("SF_RSS", "https://sourceforge.net/projects/{project}/rss?path={path}")  # SourceForge rejects limit > 100
 SF_DL = _env("SF_DL", "https://downloads.sourceforge.net/project/{project}{path}")
 USER_AGENT = f"helix-boot/{__version__} (+https://github.com/Commanderx-code/helix-boot)"
@@ -228,6 +232,10 @@ class Config:
                 f"{where}: no checksum strategy. Add one, or checksum = [\"tofu\"] to accept "
                 "unverified downloads explicitly."
             )
+        keeps = t.get("settings", [])
+        if not isinstance(keeps, list) or not all(isinstance(k, str) and k and "/.." not in k and not k.startswith(("/", ".."))
+                                                  for k in keeps):
+            raise RescueError(f"{where}: settings is a list of file patterns the tool rewrites itself, such as [\"*.xml\"]")
         hosts = t.get("hosts", [])
         if not isinstance(hosts, list) or not all(isinstance(h, str) and re.fullmatch(r"[A-Za-z0-9.-]+(:\d+)?", h)
                                                   for h in hosts):
@@ -574,18 +582,69 @@ def clean_tag(tag: str) -> str:
     return m.group(0) if m else tag
 
 
+# GitHub's API gives a PC that isn't signed in 60 requests an hour, and a 304 "nothing changed"
+# counts as one. The website doesn't count: github.com/<repo>/releases/latest redirects to the
+# release's tag. So that is asked first, and the API only when the tag isn't the one it gave last
+# time. A refresh with nothing new then costs no API requests, however many tools there are.
+def _latest_tag(repo: str) -> str | None:
+    """The tag of a repo's latest release, from where github.com sends …/releases/latest.
+    None when that can't be told (no releases, no connection, a page laid out differently)."""
+    class Stay(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+    req = _request(f"{GITHUB_WEB}/{repo}/releases/latest")
+    req.method = "HEAD"
+    try:
+        urllib.request.build_opener(Stay).open(req, timeout=30).close()
+        return None                                     # no redirect: not the answer this knows
+    except urllib.error.HTTPError as e:
+        where = e.headers.get("Location", "") if e.code in (301, 302, 303, 307, 308) else ""
+        m = re.search(r"/releases/tag/([^/?#]+)$", where)
+        return urllib.parse.unquote(m.group(1)) if m else None
+    except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError):
+        return None
+
+
+def _github_latest(cfg: Config, repo: str) -> dict:
+    """A repo's latest release as the API describes it (its tag and files), from the cache when
+    its tag is still the latest one."""
+    path = cfg.cache / RELEASES_FILE
+    try:
+        kept = json.loads(path.read_text(encoding="utf-8"))
+        kept = kept if isinstance(kept, dict) else {}
+    except (OSError, ValueError):
+        kept = {}
+    hit, tag = kept.get(repo), _latest_tag(repo)
+    if tag and isinstance(hit, dict) and isinstance(hit.get("release"), dict) and hit["release"].get("tag_name") == tag \
+            and 0 <= time.time() - float(hit.get("at") or 0) < RELEASES_MAX_AGE:
+        return hit["release"]
+    try:
+        raw = http_get(f"{GITHUB_API}/repos/{repo}/releases/latest", {"Accept": "application/vnd.github+json"})
+    except FileNotFoundError:
+        raise RescueError(f"{repo} has no published releases on GitHub") from None
+    rel = json.loads(raw)
+    keep = ("name", "size", "digest", "browser_download_url", "updated_at")
+    release = {"tag_name": rel.get("tag_name"),
+               "assets": [{k: a[k] for k in keep if k in a} for a in rel.get("assets", []) if isinstance(a, dict)]}
+    kept[repo] = {"at": time.time(), "release": release}
+    try:
+        cfg.cache.mkdir(parents=True, exist_ok=True)
+        with _temporary_output(path) as staged:
+            tmp = Path(staged.name)
+            staged.write((json.dumps(kept, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+        os.replace(tmp, path)
+    except OSError:
+        pass                                            # a cache it can't write: it asks the API each time
+    return release
+
+
 def resolve(tool: dict, cfg: Config) -> dict:
     """Work out what the newest upstream file is, without downloading it."""
     src = tool["source"]
     res: dict = {"digest": None, "md5": None, "gh_assets": {}, "dir_url": None}
 
     if src == "github":
-        try:
-            raw = http_get(f"{GITHUB_API}/repos/{tool['repo']}/releases/latest",
-                           {"Accept": "application/vnd.github+json"})
-        except FileNotFoundError:
-            raise RescueError(f"{tool['repo']} has no published releases on GitHub") from None
-        rel = json.loads(raw)
+        rel = _github_latest(cfg, tool["repo"])
         assets = {a["name"]: a for a in rel.get("assets", [])}
         if tool.get("download_template"):
             # GitHub only tells us the version; the file lives on the project's own site.
@@ -1554,10 +1613,48 @@ def _validate_tree_patch(t: dict) -> None:
         raise RescueError("tree recolor must map image names to six-digit hex colours")
 
 
-def _app_matches(base: Path, files: dict) -> bool:
+# An update that verifies reads every file on the stick for its summary, and would read them all
+# again to do the work. What it read for the summary stands, for half an hour and while the
+# file's size and time are as they were. (A file just copied is always read back afresh.)
+_SEEN: dict[str, tuple[int, int, float, str]] = {}      # a file on the stick: size, mtime, when read, sha256
+SEEN_FOR = 30 * 60
+
+
+def _stick_hash(path: Path, progress: "Progress | None" = None) -> str:
+    st, key = path.stat(), str(path)
+    hit = _SEEN.get(key)
+    if hit and hit[:2] == (st.st_size, st.st_mtime_ns) and 0 <= time.monotonic() - hit[2] < SEEN_FOR:
+        if progress:
+            progress.add(st.st_size)
+        return hit[3]
+    digest = file_hash(path, progress=progress)
+    _SEEN[key] = (st.st_size, st.st_mtime_ns, time.monotonic(), digest)
+    return digest
+
+
+# Files a tool rewrites as it runs: its settings and logs. One of these differing from the copy
+# it came from doesn't make the tool altered, so an update leaves it (and your settings) alone.
+# A tool can name more with `settings = ["*.xml"]` in the tool list. Programs are never among them.
+SETTINGS_SUFFIXES = (".ini", ".cfg", ".conf", ".log")
+NEVER_SETTINGS = (".exe", ".dll", ".sys", ".com", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".msi", ".lnk")
+
+
+def _is_settings(rel: str, patterns=()) -> bool:
+    rel = rel.lower()
+    name = rel.rpartition("/")[2]
+    if name.endswith(NEVER_SETTINGS):
+        return False
+    return name.endswith(SETTINGS_SUFFIXES) or any(
+        isinstance(pat, str) and (fnmatch.fnmatchcase(rel, pat.lower()) or fnmatch.fnmatchcase(name, pat.lower()))
+        for pat in patterns)
+
+
+def _app_matches(base: Path, files: dict, settings=()) -> bool:
     for rel, expected in files.items():
         p = _inside(base, rel, "app file")
-        if not p.is_file() or file_hash(p) != expected:
+        if not p.is_file():
+            return False
+        if _stick_hash(p) != expected and not _is_settings(rel, settings):
             return False
     return True
 
@@ -2074,11 +2171,11 @@ def cmd_sync(cfg: Config, args) -> int:
         same = dst.exists() and dst.stat().st_size == p["src"].stat().st_size
         if same and p["sha256"]:
             if args.verify:
-                same = file_hash(dst) == p["sha256"]
+                same = _stick_hash(dst) == p["sha256"]
             elif p["rel"] in recorded:
                 same = recorded[p["rel"]] == p["sha256"]
             elif p["local"]:    # no record yet (an older stick): a local build may have been rebuilt
-                same = file_hash(dst) == p["sha256"]
+                same = _stick_hash(dst) == p["sha256"]
         if same and p["rel"] in bad_images and not args.verify:
             same = False
         if same:
@@ -2111,16 +2208,18 @@ def cmd_sync(cfg: Config, args) -> int:
         dst = root / t["name"]
         unzip = zipfile.is_zipfile(src) and t.get("platform") != "mac"
         rec = hashes.get(t["name"])
-        if args.verify or (not args.dry_run and not (rec and same_build(rec.get("version"), entry["version"]))):
+        keeps = [str(pat) for pat in t.get("settings", [])]
+        if args.verify or (not args.dry_run and not (rec and same_build(rec.get("version"), entry["version"])
+                                                     and rec.get("settings", []) == keeps)):
             if unzip:
                 with zipfile.ZipFile(src) as zf:
                     files = _zip_hashes(zf)
             else:
                 files = {src.name: file_hash(src)}
             hashes[t["name"]] = {"version": entry["version"], "dir": f"{_app_root(cfg, t)}/{t['name']}",
-                                 "files": files}
+                                 "files": files, "settings": keeps}
         if (same_build(app_state.get(t["name"]), entry["version"]) and dst.exists() and t["name"] not in bad_apps
-                and (not args.verify or _app_matches(dst, hashes[t["name"]]["files"]))):
+                and (not args.verify or _app_matches(dst, hashes[t["name"]]["files"], keeps))):
             ok(f"{t['title']} {entry['version']} — already on stick")
             continue
         info(f"{t['title']} {entry['version']} → {_app_root(cfg, t)}/{t['name']}/")
@@ -2138,7 +2237,7 @@ def cmd_sync(cfg: Config, args) -> int:
         if dst.exists():
             shutil.rmtree(dst)
         os.replace(new, dst)
-        if args.verify and not _app_matches(dst, hashes[t["name"]]["files"]):
+        if args.verify and not _app_matches(dst, hashes[t["name"]]["files"]):     # (just copied: settings and all)
             raise RescueError(f"{t['name']}: app files do not match after copying")
         app_state[t["name"]] = entry["version"]
         wrote_apps.add(t["name"])
@@ -2362,6 +2461,7 @@ def cmd_pack(cfg: Config, args) -> int:
                 "iso_root": cfg.iso_root, "apps_root": cfg.apps_root, "isos": isos,
                 "apps": {t["name"]: e["version"] for t, e, _ in apps},
                 "app_roots": {t["name"]: _app_root(cfg, t) for t, _, _ in apps if _app_root(cfg, t) != cfg.apps_root},
+                "app_settings": {t["name"]: [str(pat) for pat in t["settings"]] for t, _, _ in apps if t.get("settings")},
                 # switched off by hand where the pack was made: unpack removes these from a stick that has them
                 "off": sorted(cfg.switched_off),
                 "ventoy": {"file": f"installer/{vsrc.name}", "version": ventry["version"]} if vsrc else None,
@@ -2485,7 +2585,7 @@ def cmd_unpack(cfg: Config, args) -> int:
         bad_images, bad_apps = _damaged(state)          # found by `helix verify`: copied again
         todo = [i for i in meta["isos"]
                 if not (dests[i["rel"]].is_file() and dests[i["rel"]].stat().st_size == i["size"])
-                or ((file_hash(dests[i["rel"]]) if args.verify or i["rel"] not in state.get("images", {})
+                or ((_stick_hash(dests[i["rel"]]) if args.verify or i["rel"] not in state.get("images", {})
                      else state["images"][i["rel"]]) != i["sha256"])
                 or (i["rel"] in bad_images and not args.verify)]
         need = sum(i["size"] for i in todo)
@@ -2527,6 +2627,7 @@ def cmd_unpack(cfg: Config, args) -> int:
         app_state = dict(state.get("apps", {}))
         app_root = _inside(mnt, apps_root, "apps folder")
         roots = meta.get("app_roots", {})         # apps that go elsewhere than Apps: the Mac tools
+        keeps_by = meta.get("app_settings") if isinstance(meta.get("app_settings"), dict) else {}
         wrote_apps: set[str] = set()
         hashes = _load_hashes(mnt)
         for name, version in meta["apps"].items():
@@ -2534,13 +2635,16 @@ def cmd_unpack(cfg: Config, args) -> int:
             dst = _inside(root, name, "app folder")
             prefix = f"stick/{roots.get(name, apps_root)}/{name}/"
             rec = hashes.get(name)
-            fresh = not args.dry_run and not (rec and same_build(rec.get("version"), version))
+            keeps = [pat for pat in keeps_by.get(name, []) if isinstance(pat, str)] if isinstance(
+                keeps_by.get(name), list) else []
+            fresh = not args.dry_run and not (rec and same_build(rec.get("version"), version)
+                                              and rec.get("settings", []) == keeps)
             expected = _zip_hashes(zf, prefix) if args.verify else {}
             if (same_build(app_state.get(name), version) and dst.exists() and name not in bad_apps
-                    and (not args.verify or _app_matches(dst, expected))):
+                    and (not args.verify or _app_matches(dst, expected, keeps))):
                 if fresh:
                     hashes[name] = {"version": version, "dir": f"{roots.get(name, apps_root)}/{name}",
-                                    "files": _zip_hashes(zf, prefix)}
+                                    "files": _zip_hashes(zf, prefix), "settings": keeps}
                 ok(f"{name} {version} — already on stick")
                 continue
             info(f"{name} {version} → {roots.get(name, apps_root)}/{name}/")
@@ -2553,7 +2657,8 @@ def cmd_unpack(cfg: Config, args) -> int:
             for m in names:
                 if m.startswith(prefix) and not m.endswith("/"):
                     files[m[len(prefix):]] = _unzip_to(zf, m, _inside(new, m[len(prefix):], "path in pack"))
-            hashes[name] = {"version": version, "dir": f"{roots.get(name, apps_root)}/{name}", "files": files}
+            hashes[name] = {"version": version, "dir": f"{roots.get(name, apps_root)}/{name}", "files": files,
+                            "settings": keeps}
             if dst.exists():
                 shutil.rmtree(dst)
             os.replace(new, dst)
@@ -2705,7 +2810,7 @@ def check_stick(mnt: Path, hook=None) -> dict:
         base = _inside(mnt, rec["dir"], "app folder")
         for rel, sha in sorted(rec["files"].items()):
             todo.append((f"{rec['dir']}/{rel}", _inside(base, rel, "app file"), sha, name))
-    found = {"damaged": [], "missing": [], "changed": {}, "checked": 0,
+    found = {"damaged": [], "missing": [], "changed": {}, "settings": {}, "checked": 0,
              "unrecorded": sorted(n for n in (state.get("apps") or {}) if n not in apps),
              "images": len(images), "apps": len({a for *_, a in todo if a}), "menu": None}
 
@@ -2720,8 +2825,10 @@ def check_stick(mnt: Path, hook=None) -> dict:
         found["checked"] += 1
         if good:
             continue
-        if app:                                     # some tools save their settings in their folder
-            found["changed"].setdefault(app, []).append(what)
+        if app:                                     # a tool's own settings and logs are its to change
+            rel = what[len(apps[app]["dir"]) + 1:]
+            kind = "settings" if _is_settings(rel, apps[app].get("settings") or ()) else "changed"
+            found[kind].setdefault(app, []).append(what)
         else:
             found["damaged"].append(what)
     prog.clear()
@@ -2758,16 +2865,19 @@ def check_text(found: dict) -> str:
         if len(found["missing"]) > 15:
             lines.append(f"    … and {len(found['missing']) - 15} more")
     for app, files in sorted(found["changed"].items()):
-        lines.append(f"! {app}: {len(files)} file(s) differ from when it was copied. Some tools save "
-                     "their settings in their own folder; otherwise the stick may be failing.")
+        lines.append(f"! {app}: {len(files)} file(s) differ from when it was copied "
+                     f"({', '.join(Path(f).name for f in files[:3])}{', …' if len(files) > 3 else ''}).")
     if found["menu"]:
         lines.append(f"✗ {found['menu']}")
     if found["damaged"] or found["missing"] or found["changed"]:
-        lines.append("  The next update copies those again (an app's saved settings go back to how they came). "
-                     "If this keeps happening, replace the stick.")
+        lines.append("  The next update copies those again. If this keeps happening, replace the stick.")
     if not lines:
         lines.append(f"✓ Everything checks out: {found['images']} boot image(s) and {found['apps']} app(s), "
                      f"{found['checked']} file(s) read back.")
+    kept = found.get("settings") or {}
+    if kept:
+        lines.append(f"• {sum(len(f) for f in kept.values())} settings file(s) were changed by the tools themselves "
+                     f"({', '.join(sorted(kept))}): left as they are.")
     if found["unrecorded"]:
         lines.append(f"• {len(found['unrecorded'])} app(s) were copied by an older Helix Boot and aren't "
                      "checked yet; the next update records them.")

@@ -23,6 +23,9 @@
 #   platform    "mac" on an app for a Mac: it goes in the stick's Mac folder as downloaded
 #   macos       with it: the oldest macOS the app runs on, as the app itself declares ("10.13",
 #               "15.6"); shown in the stick's Mac/README.txt, and checked on a real Mac in CI
+#   settings    on an app: files it rewrites as it runs, as patterns (["*.xml"]). A change to
+#               one of those, or to any .ini .cfg .conf .log, isn't taken for damage, so an
+#               update that verifies leaves the tool's settings alone. Never a program file.
 #   enabled     include in fetch/sync (default true)
 #   source      "github" | "sourceforge" | "url" | "page" | "local"
 #     github:       repo = "owner/name"   (+ optional download_template when the
@@ -590,6 +593,7 @@ repo = "notepad-plus-plus/notepad-plus-plus"
 asset = ['^npp\.[\d.]+\.portable\.x64\.zip$']
 version = 'npp\.([\d.]+)\.portable'
 entry = "notepad++.exe"
+settings = ["*.xml"]        # its configuration, which it rewrites as you use it: an update leaves that alone
 checksum = ["github-digest", { asset = 'checksums\.sha256$' }]
 
 [[tool]]
