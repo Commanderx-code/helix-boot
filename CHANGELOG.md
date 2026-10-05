@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-04
+
 ### Added
 - **A stick with a damaged filesystem gets a repair command, not a raw error.**
   When the stick answers with a disk error (an "Input/output error"), an
@@ -664,7 +666,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.14...v0.7.0
 [0.6.14]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.13...v0.6.14
 [0.6.13]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.12...v0.6.13
