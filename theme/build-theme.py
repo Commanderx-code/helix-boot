@@ -253,10 +253,14 @@ def nine_slice(prefix: str, fill, border=None, left_bar=None, size: int = 8) -> 
         im = Image.new("RGBA", (w, h), fill)
         if border:
             d = ImageDraw.Draw(im)
-            if "n" in part: d.line((0, 0, w, 0), fill=border)
-            if "s" in part: d.line((0, h - 1, w, h - 1), fill=border)
-            if "w" in part: d.line((0, 0, 0, h), fill=border)
-            if "e" in part: d.line((w - 1, 0, w - 1, h), fill=border)
+            if "n" in part:
+                d.line((0, 0, w, 0), fill=border)
+            if "s" in part:
+                d.line((0, h - 1, w, h - 1), fill=border)
+            if "w" in part:
+                d.line((0, 0, 0, h), fill=border)
+            if "e" in part:
+                d.line((w - 1, 0, w - 1, h), fill=border)
         if left_bar and part in ("nw", "w", "sw"):
             ImageDraw.Draw(im).rectangle((0, 0, 3, h), fill=left_bar)
         im.save(out_dir() / f"{prefix}_{part}.png", optimize=True)
