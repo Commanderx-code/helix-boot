@@ -271,6 +271,15 @@ class TestMacFront(unittest.TestCase):
         self.assertIn("unplugged or replaced", rc)
         self.assertEqual(root, [])
 
+    def test_the_one_file_program_makes_your_byo_folder_for_engine_commands_too(self):
+        seen = {}
+        with mock.patch.object(mac, "FROZEN", True), mock.patch.object(mac, "user_dir", lambda: self.tmp), \
+                mock.patch.dict(mac.os.environ), \
+                mock.patch.object(mac.cr, "main", lambda argv: seen.update(dir=mac.os.environ["HELIX_USER_DIR"]) or 0):
+            self.assertEqual(mac.engine(["--version"]), 0)
+        self.assertEqual(seen["dir"], str(self.tmp))
+        self.assertTrue((self.tmp / "byo").is_dir())
+
     def test_every_module_the_engine_imports_is_named_for_the_one_file_build(self):
         # PyInstaller can't see inside helix (it's a data file), so helix-mac imports them for it
         import ast
