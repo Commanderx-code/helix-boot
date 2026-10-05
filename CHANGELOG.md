@@ -6,6 +6,17 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **`Tools.txt` at the top of the stick:** every tool on it and its version,
+  by where it is in the boot menu, and the tools another PC put there.
+- The Windows app's progress bar says how much has been copied and of how
+  much ("12.3 GB / 37.0 GB").
+
+### Fixed
+- On Windows, reading a file back after copying it, and **Check stick**, could
+  be answered from Windows' memory and not from the stick. Files are now read
+  back unbuffered there, so the check is of what is really on the stick.
+
 ### Changed
 - **GitHub's hourly limit is no longer in the way.** A PC that isn't signed in
   gets 60 API requests an hour, and there are over 30 GitHub-hosted tools. The

@@ -446,6 +446,12 @@ class TestFetchAndSync(Base):
         self.assertNotIn("/ISO/1-Windows-PE", aliases)             # empty category hidden
         self.assertTrue((self.stick / "helix-boot.tag").exists())
         self.assertTrue((self.stick / "commander-rescue.tag").exists())   # for launchers and PEs from before
+        listing = (self.stick / cr.TOOLS_TXT).read_bytes().decode("utf-8")   # what is on the stick, for a person
+        self.assertIn(f"Helix Boot {cr.__version__}: what is on this stick", listing)
+        self.assertRegex(listing, r"Linux Rescue[^\n]*\r\n  SystemRescue  12\.02\r\n")
+        self.assertRegex(listing, r"  Memtest86\+\s+8\.10\r\n")
+        self.assertRegex(listing, r"Apps for Windows \(the Apps folder\)\r\n  Sysinternals Suite\s+\d{4}-\d\d-\d\d\r\n")
+        self.assertNotRegex(listing, r"[0-9a-f]{8}\r\n")                    # a date, not a checksum
 
         # user file on the stick must survive syncs
         mine = self.stick / "ISO/2-Rescue/my-own.iso"
