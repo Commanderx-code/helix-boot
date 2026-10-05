@@ -117,11 +117,10 @@ class TestMacFront(unittest.TestCase):
             cmd_unpack=lambda cfg, n: steps.append(("unpack", n.pack, n.target)) or 0,
             cmd_splash=lambda cfg, n: steps.append(("splash", n.efi, n.stick)) or 0,
             forget_keys_hook=lambda cfg, mnt: steps.append("forget"),
-            Config=lambda repo=None: mock.Mock(),
         )
         out = io.StringIO()
         with redirect_stdout(out), redirect_stderr(out):
-            with mock.patch.multiple(mac.cr, **fakes):
+            with mock.patch.multiple(mac.cr, **fakes), mock.patch.object(mac, "config", lambda: mock.Mock()):
                 try:
                     rc = mac.update(a, run=self.run, ask=ask)
                 except mac.cr.RescueError as e:
@@ -198,11 +197,11 @@ class TestMacFront(unittest.TestCase):
             ventoy_layout=lambda v, sectors: steps.append(("layout", v.name, sectors)) or layout,
             cmd_sync=lambda cfg, n: steps.append(("sync", n.target, n.init, n.verify)) or 0,
             cmd_splash=lambda cfg, n: steps.append(("splash", n.efi, n.stick)) or 0,
-            Config=lambda repo=None: mock.Mock(cache=self.tmp / "cache", stick_label="HelixBoot"),
         )
+        cfg = mock.Mock(cache=self.tmp / "cache", stick_label="HelixBoot")
         out = io.StringIO()
         with redirect_stdout(out), redirect_stderr(out), mock.patch.multiple(mac.cr, **fakes), \
-                mock.patch.object(mac.time, "sleep"):
+                mock.patch.object(mac, "config", lambda: cfg), mock.patch.object(mac.time, "sleep"):
             try:
                 rc = mac.install(mac.ns(**{**base, **kw}), run=self.run, ask=ask, root=lambda *c: root.append(c))
             except mac.cr.RescueError as e:
@@ -271,6 +270,22 @@ class TestMacFront(unittest.TestCase):
         rc, steps, root, out = self.install(ask=swap)
         self.assertIn("unplugged or replaced", rc)
         self.assertEqual(root, [])
+
+    def test_every_module_the_engine_imports_is_named_for_the_one_file_build(self):
+        # PyInstaller can't see inside helix (it's a data file), so helix-mac imports them for it
+        import ast
+
+        def imported(path):
+            mods = set()
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Import):
+                    mods |= {a.name for a in node.names}
+                elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                    mods.add(node.module)
+            return mods - {"__future__"}
+        only_elsewhere = {"PIL", "ctypes", "msvcrt"}       # optional pictures; Windows' own
+        missing = imported(ROOT / "helix") - imported(ROOT / "mac/helix-mac") - only_elsewhere
+        self.assertEqual(sorted(missing), [], "add these imports to mac/helix-mac")
 
 
 if __name__ == "__main__":

@@ -172,11 +172,57 @@ jobs:
           name: HelixBoot-windows
           path: dist/HelixBoot.exe
 
+  # The Mac program: helix-mac as one file with Python inside, built and tried on a Mac.
+  mac-app:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Build HelixBoot-mac
+        run: |
+          pip install --disable-pip-version-check pyinstaller pillow
+          pyinstaller --noconfirm mac/HelixBoot-mac.spec
+          mv dist/HelixBoot-mac "dist/HelixBoot-mac-$(uname -m)"
+          ls -l dist
+      - name: Try the real program
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NO_COLOR: "1"
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/app" && cp dist/HelixBoot-mac-* "$RUNNER_TEMP/app/HelixBoot-mac"
+          app="$RUNNER_TEMP/app/HelixBoot-mac"
+          "$app" --help
+          "$app" list
+          "$app" helix --version
+          "$app" helix fetch ventoy supergrub2 memtest86plus
+          test -d "$RUNNER_TEMP/app/byo"                      # your folder is the one beside the program
+          # A whole update with it, on a disk image partitioned like a stick
+          mkfile -n 700m "$RUNNER_TEMP/stick.img"
+          dev=$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$RUNNER_TEMP/stick.img" | awk 'NR==1 { print $1 }')
+          "$app" install --disk "${dev#/dev/}" --erase "${dev#/dev/}" --no-fetch --allow-disk-image
+          test -f /Volumes/HelixBoot/ventoy/ventoy.json
+          test -f /Volumes/HelixBoot/Tools.txt
+          test -f /Volumes/HelixBoot/ventoy/theme/splash/20.jpg   # the loading bar: Pillow is inside
+          "$app" check --disk "${dev#/dev/}"
+          "$app" look --disk "${dev#/dev/}" --theme midnight
+          grep -q Midnight /Volumes/HelixBoot/ventoy/theme/theme.txt
+          hdiutil detach "$dev"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: HelixBoot-mac
+          path: dist/HelixBoot-mac-*
+
   # A pushed v* tag, or "Run workflow" on main with a version: the release (and its tag,
   # at this commit) is created from the .exe the job above built and tested, by a job of its
   # own, the only one with write access.
   release:
-    needs: app
+    needs: [app, mac-app]
     if: startsWith(github.ref, 'refs/tags/v') || (inputs.release != '' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -192,12 +238,16 @@ jobs:
         with:
           name: HelixBoot-windows
           path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: HelixBoot-mac
+          path: dist
       - name: Build HelixBoot.sh (the one-file Linux installer)
         run: linux/build.sh dist/HelixBoot.sh
       # Anyone can check a download: sha256sum -c SHA256SUMS, or
       # gh attestation verify HelixBoot.exe --repo Commanderx-code/helix-boot (built here, from this commit)
       - name: Checksums
-        run: cd dist && sha256sum HelixBoot.exe HelixBoot.sh > SHA256SUMS && cat SHA256SUMS
+        run: cd dist && sha256sum HelixBoot.exe HelixBoot.sh HelixBoot-mac-* > SHA256SUMS && cat SHA256SUMS
       - name: Attest where the files were built
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
@@ -225,4 +275,5 @@ jobs:
           files: |
             dist/HelixBoot.exe
             dist/HelixBoot.sh
+            dist/HelixBoot-mac-*
             dist/SHA256SUMS
