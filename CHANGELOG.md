@@ -10,7 +10,14 @@ tagged releases also publish the Windows app.
 - The Windows app runs Windows' own programs (PowerShell, and `chkdsk` for
   Repair stick) by their full path in the system folder. It runs with admin
   rights, and a program looked up by name could be a file of that name in the
-  folder the app was started from.
+  folder the app was started from. For the same reason 7-Zip is only taken
+  from where its installer puts it on Windows, which also means an installed
+  7-Zip is now found there at all.
+
+### Fixed
+- `helix-mac --eject` tries again when macOS still holds the stick for a
+  moment after writing, and says to eject it in Finder if it stays busy,
+  where it stopped with an error after a finished update.
 
 ### Added
 - **Testing a stick before you rely on it.** `helix test <mount>` writes the

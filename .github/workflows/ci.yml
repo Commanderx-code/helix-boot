@@ -249,7 +249,7 @@ jobs:
           python mac/helix-mac check --disk "$disk"
           python mac/helix-mac update --disk "$disk" --yes --no-fetch | tee again.log
           grep -q 'already up to date' again.log
-          hdiutil detach "$dev"
+          hdiutil detach "$dev" || { sleep 10; hdiutil detach -force "$dev"; }   # macOS holds a disk a moment
       # A new stick made on this Mac (experimental), on a second disk image. The image is kept:
       # the job below boots it, to see that a disk written here really starts on a PC.
       - name: Make a new stick on this Mac
@@ -271,7 +271,7 @@ jobs:
           python mac/helix-mac check --disk "$disk"
           python mac/helix-mac update --disk "$disk" --yes --no-fetch | tee again.log
           grep -q 'already up to date' again.log
-          hdiutil detach "$dev"
+          hdiutil detach "$dev" || { sleep 10; hdiutil detach -force "$dev"; }   # macOS holds a disk a moment
           gzip -1 "$RUNNER_TEMP/new-stick.img"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:

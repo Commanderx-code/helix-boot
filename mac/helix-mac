@@ -267,9 +267,25 @@ def update(a, run=diskutil, ask=input) -> int:
     same_stick(stick, mnt, run)
     boot_script(cfg, stick, mnt, run)
     if a.eject:
-        run("eject", stick["disk"])
-        cr.ok("Ejected: safe to unplug.")
+        eject(stick["disk"], run)
     return 0
+
+
+def eject(disk: str, run=diskutil, tries: int = 5) -> bool:
+    """Eject the stick. macOS often holds a disk for a few seconds after writing to it (Spotlight
+    looks inside), so this tries again; a stick that stays busy is left for Finder to eject."""
+    said = ""
+    for n in range(tries):
+        try:
+            run("eject", disk)
+            cr.ok("Ejected: safe to unplug.")
+            return True
+        except cr.RescueError as e:
+            said = str(e)
+            if n < tries - 1:
+                time.sleep(3)
+    cr.warn(f"couldn't eject {disk} ({said[:120]}). Everything is written: eject it in Finder before unplugging.")
+    return False
 
 
 # ── A new stick (experimental) ─────────────────────────────────────────────
@@ -411,8 +427,7 @@ def install(a, run=diskutil, ask=input, root=sudo) -> int:
     same_stick(stick, mnt, run)
     boot_script(cfg, stick, mnt, run, root)
     if a.eject:
-        run("eject", disk)
-        cr.ok("Ejected: safe to unplug.")
+        eject(disk, run)
     cr.ok("Done. On a Secure Boot PC, the first boot asks to enrol Ventoy's key (Enroll key, then reboot).")
     return 0
 

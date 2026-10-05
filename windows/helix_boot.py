@@ -198,9 +198,10 @@ def system_tool(*parts: str, folder: str | None = None) -> str:
 def powershell(script: str) -> str:
     # stdin=DEVNULL: PowerShell started from a windowless app otherwise waits on input forever
     try:
-        r = subprocess.run([system_tool("WindowsPowerShell", "v1.0", "powershell.exe"),
-                            "-NoProfile", "-NonInteractive", "-Command", script],
-                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120,
+        exe = system_tool("WindowsPowerShell", "v1.0", "powershell.exe")
+        # (started in the system folder too: nothing it looks up is found in the app's own folder)
+        r = subprocess.run([exe, "-NoProfile", "-NonInteractive", "-Command", script],
+                           cwd=os.path.dirname(exe) or None, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120,
                            creationflags=NO_WINDOW if os.name == "nt" else 0)
     except subprocess.TimeoutExpired:
         raise RescueError("PowerShell didn't answer within 2 minutes") from None
@@ -550,7 +551,8 @@ def repair(target: str, run=None) -> str:
     print(f"\nRepairing the filesystem on {drive} (chkdsk {drive} /f /x) …")
     if run is None:
         def run(cmd):
-            r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="oem",
+            r = subprocess.run(cmd, cwd=os.path.dirname(cmd[0]) or None, stdin=subprocess.DEVNULL,
+                               capture_output=True, text=True, encoding="oem",
                                errors="replace", timeout=3600, creationflags=NO_WINDOW if os.name == "nt" else 0)
             return r.returncode, r.stdout + r.stderr
     try:

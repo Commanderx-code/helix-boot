@@ -257,6 +257,20 @@ class TestMacFront(unittest.TestCase):
                 self.assertEqual(rc, 0, out)
                 self.assertIn("read back without a fault", out)
 
+    def test_a_stick_that_stays_busy_is_left_for_finder_to_eject(self):
+        tried = []
+
+        def run(*cmd):
+            tried.append(cmd)
+            if len(tried) < 3:
+                raise mac.cr.RescueError("diskutil eject disk4: Volume failed to eject: Resource busy")
+        out = io.StringIO()
+        with mock.patch.object(mac.time, "sleep"), redirect_stdout(out), redirect_stderr(out):
+            self.assertTrue(mac.eject("disk4", run))
+            self.assertEqual(tried, [("eject", "disk4")] * 3)
+            self.assertFalse(mac.eject("disk4", lambda *c: (_ for _ in ()).throw(mac.cr.RescueError("Resource busy"))))
+        self.assertIn("eject it in Finder before unplugging", out.getvalue())
+
     def test_a_busy_disk_is_tried_again(self):
         tried = []
 

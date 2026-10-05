@@ -1033,6 +1033,18 @@ def _temporary_output(dst: Path):
                                        dir=dst.parent, delete=False)
 
 
+def _seven_zip() -> str | None:
+    """7-Zip's command-line program. On Windows only where its installer puts it: a search by
+    name there starts in the current folder, and the Windows app runs with admin rights."""
+    if os.name != "nt":
+        return shutil.which("7z") or shutil.which("7za") or shutil.which("7zz")
+    for var in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"):
+        exe = Path(os.environ.get(var) or "", "7-Zip", "7z.exe")
+        if os.environ.get(var) and exe.is_absolute() and exe.is_file():
+            return str(exe)
+    return None
+
+
 def _in_cache(cfg: Config, name: str, prev: dict | None) -> bool:
     """Whether the tool the lock describes is still in the cache."""
     # final "." is what older versions recorded for Ventoy's ./-prefixed tarball: not really cached
@@ -1142,10 +1154,11 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
             raise RescueError(f"unexpected Ventoy archive layout: {sorted(top)}")
         final = top.pop()
     elif tool["kind"] == "tree":  # e.g. a PortableApps.com .paf.exe (NSIS): only 7-Zip opens those
-        seven = shutil.which("7z") or shutil.which("7za") or shutil.which("7zz")
+        seven = _seven_zip()
         if not seven:
             dest.unlink(missing_ok=True)
-            raise RescueError(f"{tool['title']}: unpacking needs 7-Zip. Install it (e.g. sudo pacman -S 7zip) and fetch again.")
+            raise RescueError(f"{tool['title']}: unpacking needs 7-Zip. Install it (from 7-zip.org on Windows; "
+                              "e.g. sudo pacman -S 7zip on Linux) and fetch again.")
         final = f"tree-{re.sub(r'[^A-Za-z0-9._-]', '_', res['version'] or 'x')}"
         out = tdir / final
         shutil.rmtree(out, ignore_errors=True)

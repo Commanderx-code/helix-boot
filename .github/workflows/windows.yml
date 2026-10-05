@@ -217,7 +217,7 @@ jobs:
           "$app" check --disk "${dev#/dev/}"
           "$app" look --disk "${dev#/dev/}" --theme midnight
           grep -q Midnight /Volumes/HelixBoot/ventoy/theme/theme.txt
-          hdiutil detach "$dev"
+          hdiutil detach "$dev" || { sleep 10; hdiutil detach -force "$dev"; }   # macOS holds a disk a moment
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: HelixBoot-mac-${{ matrix.runner }}
