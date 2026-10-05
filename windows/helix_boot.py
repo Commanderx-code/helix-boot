@@ -123,6 +123,7 @@ def load_helix():
 
 if os.name == "nt":
     import msvcrt  # noqa: F401  (helix reads a stick back unbuffered with it)
+    import winreg  # noqa: F401  (… and finds 7-Zip where its installer says it is)
 
 cr = load_helix()
 

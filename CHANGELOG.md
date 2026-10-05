@@ -11,8 +11,9 @@ tagged releases also publish the Windows app.
   Repair stick) by their full path in the system folder. It runs with admin
   rights, and a program looked up by name could be a file of that name in the
   folder the app was started from. For the same reason 7-Zip is only taken
-  from where its installer puts it on Windows, which also means an installed
-  7-Zip is now found there at all.
+  from where its installer recorded it on Windows (in the registry, where only
+  an administrator can write), which also means an installed 7-Zip is now
+  found there at all.
 
 ### Fixed
 - `helix-mac --eject` tries again when macOS still holds the stick for a

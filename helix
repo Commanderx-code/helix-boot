@@ -1034,13 +1034,21 @@ def _temporary_output(dst: Path):
 
 
 def _seven_zip() -> str | None:
-    """7-Zip's command-line program. On Windows only where its installer puts it: a search by
-    name there starts in the current folder, and the Windows app runs with admin rights."""
+    """7-Zip's command-line program. On Windows only where its installer says it is, read from
+    the part of the registry only an administrator can write: a search by name there starts
+    in the current folder, and the environment is whatever started the app says it is, while
+    the Windows app runs with admin rights."""
     if os.name != "nt":
         return shutil.which("7z") or shutil.which("7za") or shutil.which("7zz")
-    for var in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"):
-        exe = Path(os.environ.get(var) or "", "7-Zip", "7z.exe")
-        if os.environ.get(var) and exe.is_absolute() and exe.is_file():
+    import winreg
+    for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\7-Zip", 0, winreg.KEY_READ | view) as key:
+                folder = winreg.QueryValueEx(key, "Path")[0]
+        except OSError:
+            continue
+        exe = Path(str(folder), "7z.exe")
+        if exe.is_absolute() and exe.is_file():
             return str(exe)
     return None
 

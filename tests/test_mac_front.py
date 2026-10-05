@@ -338,7 +338,7 @@ class TestMacFront(unittest.TestCase):
                 elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
                     mods.add(node.module)
             return mods - {"__future__"}
-        only_elsewhere = {"PIL", "ctypes", "msvcrt"}       # optional pictures; Windows' own
+        only_elsewhere = {"PIL", "ctypes", "msvcrt", "winreg"}       # optional pictures; Windows' own
         missing = imported(ROOT / "helix") - imported(ROOT / "mac/helix-mac") - only_elsewhere
         self.assertEqual(sorted(missing), [], "add these imports to mac/helix-mac")
 
