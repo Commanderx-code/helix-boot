@@ -89,12 +89,22 @@ The [code signing policy](docs/code-signing.md) says how signed releases are
 made, and has the privacy policy: what the app contacts, and what it changes
 on your PC.
 
-**Mac.** From a clone of this repo, `python3 mac/helix-mac` keeps a stick up
-to date: it finds the stick, shows what it will change, and asks.
-`mac/helix-mac check` and `mac/helix-mac look` work as `check.sh` and
-`theme.sh` do. It needs Python 3.11 or newer.
+**Mac.** Download **`HelixBoot-mac-arm64`** from
+[Releases](https://github.com/Commanderx-code/helix-boot/releases) (Apple
+Silicon; nothing else to install), put it in a folder of its own, and in
+Terminal:
 
-Creating a stick on a Mac is **experimental**: `mac/helix-mac install --disk disk4`.
+```sh
+chmod +x HelixBoot-mac-arm64
+xattr -d com.apple.quarantine HelixBoot-mac-arm64   # it isn't signed by Apple, so macOS would refuse it
+./HelixBoot-mac-arm64                               # update the stick that's plugged in: it asks first
+```
+
+`check` reads the stick back for damage and `look` changes its theme, as
+`check.sh` and `theme.sh` do. On an Intel Mac, or from a clone of this repo,
+run the same thing as `python3 mac/helix-mac` (Python 3.11 or newer).
+
+Creating a stick on a Mac is **experimental**: `./HelixBoot-mac-arm64 install --disk disk4`.
 Ventoy has no installer for macOS, so this writes Ventoy's layout onto the disk
 itself, as Ventoy's own installer does on Linux. CI makes a stick this way on a
 Mac and boots it in a virtual PC, but it hasn't been tried on many real sticks.
@@ -456,6 +466,7 @@ and splash, saving a look, and how the default theme is put together.
 | Lazarus PE | PhoenixPE preset and build VM, the Lazarus launcher, PortableApps.com with Helix themes | 0.1 – 0.5.1 |
 | Mac | 32 tools for a working Mac, each opened and checked on a real Mac in CI | 0.6.1 – 0.6.12 |
 | | Updating a stick from a Mac; creating one (experimental) | 0.6.14 |
+| | One-file download for Apple Silicon Macs | next |
 | Trust | CI: tests, a boot test of every theme, a weekly live download and verify of every tool | 0.1 – 0.6.4 |
 | | Checksums and build attestations on every release | 0.6.6 |
 | | Hardening: the confirmed disk is the one written, plain file trees only, pinned download sites | 0.6.11 – 0.6.13 |

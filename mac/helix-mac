@@ -6,6 +6,7 @@
     mac/helix-mac check            read the stick back: any damaged or missing files?
     mac/helix-mac look --theme midnight      change its look (the options of `helix theme`)
     mac/helix-mac list             the Helix Boot / Ventoy sticks it can see
+    mac/helix-mac helix …          the engine itself: helix list, check, fetch, pack …
     mac/helix-mac install --disk disk4       EXPERIMENTAL: erase a USB disk and make a new stick
 
 Ventoy has no installer for macOS, so `install` writes Ventoy's layout onto the disk itself, the
@@ -14,7 +15,8 @@ tried on many real sticks: if it doesn't boot, make the stick once on a PC (inst
 HelixBoot.exe) and keep it current from here. Nothing here boots a Mac; the stick's Mac folder
 holds tools to copy onto one. Needs Python 3.11 or newer (python.org, or `brew install python`).
 
-Your local.toml and byo/ folder are the ones beside the `helix` script, as on Linux.
+Your local.toml and byo/ folder are the ones beside the `helix` script, as on Linux; with the
+one-file download (HelixBoot-mac), the ones beside that file.
 """
 import argparse
 import importlib.machinery
@@ -32,7 +34,39 @@ if sys.version_info < (3, 11):
     sys.exit(f"Helix Boot needs Python 3.11 or newer, and this is {sys.version.split()[0]}. "
              "Get one from python.org or with `brew install python`, then run:  python3 mac/helix-mac")
 
-ROOT = Path(__file__).resolve().parents[1]
+# The engine is loaded from a file, so a one-file build (PyInstaller) can't see what it imports:
+# named here for it, as the Windows app does.
+import datetime  # noqa: E402,F401
+import email.utils  # noqa: E402,F401
+import fnmatch  # noqa: E402,F401
+import hashlib  # noqa: E402,F401
+import html  # noqa: E402,F401
+import http.client  # noqa: E402,F401
+import json  # noqa: E402,F401
+import lzma  # noqa: E402,F401
+import mmap  # noqa: E402,F401
+import shutil  # noqa: E402,F401
+import struct  # noqa: E402,F401
+import tarfile  # noqa: E402,F401
+import tomllib  # noqa: E402,F401
+import urllib.error  # noqa: E402,F401
+import urllib.parse  # noqa: E402,F401
+import urllib.request  # noqa: E402,F401
+import xml.etree.ElementTree  # noqa: E402,F401
+import zipfile  # noqa: E402,F401
+import zlib  # noqa: E402,F401
+
+try:                    # optional: previews, your own pictures, the splash's loading bar
+    import PIL.Image  # noqa: E402,F401
+    import PIL.ImageDraw  # noqa: E402,F401
+    import PIL.ImageFilter  # noqa: E402,F401
+    import PIL.ImageFont  # noqa: E402,F401
+    import PIL.ImageOps  # noqa: E402,F401
+except ImportError:
+    pass
+
+FROZEN = getattr(sys, "frozen", False)              # the one-file build
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))     # the shipped files: helix, tools.toml, theme/
 EFI_LABEL = "VTOYEFI"            # Ventoy's own small partition: what makes a disk a Ventoy stick
 EFI_SIZE = 65536 * 512           # … always 32 MiB
 
@@ -53,6 +87,21 @@ def load_helix():
 
 
 cr = load_helix()
+
+
+def user_dir() -> Path:
+    """Your files: local.toml and byo/, beside the program (or the repo, run from source)."""
+    return Path(sys.executable).resolve().parent if FROZEN else ROOT
+
+
+def config():
+    mine = user_dir()
+    if FROZEN:
+        try:
+            (mine / "byo").mkdir(exist_ok=True)
+        except OSError:
+            pass
+    return cr.Config(repo=mine, assets=ROOT)
 
 
 def diskutil(*args: str) -> dict:
@@ -185,7 +234,7 @@ def boot_script(cfg, stick: dict, mnt: Path, run=diskutil, root=sudo) -> None:
 
 
 def update(a, run=diskutil, ask=input) -> int:
-    cfg = cr.Config(repo=ROOT)
+    cfg = config()
     stick = pick(a.disk, run)
     mnt = mount(stick["data"], run)
     cr.ok(f"Stick: {stick['disk']} ({stick['name']}, {human(stick['size'])}) at {mnt}")
@@ -271,7 +320,7 @@ def install(a, run=diskutil, ask=input, root=sudo) -> int:
     """Erase a USB disk and make it a Helix Boot stick: Ventoy's layout written directly (see
     ventoy_layout in the engine), the data partition formatted by macOS, then filled as an
     update fills it."""
-    cfg = cr.Config(repo=ROOT)
+    cfg = config()
     disk = (a.disk or "").removeprefix("/dev/")
     target = erasable(disk, run, a.allow_disk_image)
     # Everything is fetched and checked before the disk is touched
@@ -345,6 +394,12 @@ def install(a, run=diskutil, ask=input, root=sudo) -> int:
     return 0
 
 
+def engine(argv: list[str]) -> int:
+    """Run the engine's own command line, with your folder as it is here."""
+    os.environ["HELIX_USER_DIR"] = str(user_dir())
+    return cr.main(argv)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="helix-mac", description=__doc__.split("\n\n")[0],
                                  epilog="`helix-mac look` takes the options of `helix theme`: --theme, --icons, "
@@ -374,6 +429,7 @@ def main(argv: list[str] | None = None) -> int:
     stick_arg(p)
     p = sub.add_parser("look", help="show or change the stick's look", add_help=False)
     p = sub.add_parser("list", help="the Helix Boot / Ventoy sticks plugged in")
+    p = sub.add_parser("helix", help="the engine itself: helix list, check, fetch, pack …", add_help=False)
     if argv is None:
         argv = sys.argv[1:]
     if not argv or argv[0].startswith("-") and argv[0] not in ("-h", "--help"):
@@ -384,7 +440,9 @@ def main(argv: list[str] | None = None) -> int:
             stick_arg(lp)
             mine, theme_args = lp.parse_known_args(argv[1:])
             mnt = mount(pick(mine.disk)["data"])
-            return cr.main(["theme", str(mnt), *theme_args])
+            return engine(["theme", str(mnt), *theme_args])
+        if argv[0] == "helix":                       # the engine itself: helix-mac helix fetch ventoy …
+            return engine(argv[1:])
         a = ap.parse_args(argv)
         if a.cmd == "list":
             found = sticks()
@@ -397,7 +455,7 @@ def main(argv: list[str] | None = None) -> int:
             return install(a)
         if a.cmd == "check":
             mnt = mount(pick(a.disk)["data"])
-            return cr.cmd_verify(cr.Config(repo=ROOT), ns(target=str(mnt), json=False))
+            return cr.cmd_verify(config(), ns(target=str(mnt), json=False))
         return update(a)
     except cr.RescueError as e:
         cr.bad(str(e))

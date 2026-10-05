@@ -7,6 +7,10 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- **A one-file download for Mac:** `HelixBoot-mac-arm64` in each release is
+  `helix-mac` with Python and the engine inside, for Apple Silicon. It isn't
+  signed by Apple, so macOS needs telling to let it run (the README says
+  how). `helix-mac helix …` reaches the engine's own commands.
 - **`Tools.txt` at the top of the stick:** every tool on it and its version,
   by where it is in the boot menu, and the tools another PC put there.
 - The Windows app's progress bar says how much has been copied and of how
