@@ -466,7 +466,7 @@ and splash, saving a look, and how the default theme is put together.
 | Lazarus PE | PhoenixPE preset and build VM, the Lazarus launcher, PortableApps.com with Helix themes | 0.1 – 0.5.1 |
 | Mac | 32 tools for a working Mac, each opened and checked on a real Mac in CI | 0.6.1 – 0.6.12 |
 | | Updating a stick from a Mac; creating one (experimental) | 0.6.14 |
-| | One-file download for Apple Silicon Macs | next |
+| | One-file download for Apple Silicon Macs | 0.7.0 |
 | Trust | CI: tests, a boot test of every theme, a weekly live download and verify of every tool | 0.1 – 0.6.4 |
 | | Checksums and build attestations on every release | 0.6.6 |
 | | Hardening: the confirmed disk is the one written, plain file trees only, pinned download sites | 0.6.11 – 0.6.13 |
