@@ -120,6 +120,71 @@ class RescueError(Exception):
     """An error with a message meant for humans. No tracebacks."""
 
 
+class Unreachable(RescueError):
+    """A site that didn't answer after the retries (a 5xx, a timeout, no connection): an outage
+    there, not a change in what it publishes."""
+
+
+# What a damaged filesystem or a failing disk answers with: EIO, EROFS (Linux remounts a damaged
+# filesystem read-only), EUCLEAN; and on Windows CRC, I/O device, file and disk structure corrupt.
+DISK_ERRNOS, DISK_WINERRORS = {5, 30, 117}, {23, 1117, 1392, 1393}
+
+
+def _volume_of(path: Path) -> Path:
+    """The mount point (or drive) a path is on."""
+    p = Path(os.path.abspath(path))
+    if os.name == "nt":
+        return Path(p.anchor or p)
+    while not os.path.ismount(p) and p != p.parent:
+        p = p.parent
+    return p
+
+
+def repair_hint(volume: Path, system: str | None = None) -> str:
+    """How to repair the filesystem on a volume, on this system."""
+    system = system or ("windows" if os.name == "nt" else "mac" if sys.platform == "darwin" else "linux")
+    if system == "windows":
+        return f"open a Command Prompt as administrator and run:  chkdsk {str(volume).rstrip(chr(92))} /f"
+    if system == "mac":
+        return f"run:  diskutil repairVolume \"{volume}\"  (or Disk Utility, First Aid)"
+    dev = "/dev/sdX1"
+    try:
+        src = subprocess.run(["findmnt", "-no", "SOURCE", "--target", str(volume)],
+                             capture_output=True, text=True, timeout=10).stdout.strip()
+        dev = src if src.startswith("/dev/") else dev
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return f"run:  sudo umount {dev} && sudo fsck -y {dev}  then unplug the stick and plug it in again"
+
+
+def disk_trouble(e: BaseException, where: Path | str | None = None) -> str | None:
+    """If an error is the disk's or its filesystem's doing, say so and how to repair it; else None."""
+    if not isinstance(e, OSError) or not (e.errno in DISK_ERRNOS or getattr(e, "winerror", None) in DISK_WINERRORS):
+        return None
+    path = e.filename if isinstance(e.filename, (str, Path)) else where
+    if path is None:
+        return f"A disk answered with an error ({e.strerror or e}). If it was the stick, repair its filesystem and try again."
+    volume = _volume_of(Path(path))
+    return (f"{volume} answered with a disk error ({e.strerror or e}) at {path}.\n"
+            f"  Its filesystem is damaged, which an update can't fix. To repair it, {repair_hint(volume)}\n"
+            "  Then update again, and check the stick: if errors come back, the stick is failing.")
+
+
+def _stick_errors(fn):
+    """A command that reads or writes a stick: a disk error becomes a RescueError saying what to do."""
+    def run(*a, **kw):
+        try:
+            return fn(*a, **kw)
+        except OSError as e:
+            where = next((x for x in a if isinstance(x, Path)), None) or getattr(a[-1] if a else None, "target", None)
+            msg = disk_trouble(e, where)
+            if msg is None:
+                raise
+            raise RescueError(msg) from None
+    run.__name__, run.__doc__ = fn.__name__, fn.__doc__
+    return run
+
+
 # ── Config ────────────────────────────────────────────────────────────────
 class Config:
     def __init__(self, repo: Path = REPO, manifest: Path | None = None, assets: Path | None = None,
@@ -312,7 +377,7 @@ def http_get(url: str, headers: dict | None = None, timeout: int = 60) -> bytes:
     try:
         return _http_get_once(url, headers, timeout)
     except _Transient as e:
-        raise RescueError(str(e)) from None
+        raise Unreachable(str(e)) from None
 
 
 class _Transient(Exception):
@@ -454,7 +519,7 @@ def _download_once(url: str, dest: Path) -> None:
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             err = str(getattr(e, "reason", e))
         if delay is None:
-            raise RescueError(f"download failed after {attempt + 1} tries: {err}")
+            raise Unreachable(f"download failed after {attempt + 1} tries: {err}")
         warn(f"{err} — retrying in {delay}s")
         time.sleep(delay)
 
@@ -894,6 +959,8 @@ def _top_dir(name: str) -> str | None:
 
 
 SAFE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")   # tool names, so also the apps on a stick
+SYSTEM_DIRS = {"system volume information", "$recycle.bin", "lost+found",
+               ".spotlight-v100", ".fseventsd", ".trashes", ".temporaryitems", ".documentrevisions-v100"}
 
 
 def _safe_rel(rel: str, what: str = "path") -> str:
@@ -901,6 +968,7 @@ def _safe_rel(rel: str, what: str = "path") -> str:
     no root, no drive (C:, also on Linux), no '..', no ':' (NTFS streams)."""
     parts = re.split(r"[\\/]", rel) if isinstance(rel, str) else None
     if (not parts or not rel or rel[0] in "/\\" or ":" in rel or ".." in parts
+            or any(p.rstrip(" .").lower() in SYSTEM_DIRS or p.rstrip(" ") == ".." for p in parts)
             or PureWindowsPath(rel).anchor or Path(rel).is_absolute()):
         raise RescueError(f"refusing unsafe {what}: {rel!r}")
     return rel
@@ -909,8 +977,11 @@ def _safe_rel(rel: str, what: str = "path") -> str:
 def _inside(root: Path, rel: str, what: str = "path") -> Path:
     """root / rel for a rel read from a pack or a stick, refused unless it stays inside root."""
     dst = root / _safe_rel(rel, what)
-    if not dst.resolve().is_relative_to(root.resolve()):
+    resolved, base = dst.resolve(), root.resolve()
+    if not resolved.is_relative_to(base):
         raise RescueError(f"refusing {what} outside {root}: {rel!r}")
+    # Windows short names can hide a reserved system folder in the input spelling.
+    _safe_rel(resolved.relative_to(base).as_posix(), what)
     return dst
 
 
@@ -936,24 +1007,23 @@ def _reject_links(root: Path) -> None:
     try:
         check(root)
     except OSError as e:
-        raise RescueError(f"can't read {root}: {e}") from None
+        raise RescueError(disk_trouble(e, root) or f"can't read {root}: {e}") from None
     # Folders the system keeps at the top of a volume, which only it may read (on an NTFS or ext4
     # stick). Nothing here is ever written under them, so a link in one can redirect nothing.
-    system = {"system volume information", "$recycle.bin", "lost+found",
-              ".spotlight-v100", ".fseventsd", ".trashes", ".temporaryitems", ".documentrevisions-v100"}   # macOS's
+    # _safe_rel reserves these names, so imported paths cannot write into skipped subtrees.
 
     def failed(error):
-        raise RescueError(f"can't check the target for links: {error}") from None
+        raise RescueError(disk_trouble(error, root) or f"can't check the target for links: {error}") from None
     for folder, dirs, files in os.walk(root, followlinks=False, onerror=failed):
         if Path(folder) == root:
-            for name in [d for d in dirs if d.lower() in system]:
+            for name in [d for d in dirs if d.lower() in SYSTEM_DIRS]:
                 check(root / name)              # itself not a link …
                 dirs.remove(name)               # … and not gone into
         for name in dirs + files:
             try:
                 check(Path(folder) / name)
             except OSError as e:
-                raise RescueError(f"can't check {Path(folder) / name} for links: {e}") from None
+                raise RescueError(disk_trouble(e, root) or f"can't check {Path(folder) / name} for links: {e}") from None
 
 
 def _temporary_output(dst: Path):
@@ -963,11 +1033,25 @@ def _temporary_output(dst: Path):
                                        dir=dst.parent, delete=False)
 
 
+def _in_cache(cfg: Config, name: str, prev: dict | None) -> bool:
+    """Whether the tool the lock describes is still in the cache."""
+    # final "." is what older versions recorded for Ventoy's ./-prefixed tarball: not really cached
+    return bool(prev and prev.get("final") not in (None, "", ".") and (cfg.cache / name / prev["final"]).exists())
+
+
 def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
     """Fetch one tool. Returns 'new', 'current' or 'skipped'."""
     name = tool["name"]
-    res = resolve(tool, cfg)
     prev = lock.get(name)
+    try:
+        res = resolve(tool, cfg)
+    except Unreachable as e:
+        # Its site is down. The copy fetched and verified earlier is as good as it was then.
+        if force or tool["source"] == "local" or not _in_cache(cfg, name, prev):
+            raise
+        warn(f"{tool['title']}: {e}. Keeping the copy fetched {str(prev.get('fetched', 'earlier'))[:10]} "
+             f"({prev['version']}).")
+        return "current"
 
     if tool["source"] == "local":
         p: Path = res["path"]
@@ -989,8 +1073,7 @@ def fetch_tool(cfg: Config, tool: dict, lock: dict, force: bool = False) -> str:
         return "new"
 
     tdir = cfg.cache / name
-    # final "." is what older versions recorded for Ventoy's ./-prefixed tarball: not really cached
-    cached = bool(prev and prev.get("final") not in (None, "", ".") and (tdir / prev["final"]).exists())
+    cached = _in_cache(cfg, name, prev)
     if not force and cached and is_current(prev, res):
         ok(f"{tool['title']} {prev['version']} — up to date")
         return "current"
@@ -1126,10 +1209,11 @@ def cmd_check(cfg: Config, args) -> int:
         try:
             res = resolve(t, cfg)
         except RescueError as e:
-            errors += 1
-            out[t["name"]] = {"error": str(e)}
+            outage = isinstance(e, Unreachable)
+            errors += not (outage and getattr(args, "outage_ok", False))
+            out[t["name"]] = {"error": str(e), "outage": outage}
             if not args.json:
-                bad(f"{t['title']}: {e}")
+                (warn if outage and getattr(args, "outage_ok", False) else bad)(f"{t['title']}: {e}")
             continue
         prev = lock.get(t["name"])
         have = prev.get("version") if prev else None
@@ -1206,10 +1290,17 @@ def cmd_fetch(cfg: Config, args) -> int:
     lock = load_lock(cfg)
     tools = cfg.enabled(args.tools)
     head(f"Fetching {len(tools)} tool(s) into {cfg.cache}")
-    failed = []
+    failed, down = [], []
     for t in tools:
         try:
             fetch_tool(cfg, t, lock, force=args.force)
+        except Unreachable as e:
+            if not getattr(args, "outage_ok", False):
+                bad(str(e))
+                failed.append(t["name"])
+            else:
+                warn(f"{t['title']}: {e}. Not fetched: its site is down.")
+                down.append(t["name"])
         except RescueError as e:
             bad(str(e))
             failed.append(t["name"])
@@ -1218,7 +1309,8 @@ def cmd_fetch(cfg: Config, args) -> int:
     if failed:
         bad(f"{len(failed)} failed: {', '.join(failed)}")
         return 1
-    ok("All fetched and verified.")
+    ok(f"All fetched and verified, but for {len(down)} whose site is down: {', '.join(down)}." if down
+       else "All fetched and verified.")
     return 0
 
 
@@ -1478,6 +1570,12 @@ def _app_root(cfg: Config, t: dict) -> str:
     """The stick folder an app goes in: Apps, or Mac for `platform = "mac"` (tools to run on a
     working Mac; they stay as downloaded, since an unpacked .app doesn't survive exFAT)."""
     return cfg.mac_root if t.get("platform") == "mac" else cfg.apps_root
+
+
+def _check_app_cache(entry: dict, src: Path) -> None:
+    """Do not turn changed cache bytes into newly trusted per-file hashes."""
+    if entry.get("sha256") and file_hash(src) != entry["sha256"]:
+        raise RescueError(f"{src.name}: cached app checksum changed; fetch it again before copying")
 
 
 STICK_README = """Helix Boot: update this stick, or change how its boot menu looks, from any PC
@@ -2190,7 +2288,14 @@ def _still_damaged(state: dict, mnt: Path, fixed_images: set[str], fixed_apps: s
     images, apps = _damaged(state)
     left = {"images": sorted(r for r in images - fixed_images if (mnt / r).is_file()),
             "apps": sorted(a for a in apps - fixed_apps if a in app_state)}
-    return {"damaged": left} if left["images"] or left["apps"] else {}
+    seen = _damage_seen(state)                      # kept through every update: the stick's history
+    return {**({"damaged": left} if left["images"] or left["apps"] else {}), **({"damage_seen": seen} if seen else {})}
+
+
+def _damage_seen(state: dict) -> list[str]:
+    """The days a check found files changed on the stick, each after the last lot was repaired."""
+    seen = state.get("damage_seen")
+    return [d for d in seen if isinstance(d, str)][-10:] if isinstance(seen, list) else []
 
 
 def _finish(mnt: Path, state_dir: Path, files: set[str], app_state: dict, vjson: Path, extra: dict) -> None:
@@ -2206,6 +2311,7 @@ def _finish(mnt: Path, state_dir: Path, files: set[str], app_state: dict, vjson:
     _flush_volume(mnt)
 
 
+@_stick_errors
 def cmd_sync(cfg: Config, args) -> int:
     global _PLAN
     if args.dry_run and _PLAN is None:
@@ -2283,6 +2389,7 @@ def cmd_sync(cfg: Config, args) -> int:
     app_root = mnt / cfg.apps_root
     hashes = _load_hashes(mnt)
     for t, entry, src in apps:
+        _check_app_cache(entry, src)
         root = mnt / _app_root(cfg, t)
         dst = root / t["name"]
         unzip = zipfile.is_zipfile(src) and t.get("platform") != "mac"
@@ -2403,6 +2510,11 @@ BUNDLED = ["helix", "tools.toml", "install.sh", "refresh.sh", "theme.sh", "check
 BUNDLED_MARK = "installer/.bundled"   # tells install.sh / refresh.sh to look for the pack beside them
 APP_REPO = "Commanderx-code/helix-boot"   # where HelixBoot.exe is released
 APP_EXE = "HelixBoot.exe"
+
+
+def _numbers(version: str | None) -> tuple[int, ...]:
+    """'v0.7.0' as (0, 7, 0), to tell older from newer."""
+    return tuple(int(n) for n in re.findall(r"\d+", version or "")[:4])
 BUNDLED_README = """Helix Boot pack
 ===============
 
@@ -2448,7 +2560,7 @@ def cmd_pack(cfg: Config, args) -> int:
         warn(f"{m}: not fetched yet — run `helix fetch` (leaving it out of the pack)")
     if not placed:
         raise RescueError("nothing to pack yet — run `helix fetch` first")
-    out = Path(args.output or f"helix-boot-{dt.date.today().isoformat()}.zip").expanduser().resolve()
+    out = Path(args.output or f"helix-boot-{__version__}-{dt.date.today().isoformat()}.zip").expanduser().resolve()
     if out.suffix.lower() != ".zip":
         raise RescueError(f"{out.name}: a pack must end in .zip")
 
@@ -2473,6 +2585,14 @@ def cmd_pack(cfg: Config, args) -> int:
     if not app_exe:
         warn(f"no released {APP_EXE} to include; on Windows, download it from "
              f"https://github.com/{APP_REPO}/releases and put it beside the pack")
+    # A pack made between tagging a release and its build being published carries the last app.
+    old_app = None
+    if app_exe and _numbers(app_exe[1].get("version")) < _numbers(__version__):
+        old_app = (f"this pack carries {APP_EXE} {app_exe[1].get('version')}, older than this Helix Boot "
+                   f"({__version__}): that release isn't published yet. Make the pack again once it is.")
+        if getattr(args, "need_app", False):
+            raise RescueError(old_app)
+        warn(old_app)
 
     size = sum(p["src"].stat().st_size for p in placed) + sum(s.stat().st_size for _, _, s in apps)
     size += sum(x[0].stat().st_size for x in (win_ventoy, app_exe) if x) + (vsrc.stat().st_size if vsrc else 0)
@@ -2497,6 +2617,7 @@ def cmd_pack(cfg: Config, args) -> int:
                              "version": p["version"], "sha256": sha,
                              "size": p["src"].stat().st_size})
             for t, entry, src in apps:
+                _check_app_cache(entry, src)
                 base = f"stick/{_app_root(cfg, t)}/{t['name']}"
                 if zipfile.is_zipfile(src) and t.get("platform") != "mac":  # unpacked now, exactly as `sync` would
                     with zipfile.ZipFile(src) as zs:
@@ -2561,6 +2682,8 @@ def cmd_pack(cfg: Config, args) -> int:
     info(f"On another PC it needs nothing else: unzip {out.name} 'installer/*', then installer/install.sh")
     if app_exe:
         info(f"On Windows: put installer\\{APP_EXE} beside the pack and run it.")
+    if old_app:
+        warn(old_app)
     return 0
 
 
@@ -2646,6 +2769,7 @@ def _unzip_to(zf: zipfile.ZipFile, member: str, dst: Path, progress: Progress | 
     return h.hexdigest()
 
 
+@_stick_errors
 def cmd_unpack(cfg: Config, args) -> int:
     global _PLAN
     if args.dry_run and _PLAN is None:
@@ -2871,6 +2995,7 @@ def ventoy_layout(vdir: Path, sectors: int, data_type: int = 0x07) -> dict:
 # Cheap sticks go bad quietly. `verify` reads back everything this project put on a stick and
 # compares it with what was put there: the boot images with the sha256s in state.json, the apps
 # with hashes.json. It needs no cache or internet, so any PC can check any Helix Boot stick.
+@_stick_errors
 def check_stick(mnt: Path, hook=None) -> dict:
     """Read every boot image and app file back; return what's damaged, missing or unchecked.
     Damaged images and apps are noted on the stick, so the next update copies them again."""
@@ -2917,6 +3042,13 @@ def check_stick(mnt: Path, hook=None) -> dict:
     # Noted for the next update. A missing file is noticed by any update anyway.
     bad = {"images": sorted(found["damaged"] + [m for m in found["missing"] if m in images]),
            "apps": sorted(set(found["changed"]) | {a for m in found["missing"] for a in [_app_of(m, apps)] if a})}
+    # Bytes that changed on the stick, found anew (not the same lot found twice), go in its history:
+    # once can be a bad write or an unplugged stick, again after a repair is a stick wearing out.
+    seen = _damage_seen(state)
+    if (found["damaged"] or found["changed"]) and "damaged" not in state:
+        seen = (seen + [dt.date.today().isoformat()])[-10:]
+        state["damage_seen"] = seen
+    found["seen"] = seen
     if bad["images"] or bad["apps"] or "damaged" in state:
         state.pop("damaged", None)
         if bad["images"] or bad["apps"]:
@@ -2924,6 +3056,10 @@ def check_stick(mnt: Path, hook=None) -> dict:
         (state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
         _flush_volume(mnt)
     return found
+
+
+def _nth(n: int) -> str:
+    return {2: "second", 3: "third", 4: "fourth", 5: "fifth"}.get(n, f"{n}th")
 
 
 def _app_of(path: str, apps: dict) -> str | None:
@@ -2946,8 +3082,13 @@ def check_text(found: dict) -> str:
                      f"({', '.join(Path(f).name for f in files[:3])}{', …' if len(files) > 3 else ''}).")
     if found["menu"]:
         lines.append(f"✗ {found['menu']}")
+    seen = found.get("seen") or []
     if found["damaged"] or found["missing"] or found["changed"]:
-        lines.append("  The next update copies those again. If this keeps happening, replace the stick.")
+        lines.append("  The next update copies those again." +
+                     ("" if len(seen) > 1 else " If this keeps happening, replace the stick."))
+    if len(seen) > 1 and (found["damaged"] or found["changed"]):
+        lines.append(f"✗ This is the {_nth(len(seen))} time files on this stick have gone bad after being "
+                     f"repaired (before: {', '.join(seen[:-1])}). The stick is wearing out: replace it.")
     if not lines:
         lines.append(f"✓ Everything checks out: {found['images']} boot image(s) and {found['apps']} app(s), "
                      f"{found['checked']} file(s) read back.")
@@ -3228,6 +3369,7 @@ def _theme_id(themes: dict[str, dict], wanted: str) -> str:
 def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = True) -> dict:
     """Build the theme folder for a look into `new` (emptied first), from the theme on the stick;
     return the boot menu (ventoy.json) that goes with it."""
+    _reject_links(mnt)
     src = mnt / THEME_SRC
     doc = json.loads((mnt / BASE_JSON).read_text(encoding="utf-8"))
     themes, packs = _look_choices(mnt)
@@ -3254,7 +3396,7 @@ def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = Tr
             if layer:
                 lay(layer, new, skip=apart)
         if look["background"] == "custom" and (mnt / LOOK_DIR / "background.png").is_file():
-            shutil.copy2(mnt / LOOK_DIR / "background.png", new / _desktop_image(new))
+            shutil.copy2(mnt / LOOK_DIR / "background.png", _inside(new, _desktop_image(new), "theme background"))
         text = (new / "theme.txt").read_text(encoding="utf-8")
         if (mnt / KEYS_HOOK).is_file() and "key_lang.png" in text and (new / "key_power.png").is_file():
             text = text.replace("key_lang.png", "key_power.png").replace("key_help.png", "key_mem.png")
@@ -3309,8 +3451,11 @@ def _build_look(cfg: Config, mnt: Path, look: dict, new: Path, frames: bool = Tr
 
 def _desktop_image(theme: Path) -> str:
     """The background's file name in a theme folder, from its theme.txt."""
-    name = re.search(r'^desktop-image:\s*"([^"/\\]+)"', (theme / "theme.txt").read_text(encoding="utf-8"), re.M)
-    return name.group(1) if name else "background.png"
+    match = re.search(r'^\s*desktop-image:\s*"([^"\n]*)"', (theme / "theme.txt").read_text(encoding="utf-8"), re.M)
+    name = _safe_rel(match.group(1) if match else "background.png", "theme background")
+    if name in (".", "..") or "/" in name or "\\" in name:
+        raise RescueError(f"refusing unsafe theme background: {name!r}")
+    return name
 
 
 # The hotkey row of the Helix themes shows an icon per key. Two of Ventoy's keys can do something
@@ -3550,6 +3695,7 @@ def export_look(mnt: Path, out: Path) -> Path:
     return out
 
 
+@_stick_errors
 def import_look(cfg: Config, mnt: Path, saved: Path) -> list[str]:
     """Put a saved look on the stick; return notes on what couldn't be used (a theme this stick lacks)."""
     if not (mnt / BASE_JSON).is_file():
@@ -3658,9 +3804,12 @@ def look_preview(cfg: Config, mnt: Path, look: dict, out: Path, pictures: dict[s
                 return round(float(m.group(1) or 0) * full / 100) + int(m.group(2) or 0) if m else 0
 
             def box(pattern: str, x: int, y: int, w: int, h: int) -> None:   # GRUB's nine-slice boxes
+                if not pattern:
+                    return
+                _safe_rel(pattern, "theme pixmap")
                 prefix = pattern.split("*")[0]
                 parts = {part: Image.open(f).convert("RGBA") for part in ("nw", "n", "ne", "w", "c", "e", "sw", "s", "se")
-                         if (f := work / f"{prefix}{part}.png").is_file()}
+                         if (f := _inside(work, f"{prefix}{part}.png", "theme pixmap")).is_file()}
                 if not prefix or "c" not in parts or w <= 0 or h <= 0:
                     return
                 (left, top) = parts["nw"].size if "nw" in parts else (0, 0)
@@ -3675,7 +3824,7 @@ def look_preview(cfg: Config, mnt: Path, look: dict, out: Path, pictures: dict[s
             menu = re.search(r"\+ boot_menu \{(.*?)\}", text, re.S)
             props = settings(menu.group(1) if menu else "")
             picture = (pictures or {}).get("background")
-            with Image.open(picture or work / _desktop_image(work)) as im:
+            with Image.open(picture or _inside(work, _desktop_image(work), "theme background")) as im:
                 img = ImageOps.fit(im.convert("RGB"), (W, H), method=Image.Resampling.LANCZOS)
             if picture and dim:
                 img = Image.blend(img, Image.new("RGB", img.size, (0, 0, 0)), dim / 100)
@@ -3694,7 +3843,7 @@ def look_preview(cfg: Config, mnt: Path, look: dict, out: Path, pictures: dict[s
                 ry = y + edge + i * step
                 box(props.get("selected_item_pixmap_style" if i == 0 else "item_pixmap_style", ""),
                     x + edge, ry, w - 2 * edge - (16 if props.get("scrollbar") == "true" else 0), row_h)
-                f = work / "icons" / f"{classes.get(a.get('dir'), '')}.png"
+                f = _inside(work / "icons", f"{classes.get(a.get('dir'), '')}.png", "theme icon")
                 if icon and f.is_file():
                     with Image.open(f) as im:
                         img.alpha_composite(im.convert("RGBA").resize((icon, icon), Image.Resampling.LANCZOS),
@@ -3705,8 +3854,8 @@ def look_preview(cfg: Config, mnt: Path, look: dict, out: Path, pictures: dict[s
                        fill=props.get("selected_item_color" if i == 0 else "item_color", "#ffffff"), anchor="lm")
             for block in re.findall(r"\+ image\s*\{(.*?)\}", text, re.S):          # e.g. Standby's power symbol
                 at = settings(block)
-                if (work / at.get("file", "")).is_file() and at.get("file"):
-                    with Image.open(work / at["file"]) as im:
+                if at.get("file") and (f := _inside(work, at["file"], "theme image")).is_file():
+                    with Image.open(f) as im:
                         img.alpha_composite(im.convert("RGBA"), (px(at.get("left", "0"), W), px(at.get("top", "0"), H)))
             for block in text.split("+ hbox")[1:]:                                # Ventoy's hotkeys, the key hint
                 at = settings(block.split("\n}\n")[0])                           # (this box only, not what follows it)
@@ -3820,6 +3969,7 @@ def _look_menu(cfg: Config, mnt: Path) -> int:
             warn(str(e))
 
 
+@_stick_errors
 def cmd_theme(cfg: Config, args) -> int:
     """Show or change a stick's look: a preset theme (or none), an icon pack (or none), your own
     background and splash. The choice is kept on the stick, so a refresh doesn't undo it."""
@@ -3945,11 +4095,15 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("check", help="compare cached versions with upstream (no downloads)")
     p.add_argument("tools", nargs="*")
     p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.add_argument("--outage-ok", action="store_true",
+                   help="a site that is down (5xx, no answer) is a warning, not a failure")
     p.set_defaults(fn=cmd_check)
 
     p = sub.add_parser("fetch", help="download and verify the latest releases")
     p.add_argument("tools", nargs="*", help="only these tools (default: all enabled)")
     p.add_argument("--force", action="store_true", help="re-download even if up to date")
+    p.add_argument("--outage-ok", action="store_true",
+                   help="a site that is down (5xx, no answer) is a warning, not a failure")
     p.set_defaults(fn=cmd_fetch)
 
     p = sub.add_parser("sync", help="copy the cache onto a mounted Ventoy stick")
@@ -3963,7 +4117,9 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_sync)
 
     p = sub.add_parser("pack", help="put the whole stick (and Ventoy) into one .zip for offline use")
-    p.add_argument("output", nargs="?", help="where to write it (default: helix-boot-<date>.zip here)")
+    p.add_argument("output", nargs="?", help="where to write it (default: helix-boot-<version>-<date>.zip here)")
+    p.add_argument("--need-app", action="store_true",
+                   help=f"fail, and write nothing, if the released {APP_EXE} is older than this Helix Boot")
     p.set_defaults(fn=cmd_pack)
 
     p = sub.add_parser("unpack", help="fill a mounted Ventoy stick from a pack")
@@ -4023,6 +4179,12 @@ def main(argv: list[str] | None = None) -> int:
         return args.fn(Config(repo=Path(mine).expanduser().resolve(), assets=REPO) if mine else Config(), args)
     except RescueError as e:
         bad(str(e))
+        return 1
+    except OSError as e:
+        msg = disk_trouble(e)
+        if msg is None:
+            raise
+        bad(msg)
         return 1
     except KeyboardInterrupt:
         print()

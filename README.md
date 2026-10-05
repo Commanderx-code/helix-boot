@@ -263,15 +263,15 @@ bring-your-own tools and the Ventoy installer, and a new stick needs no internet
 
 ```fish
 ./helix fetch                                 # bring everything up to date
-./helix pack                                  # → helix-boot-<date>.zip
-./install.sh --from helix-boot-<date>.zip # new stick
-./refresh.sh --from helix-boot-<date>.zip # update a stick
+./helix pack                                  # → helix-boot-<version>-<date>.zip
+./install.sh --from helix-boot-<version>-<date>.zip # new stick
+./refresh.sh --from helix-boot-<version>-<date>.zip # update a stick
 ```
 
 The pack carries its own installer, so on another Linux PC the zip is all you need:
 
 ```fish
-unzip helix-boot-<date>.zip 'installer/*'   # a few MB
+unzip helix-boot-<version>-<date>.zip 'installer/*'   # a few MB
 installer/install.sh                               # finds the zip beside it
 ```
 
@@ -315,7 +315,8 @@ to the disk.
    zip. **Load look…** puts it back, or onto another stick.
 4. **Check stick** reads the whole stick back and compares every boot image and
    app with what was put there, so it finds a stick that's going bad. It needs
-   no downloads. The next Update copies again whatever it finds damaged.
+   no downloads. The next Update copies again whatever it finds damaged. If
+   files go bad again after that, it tells you to replace the stick.
 
 Under the title the app says whether newer versions of your tools are out. It
 looks at most every 6 hours, because GitHub limits how often a PC that isn't
@@ -340,7 +341,7 @@ downloads the free tools fresh; your own paid tools come along only if their
 files are in the `byo` folder beside the `.exe`. *A pack* copies everything
 from a pack zip with no downloads, your own tools included, and a pack next to
 the `.exe` is chosen for you. From the command line, add
-`--pack helix-boot-<date>.zip` to `--install` or `--update`; `--look E:\`
+`--pack helix-boot-<version>-<date>.zip` to `--install` or `--update`; `--look E:\`
 opens the Look window, or changes the look with `--theme`, `--icons` and so on
 (`--export-look` / `--import-look` save and load one). `--check E:\` checks a
 stick, and `--updates` lists the tools with newer versions.

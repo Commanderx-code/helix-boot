@@ -2,6 +2,7 @@
 
 Run with:  python3 -m unittest discover -s tests -v
 """
+import datetime
 import functools
 import hashlib
 import http.server
@@ -1672,6 +1673,92 @@ class TestFetchAndSync(Base):
         self.assertEqual(list(self.stick.iterdir()), [])
 
 
+    def test_a_site_that_is_down_keeps_the_verified_copy(self):
+        feed = "/sf/systemrescuecd/rss/sysresccd-x86/feed.xml"
+        outage = type("A", (), {"tools": [], "force": False, "outage_ok": True})()
+        try:
+            Quiet.fail[feed] = 99
+            rc, out = self.fetch()                              # nothing cached: it can't be had
+            self.assertEqual(rc, 1, out)
+            self.assertIn("1 failed: systemrescue", out)
+            rc, out = self.run_quiet(cr.cmd_fetch, self.cfg, outage)
+            self.assertEqual(rc, 0, out)
+            self.assertIn("Not fetched: its site is down", out)
+            self.assertIn("but for 1 whose site is down: systemrescue", out)
+            rc, out = self.run_quiet(cr.cmd_check, self.cfg, type("A", (), {"tools": [], "json": False})())
+            self.assertEqual(rc, 1, out)
+            rc, out = self.run_quiet(cr.cmd_check, self.cfg,
+                                     type("A", (), {"tools": [], "json": True, "outage_ok": True})())
+            self.assertEqual(rc, 0, out)
+            self.assertTrue(json.JSONDecoder().raw_decode(out[out.index("{"):])[0]["systemrescue"]["outage"])
+
+            Quiet.fail.clear()
+            self.assertEqual(self.fetch()[0], 0)
+            Quiet.fail[feed] = 99
+            rc, out = self.fetch()                              # cached and verified: that copy stands
+            self.assertEqual(rc, 0, out)
+            self.assertIn("SystemRescue: HTTP 500", out)
+            self.assertIn("Keeping the copy fetched", out)
+            self.assertIn("All fetched and verified.", out)
+            self.assertEqual(self.sync()[0], 0)
+            self.assertEqual((self.stick / "ISO/2-Rescue/systemrescue-12.02-amd64.iso").read_bytes(), self.sr_new)
+            rc, out = self.fetch("systemrescue", force=True)    # asked for a new download: there is none
+            self.assertEqual(rc, 1, out)
+        finally:
+            Quiet.fail.clear()
+
+    def test_damage_that_comes_back_after_a_repair_means_a_new_stick(self):
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync(verify=False)[0], 0)
+        iso = self.stick / "ISO/2-Rescue/systemrescue-12.02-amd64.iso"
+        state = lambda: json.loads((self.stick / cr.STATE_DIR / "state.json").read_text())  # noqa: E731
+
+        iso.write_bytes(b"systemrescue 12.02 isX")
+        rc, out = self.verify()
+        self.assertIn("If this keeps happening, replace the stick.", out)
+        self.assertNotIn("wearing out", out)
+        self.verify()                                           # the same damage found again isn't a second time
+        self.assertEqual(len(state()["damage_seen"]), 1)
+
+        self.assertEqual(self.sync(init=False, verify=False)[0], 0)
+        self.assertEqual(len(state()["damage_seen"]), 1)        # an update repairs, and keeps the history
+        self.assertEqual(self.verify()[0], 0)
+
+        iso.write_bytes(b"systemrescue 12.02 isY")
+        rc, out = self.verify()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("This is the second time files on this stick have gone bad", out)
+        self.assertIn("The stick is wearing out: replace it.", out)
+        self.assertNotIn("If this keeps happening", out)
+        self.assertEqual(len(state()["damage_seen"]), 2)
+
+    def test_a_disk_error_says_how_to_repair_the_stick(self):
+        eio = OSError(5, "Input/output error", str(self.stick / "PortableApps/x"))
+        said = cr.disk_trouble(eio)
+        self.assertIn("answered with a disk error (Input/output error)", said)
+        self.assertIn("Its filesystem is damaged", said)
+        self.assertIsNone(cr.disk_trouble(FileNotFoundError(2, "No such file", "x")))
+        self.assertIsNone(cr.disk_trouble(cr.RescueError("x")))
+        self.assertIn("chkdsk E: /f", cr.repair_hint(Path("E:\\"), "windows"))
+        self.assertIn('diskutil repairVolume "/Volumes/HelixBoot"', cr.repair_hint(Path("/Volumes/HelixBoot"), "mac"))
+        self.assertIn("fsck -y /dev/", cr.repair_hint(self.stick, "linux"))
+        bad = OSError(22, "The disk structure is corrupted and unreadable")
+        bad.winerror = 1393
+        self.assertIn("If it was the stick", cr.disk_trouble(bad))
+
+        self.fetch()
+        with unittest.mock.patch.object(cr, "_open_stick", side_effect=eio):
+            for run in (self.sync, self.verify):
+                with self.assertRaisesRegex(cr.RescueError, "Its filesystem is damaged"):
+                    run()
+        with unittest.mock.patch.object(cr, "_open_stick", side_effect=PermissionError(13, "denied", "x")):
+            with self.assertRaises(PermissionError):            # anything else is as it was
+                self.sync()
+        with unittest.mock.patch.object(cr.os, "walk", side_effect=lambda *a, onerror, **k: onerror(eio)):
+            with self.assertRaisesRegex(cr.RescueError, "Its filesystem is damaged"):
+                cr._reject_links(self.stick)
+
+
 class TestPack(Base):
     def pack(self, out=None):
         out = out or self.tmp / "pack.zip"
@@ -2163,6 +2250,33 @@ class TestPack(Base):
         self.assertIn("can refresh a stick but not set up a new one", log)
         with self.assertRaisesRegex(cr.RescueError, "no Ventoy installer"):
             self.run_quiet(cr.cmd_ventoy_path, self.cfg, type("A", (), {"from_pack": str(pack)})())
+
+    def test_a_pack_made_before_the_release_is_out_says_its_app_is_old(self):
+        self.windows_ventoy_upstream()                          # the released app is 0.5.0
+        self.fetch()
+        pack, log = self.pack()
+        self.assertEqual(log.count(f"this pack carries {cr.APP_EXE} 0.5.0, older than this Helix Boot"), 2)
+        strict = self.tmp / "strict.zip"
+        with self.assertRaisesRegex(cr.RescueError, "that release isn't published yet"):
+            self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(strict), "need_app": True})())
+        self.assertFalse(strict.exists())
+
+        gh_release(cr.APP_REPO, f"v{cr.__version__}", {cr.APP_EXE: b"MZ this one"})
+        pack, log = self.pack(strict)
+        self.assertNotIn("older than this Helix Boot", log)
+
+    def test_a_pack_is_named_for_its_version_and_day(self):
+        self.fetch()
+        here = os.getcwd()
+        os.chdir(self.tmp)
+        try:
+            rc, log = self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": None})())
+        finally:
+            os.chdir(here)
+        self.assertEqual(rc, 0, log)
+        self.assertTrue((self.tmp / f"helix-boot-{cr.__version__}-{datetime.date.today().isoformat()}.zip").is_file())
+        self.assertEqual(cr._numbers("v0.6.14"), (0, 6, 14))
+        self.assertLess(cr._numbers("0.6.14"), cr._numbers("0.7.0"))
 
 
 def fake_iso(platforms: list[int], efi_file: bool = False) -> bytes:

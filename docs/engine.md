@@ -6,10 +6,10 @@ standard-library Python script:
 | Command | Does |
 |---|---|
 | `helix list` | every tool, its source, and whether it's enabled |
-| `helix check [--json]` | compares your cache against upstream, no downloads |
-| `helix fetch [tool…] [--force]` | downloads, verifies and caches (`~/.cache/helix-boot`); resumes interrupted downloads |
+| `helix check [--json] [--outage-ok]` | compares your cache against upstream, no downloads |
+| `helix fetch [tool…] [--force] [--outage-ok]` | downloads, verifies and caches (`~/.cache/helix-boot`); resumes interrupted downloads; when a tool's site is down, keeps the copy already verified |
 | `helix sync <mount> [--dry-run] [--verify] [--prune-unknown]` | copies the cache to a Ventoy stick, replaces old versions, writes the menu; `--dry-run` ends with what it would copy, remove and keep |
-| `helix pack [file.zip]` | the whole stick, your own tools and Ventoy in one zip |
+| `helix pack [file.zip] [--need-app]` | the whole stick, your own tools and Ventoy in one zip, named `helix-boot-<version>-<date>.zip` |
 | `helix unpack <pack.zip> <mount> [--dry-run] [--verify] [--prune-unknown]` | fills a Ventoy stick from a pack, no downloads |
 | `helix theme <mount> [--theme ID] [--icons ID] [--background PIC] [--splash PIC] [--menu] [--preview FILE]` | shows or changes a stick's look ([themes](look.md#the-boot-menus-look)); `--export ZIP` / `--import ZIP` save and load it |
 | `helix verify <mount> [--json]` | reads the stick back and finds damaged or missing files, no downloads ([checking a stick](#checking-a-stick)) |
@@ -49,8 +49,40 @@ A damaged image is noted on the stick, and the next update copies it again,
 even a quick one. An app file that differs is reported separately, because
 some tools save their settings in their own folder; it still counts as a
 finding (`helix verify` exits non-zero, and the app shows it as a problem),
-since a changed program file looks the same. If a fresh copy goes bad again,
-replace the stick.
+since a changed program file looks the same.
+
+The stick remembers the days a check found files gone bad. Once can be a bad
+write or a stick pulled out too soon. If it happens again after an update
+repaired it, the check says so and says to replace the stick.
+
+A stick whose filesystem is damaged is another matter: files can't be read at
+all (an "Input/output error"), and an update can't fix that. The engine, the
+Windows app and the Mac tool then stop and give the repair command for the
+system they run on (`fsck` on Linux, `chkdsk` on Windows, `diskutil
+repairVolume` on a Mac). Repair it, update, and check the stick.
+
+## When a tool's site is down
+
+A site that answers with a server error, or not at all, is tried four times. If
+it stays down, `helix fetch` keeps the copy of that tool it fetched and verified
+before, says so, and carries on; an update of your stick then uses that copy.
+Only a tool never fetched on this PC is reported as failed. `--outage-ok` turns
+that failure into a warning too, and `helix check --outage-ok` does the same
+for a site it can't ask. CI uses both on a push, where an outage elsewhere says
+nothing about the commit; its weekly run stays strict, so a site that is gone
+for good still shows.
+
+## Releasing
+
+`scripts/release.sh 0.7.1 "what is new"` does a release in the one order that
+works. It checks that `main` is clean, pushed and passes the tests, moves
+`CHANGELOG.md`'s Unreleased section under the new version, shows the release
+notes and asks, then commits, tags and pushes. It waits for the build on GitHub
+to publish the release, and only then fetches and makes the pack
+(`helix pack --need-app`), so the pack carries that release's `HelixBoot.exe`.
+A pack made too early would carry the one before; `helix pack` warns when that
+happens. `--no-pack` skips the pack and `scripts/release.sh --pack` makes only
+the pack.
 
 An update with `--verify` (`install.sh` always, `refresh.sh --verify`, and
 every Update from the Windows app) checks the apps' files as well as the boot
