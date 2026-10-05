@@ -1,2 +1,7 @@
 # The oldest Python the project runs on: `ruff check` then flags syntax that only newer ones accept.
 target-version = "py311"
+
+# The rules are named here, so a newer ruff can't change what counts as an error by changing
+# its defaults: syntax and import errors, statement mistakes, and what pyflakes finds.
+[lint]
+select = ["E4", "E7", "E9", "F"]
