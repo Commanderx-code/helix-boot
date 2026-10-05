@@ -125,9 +125,13 @@ jobs:
           if bad:  print(f"::error title=failed ({len(bad)})::{enc(bad)}")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write("\n".join(rows) + "\n")
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:      # for the issue the weekly run opens
-              f.write("failed<<END_OF_FAILED\n" + "\n".join(b[:300].replace("END_OF_FAILED", "") for b in bad[:40])
-                      + "\nEND_OF_FAILED\n")
+          # For the issue the weekly run opens. What a site answered is in these lines, so each is kept
+          # to one line of plain characters and the block ends at a marker nobody else can know.
+          import re, secrets
+          end = "END_" + secrets.token_hex(16)
+          plain = [re.sub(r"[^A-Za-z0-9 .,:;/_()'=?&%+@#-]", " ", b)[:300] for b in bad[:40]]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"failed<<{end}\n" + "\n".join(plain) + f"\n{end}\n")
           EOF
           exit $rc
 

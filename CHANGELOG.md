@@ -6,6 +6,12 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Security
+- The Windows app runs Windows' own programs (PowerShell, and `chkdsk` for
+  Repair stick) by their full path in the system folder. It runs with admin
+  rights, and a program looked up by name could be a file of that name in the
+  folder the app was started from.
+
 ### Added
 - **Testing a stick before you rely on it.** `helix test <mount>` writes the
   stick's free space full of data that is different in every megabyte, reads it

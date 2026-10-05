@@ -231,7 +231,14 @@ class TestFlows(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 text = app.repair("E:\\", run=lambda cmd, c=code: ran.append(cmd) or (c, "Windows has scanned\r\n\r\n"))
             self.assertIn(said, text)
-        self.assertEqual(ran[0], ["chkdsk", "E:", "/f", "/x"])
+        self.assertEqual(ran[0], ["chkdsk.exe", "E:", "/f", "/x"])
+        # On Windows it is run by its full path in the system folder, never looked up by name
+        system32 = self.vdir / "System32"
+        system32.mkdir()
+        (system32 / "chkdsk.exe").write_bytes(b"MZ")
+        self.assertEqual(app.system_tool("chkdsk.exe", folder=str(system32)), str(system32 / "chkdsk.exe"))
+        with self.assertRaisesRegex(app.RescueError, "is missing from Windows"):
+            app.system_tool("nothere.exe", folder=str(system32))
         with redirect_stdout(io.StringIO()), self.assertRaisesRegex(app.RescueError, "couldn't repair E:"):
             app.repair("E:", run=lambda cmd: (3, "Cannot open volume for direct access."))
         with self.assertRaisesRegex(app.RescueError, "isn't a drive letter"):

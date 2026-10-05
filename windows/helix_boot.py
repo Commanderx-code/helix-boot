@@ -177,10 +177,29 @@ Get-Disk | ForEach-Object {
 """
 
 
+def system_tool(*parts: str, folder: str | None = None) -> str:
+    """The full path of one of Windows' own programs, in its system folder. The app runs with
+    admin rights, so a program is never looked up by name: a file of that name in the folder
+    the app was started from, or on the PATH, would be run instead."""
+    if folder is None:
+        if os.name != "nt":
+            return parts[-1]
+        buf = ctypes.create_unicode_buffer(260)
+        n = ctypes.windll.kernel32.GetSystemDirectoryW(buf, 260)
+        if not 0 < n < 260:
+            raise RescueError("Windows didn't say where its system folder is")
+        folder = buf.value
+    path = Path(folder).joinpath(*parts)
+    if not path.is_file():
+        raise RescueError(f"{path} is missing from Windows")
+    return str(path)
+
+
 def powershell(script: str) -> str:
     # stdin=DEVNULL: PowerShell started from a windowless app otherwise waits on input forever
     try:
-        r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        r = subprocess.run([system_tool("WindowsPowerShell", "v1.0", "powershell.exe"),
+                            "-NoProfile", "-NonInteractive", "-Command", script],
                            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120,
                            creationflags=NO_WINDOW if os.name == "nt" else 0)
     except subprocess.TimeoutExpired:
@@ -535,7 +554,7 @@ def repair(target: str, run=None) -> str:
                                errors="replace", timeout=3600, creationflags=NO_WINDOW if os.name == "nt" else 0)
             return r.returncode, r.stdout + r.stderr
     try:
-        code, said = run(["chkdsk", drive, "/f", "/x"])
+        code, said = run([system_tool("chkdsk.exe"), drive, "/f", "/x"])
     except (OSError, subprocess.TimeoutExpired) as e:
         raise RescueError(f"chkdsk couldn't be run: {e}") from None
     said = "\n".join(line.rstrip() for line in said.splitlines() if line.strip())
