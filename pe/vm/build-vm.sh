@@ -55,12 +55,26 @@ Files live in $DIR
 EOF
 }
 
-virsh_() { virsh -q -c "$CONN" "$@"; }
+virsh_() { LC_ALL=C virsh -q -c "$CONN" "$@"; }
 exists() { virsh_ dominfo "$VM" >/dev/null 2>&1; }
 running() { [[ $(virsh_ domstate "$VM" 2>/dev/null) == running ]]; }
+disk_idle() {
+  local state domains
+  if state=$(virsh_ domstate "$VM" 2>/dev/null); then
+    [[ $state == 'shut off' ]] || return 1
+    # A managed save resumes RAM and guest filesystem caches; its disks must stay unchanged.
+    domains=$(virsh_ list --all --name --without-managed-save --state-shutoff) || return 1
+    grep -Fxq -- "$VM" <<< "$domains"
+  else
+    # Creation fills the transfer disk before defining the VM. A failed lookup alone
+    # cannot distinguish that case from a failed connection or permission check.
+    domains=$(virsh_ list --all --name) || return 1
+    if grep -Fxq -- "$VM" <<< "$domains"; then return 1; fi
+    return 0
+  fi
+}
 need_off() {
-  running && die "the VM is running. Shut Windows down first (Start → Power → Shut down)."
-  return 0
+  disk_idle || die "the VM is not confirmed shut off. Shut Windows down before accessing its disk."
 }
 need_xfer() { [[ -f $XFER ]] || die "no transfer disk yet — run: pe/vm/build-vm.sh create <windows.iso>"; }
 
@@ -198,7 +212,7 @@ case ${1:-} in
   status)
     if exists; then info "VM '$VM': $(virsh_ domstate "$VM")"; else info "VM '$VM': not created"; fi
     if [[ -f $XFER ]]; then
-      if running; then
+      if ! disk_idle; then
         info "transfer disk: in use by the VM"
       else
         mdir -i "$M" ::/out 2>/dev/null | grep -i ' iso ' || info "transfer disk: no ISO in out\\ yet"
@@ -210,9 +224,12 @@ case ${1:-} in
     read -rp "Delete VM '$VM' and everything in $DIR? Type yes: " a
     [[ $a == yes ]] || die "kept everything"
     if exists; then
-      running && virsh_ destroy "$VM" >/dev/null
-      virsh_ undefine "$VM" --nvram --tpm >/dev/null 2>&1 || virsh_ undefine "$VM" --nvram >/dev/null
+      state=$(virsh_ domstate "$VM") || die "can't determine the VM's state"
+      if [[ $state != 'shut off' ]]; then virsh_ destroy "$VM" >/dev/null; fi
+      virsh_ undefine "$VM" --managed-save --nvram --tpm >/dev/null 2>&1 \
+        || virsh_ undefine "$VM" --managed-save --nvram >/dev/null
     fi
+    need_off
     rm -rf "$DIR"
     ok "deleted"
     ;;

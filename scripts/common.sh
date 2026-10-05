@@ -78,18 +78,61 @@ check_python() {
     || die "Python 3.11+ is required (found $(python3 -V 2>&1))"
 }
 
+# Every member of a mounted Btrfs filesystem, including devices hidden by findmnt's
+# single SOURCE. sysfs exposes these without requiring root or btrfs-progs.
+btrfs_devices() {
+  local uuid=$1 entry number found=0
+  [[ $uuid =~ ^[0-9a-fA-F-]{36}$ ]] || return 1
+  for entry in /sys/fs/btrfs/"$uuid"/devices/*; do
+    number=$(cat "$entry/dev") || return 1
+    [[ $number =~ ^[0-9]+:[0-9]+$ ]] || return 1
+    printf '/dev/block/%s\n' "$number"
+    found=1
+  done
+  ((found))
+}
+
+mount_devices() {
+  local row src type uuid
+  row=$(findmnt -nro SOURCE,FSTYPE,UUID --target "$1") || return 1
+  read -r src type uuid <<< "$row"
+  [[ -n $src && -n $type ]] || return 1
+  if [[ $type == btrfs ]]; then
+    btrfs_devices "$uuid" || return 1
+  else
+    src=${src%%\[*}             # subvolume / bind-mount suffix
+    if [[ $src == /dev/* ]]; then printf '%s\n' "$src"; fi
+  fi
+}
+
 # Whole disks that hold the running system (/, /boot, /home, swap …), through LUKS/LVM/btrfs.
+# Emit nothing until every lookup succeeds, so callers cannot consume a partial list.
 system_disks() {
-  local src
-  {
-    for m in / /boot /boot/efi /efi /home /usr /var; do
-      findmnt -no SOURCE "$m" 2>/dev/null || true
-    done
-    swapon --noheadings --show=NAME 2>/dev/null || true
-  } | sed 's/\[.*\]$//' | sort -u | while read -r src; do
-    [[ $src == /dev/* ]] || continue
-    lsblk -lnspo NAME,TYPE "$src" 2>/dev/null | awk '$2=="disk"{print $1}'
-  done | sort -u
+  local m src devices swaps ancestors disk type
+  local -a sources=() disks=()
+  for m in / /boot /boot/efi /efi /home /usr /var; do
+    [[ -e $m ]] || continue
+    devices=$(mount_devices "$m") || return 1
+    while IFS= read -r src; do [[ -z $src ]] || sources+=("$src"); done <<< "$devices"
+  done
+  swaps=$(swapon --noheadings --raw --show=NAME) || return 1
+  while IFS= read -r src; do
+    [[ -n $src ]] || continue
+    if [[ $src == /dev/* ]]; then
+      sources+=("$src")
+    else
+      devices=$(mount_devices "$src") || return 1  # swap file on a separate filesystem
+      while IFS= read -r src; do [[ -z $src ]] || sources+=("$src"); done <<< "$devices"
+    fi
+  done <<< "$swaps"
+  for src in "${sources[@]}"; do
+    ancestors=$(lsblk -lnspo NAME,TYPE "$src") || return 1
+    [[ -n $ancestors ]] || return 1
+    while read -r disk type; do
+      [[ $type != disk ]] || disks+=("$disk")
+    done <<< "$ancestors"
+  done
+  if ((${#disks[@]})); then printf '%s\n' "${disks[@]}" | sort -u; fi
 }
 
 # Removable / USB whole disks as "PATH<TAB>SIZE<TAB>MODEL".
@@ -215,11 +258,12 @@ disk_identity() {
 }
 
 check_disk_identity() {
-  local current disk
+  local current disk protected
   current=$(disk_identity "$1") || die "cannot establish disk identity for $1; refusing to write"
   [[ $current == "$2" ]] || die "$1 was disconnected or replaced; select and confirm it again"
+  protected=$(system_disks) || die "cannot determine the system disks; refusing to write"
   while read -r disk; do
     [[ $disk != "$1" ]] || die "$1 now holds the running system; refusing to write"
-  done < <(system_disks)
+  done <<< "$protected"
   usb_disks | cut -f1 | grep -Fxq -- "$1" || die "$1 is no longer a USB/removable disk"
 }

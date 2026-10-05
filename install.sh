@@ -91,7 +91,8 @@ if [[ -n $from ]]; then vdir=$("$HELIX" ventoy-path --from "$from"); else vdir=$
 
 # ── 2. Pick the stick ────────────────────────────────────────────────────
 mapfile -t sticks < <(usb_disks)
-mapfile -t protected < <(system_disks)
+protected_list=$(system_disks) || die "cannot determine the system disks; refusing to install"
+mapfile -t protected <<< "$protected_list"
 
 if [[ -z $dev ]]; then
   ((${#sticks[@]})) || die "no USB sticks found. Plug one in, or pass the device path."
