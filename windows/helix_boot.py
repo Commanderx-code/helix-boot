@@ -873,7 +873,7 @@ def gui(selftest: bool = False) -> int:
             look_window(Path(f"{d['Ventoy']}:\\"), parent=root)
         except cr.RescueError as e:
             messagebox.showerror(APP, str(e))
-        except Exception as e:  # noqa: BLE001: a button that does nothing is worse than a message
+        except Exception as e:  # noqa: BLE001 — a button that does nothing is worse than a message
             messagebox.showerror(APP, f"Couldn't open the Look window: {e}")
 
     def look_for_updates(refresh=False):
