@@ -2852,6 +2852,29 @@ def _zip_file(zf: zipfile.ZipFile, src: Path, arc: str, compress: int = zipfile.
     return h.hexdigest()
 
 
+def _from_its_source(tool: dict, entry: dict) -> bool:
+    """Was the cached copy of a tool downloaded from where tools.toml says that tool comes from?
+    (Its address as recorded when it was fetched, against the shipped entry: no request is made.)"""
+    url = str(entry.get("url") or "")
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    if not url.startswith("https://") or not host:
+        return False
+    src = tool["source"]
+    if src == "url":
+        return url == tool.get("url")
+    if src == "github":
+        template = tool.get("download_template")
+        if template:
+            return host == (urllib.parse.urlparse(template).hostname or "").lower()
+        return url.startswith(f"https://github.com/{tool.get('repo')}/releases/download/")
+    if src == "sourceforge":
+        return host.endswith("sourceforge.net") and f"/{tool.get('project')}/" in urllib.parse.urlparse(url).path
+    if src == "page":
+        allowed = {(urllib.parse.urlparse(str(tool.get("page"))).hostname or "").lower(), *[str(h).lower() for h in tool.get("hosts") or []]}
+        return host in allowed
+    return False
+
+
 def cmd_pack(cfg: Config, args) -> int:
     public = bool(getattr(args, "public", False))
     if public:
@@ -2863,10 +2886,25 @@ def cmd_pack(cfg: Config, args) -> int:
         # has a slot for (the bring-your-own ones, Lazarus PE) are then left out by name.
         theirs = Config(repo=Path(tempfile.mkdtemp(prefix="helix-public-")), assets=cfg.assets, windows=cfg.windows)
         theirs.cache = cfg.cache
+        # The cache is still yours, and it remembers what each name was fetched as: a tool you
+        # pointed at a file or a site of your own is recorded under the project's name for it. So
+        # the names your local.toml made its own are left out too, and so is anything the cache
+        # holds as a file of yours and not as a download.
+        own, kept = set(cfg.own), load_lock(cfg)
         cfg = theirs
 
         def yours(t: dict) -> bool:
-            return bool(t.get("byo")) or (t["source"] == "local" and t["kind"] != "tree")
+            entry = kept.get(t["name"]) or {}
+            if t["kind"] == "tree":
+                return bool(t.get("byo")) or t["name"] in own
+            return (bool(t.get("byo")) or t["name"] in own or t["source"] == "local" or bool(entry.get("path"))
+                    or (t["kind"] in ("iso", "app") and bool(entry) and not _from_its_source(t, entry)))
+        elsewhere = [t["title"] for t in cfg.tools if t["kind"] in ("iso", "app") and not t.get("byo")
+                     and t["name"] not in own and t["source"] != "local" and kept.get(t["name"])
+                     and not kept[t["name"]].get("path") and not _from_its_source(t, kept[t["name"]])]
+        if elsewhere:       # (a tool once pointed elsewhere, say: what is cached isn't known to be the project's)
+            warn(f"left out, because the copy in the cache didn't come from the project's source for it: "
+                 f"{', '.join(elsewhere)}. `helix fetch --force <tool>` gets the project's.")
         cfg.tools = [t for t in cfg.tools if not yours(t)]
         info("A public pack: the tools anyone can download, as the project ships them. Your own tools, "
              "your local.toml and everything in byo/ stay at home.")

@@ -34,6 +34,9 @@ tagged releases also publish the Windows app.
   has never seen your folder: nothing from `local.toml` (your tools, your
   settings, what you switched off), `tool-choices.json` or `byo/` (your files,
   icons and splash) can be in it, and Lazarus PE, your own build, is left out.
+  The download cache is still yours, so a tool you pointed somewhere of your
+  own is left out as well, and so is any cached copy that didn't come from the
+  project's source for that tool.
 - **`helix pack --split`:** also cuts the pack into pieces (2 GiB if not said)
   in a folder beside it, with its checksum, a README, and scripts for Windows
   and for Linux and Mac that join the pieces, check the result and start the

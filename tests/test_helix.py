@@ -2446,12 +2446,16 @@ class TestPack(Base):
         put("web/private.zip", zipped({"private.exe": b"MZ private"}))
         self.assertIn("[settings]\n", toml.read_text())
         toml.write_text(toml.read_text().replace("[settings]\n", '[settings]\ntheme = "theme"\n', 1))
+        # … and a tool of the project's that you pointed at a file of your own: the cache then holds
+        # your file under the project's name for it
+        put("web/SysinternalsSuite-licensed.zip", zipped({"procexp64.exe": b"MZ my licensed build", "Eula.txt": b"mine"}))
         (self.repo / "local.toml").write_text(
             f'[settings]\nstick_label = "MYSTICK"\n\n[overrides.memtest86plus]\nenabled = false\n\n'
+            f'[overrides.sysinternals]\nurl = "{BASE}/web/SysinternalsSuite-licensed.zip"\n\n'
             f'[[tool]]\nname = "private"\ntitle = "Private Tool"\nkind = "app"\nsource = "url"\n'
             f'url = "{BASE}/web/private.zip"\nchecksum = ["tofu"]\n')
         self.cfg = cr.Config(repo=self.repo)
-        self.assertEqual(self.cfg.own, {"private"})
+        self.assertEqual(self.cfg.own, {"private", "sysinternals"})
         self.fetch()
         private, _ = self.pack(self.tmp / "private.zip")
         with zipfile.ZipFile(private) as z:
@@ -2460,7 +2464,10 @@ class TestPack(Base):
             self.assertIn("paid-tool-i-own", everything)
             self.assertIn("Apps/private/private.exe", everything)
         out = self.tmp / "public.zip"
-        rc, log = self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(out), "public": True, "split": 0.0625})())
+        # (the test's downloads come from a server here, which is nobody's real source: taken as theirs)
+        with unittest.mock.patch.object(cr, "_from_its_source", lambda t, e: True):
+            rc, log = self.run_quiet(cr.cmd_pack, self.cfg,
+                                     type("A", (), {"output": str(out), "public": True, "split": 0.0625})())
         self.assertEqual(rc, 0, log)
         self.assertIn("A public pack: the tools anyone can download, as the project ships them.", log)
         self.assertIn("it can be shared", log)
@@ -2480,7 +2487,8 @@ class TestPack(Base):
                 self.assertEqual([n for n in where if n != "installer/tools.toml"], [], yours)
             self.assertNotIn(b"my splash", b"".join(z.read(n) for n in z.namelist() if "splash" in n))
             self.assertIn("icons/systemrescue.png", everything)     # the project's own look is all there
-            self.assertIn("Apps/sysinternals/procexp64.exe", everything)
+            self.assertNotIn("sysinternals", everything)            # yours under the project's name: not in it
+            self.assertFalse(any(b"my licensed build" in z.read(n) for n in z.namelist() if n.endswith(".exe")))
         folder = self.tmp / "public-pieces"
         names = sorted(p.name for p in folder.iterdir())
         self.assertEqual(names, ["README.txt", "SHA256.txt", "build-stick.cmd", "build-stick.sh", "public.zip.part00"])
@@ -2532,6 +2540,42 @@ class TestPack(Base):
                 unittest.mock.patch.object(cr, "fetch_app", side_effect=AssertionError("nothing newer")):
             rc, out = self.run_quiet(cr.cmd_self_update, self.cfg, args)
         self.assertIn("is the newest version", out)
+
+    def test_a_cached_copy_counts_as_the_projects_only_if_it_came_from_the_projects_source(self):
+        ok = cr._from_its_source
+        gh = {"source": "github", "repo": "ventoy/Ventoy"}
+        self.assertTrue(ok(gh, {"url": "https://github.com/ventoy/Ventoy/releases/download/v1.1.17/ventoy.tar.gz"}))
+        self.assertFalse(ok(gh, {"url": "https://github.com/someone/Ventoy/releases/download/v1/ventoy.tar.gz"}))
+        self.assertFalse(ok(gh, {"url": "http://github.com/ventoy/Ventoy/releases/download/v1/ventoy.tar.gz"}))
+        self.assertTrue(ok({**gh, "download_template": "https://memtest.org/download/v{version}/x.zip"},
+                           {"url": "https://memtest.org/download/v8.10/x.zip"}))
+        url = {"source": "url", "url": "https://download.sysinternals.com/files/SysinternalsSuite.zip"}
+        self.assertTrue(ok(url, {"url": url["url"]}))
+        self.assertFalse(ok(url, {"url": "https://my.example/SysinternalsSuite.zip"}))
+        sf = {"source": "sourceforge", "project": "systemrescuecd"}
+        self.assertTrue(ok(sf, {"url": "https://downloads.sourceforge.net/project/systemrescuecd/a/b.iso"}))
+        self.assertFalse(ok(sf, {"url": "https://downloads.sourceforge.net/project/other/a/b.iso"}))
+        page = {"source": "page", "page": "https://www.diskgenius.com/download.php", "hosts": ["dl.diskgenius.com"]}
+        self.assertTrue(ok(page, {"url": "https://dl.diskgenius.com/x.zip"}))
+        self.assertFalse(ok(page, {"url": "https://evil.example/x.zip"}))
+        self.assertFalse(ok(url, {}))
+        self.assertFalse(ok({"source": "local"}, {"url": "https://x.example/y"}))
+
+        # A tool you once pointed elsewhere and then put back: the cache still holds yours under its
+        # name, and nothing in local.toml says so any more
+        self.fetch()
+        lock = cr.load_lock(self.cfg)
+        lock["sysinternals"]["url"] = "https://my.example/SysinternalsSuite-licensed.zip"
+        cr.save_lock(self.cfg, lock)
+        out = self.tmp / "public.zip"
+        with unittest.mock.patch.object(cr, "_from_its_source",
+                                        lambda t, e: str(e.get("url", "")).startswith(BASE) and "my.example" not in e["url"]):
+            rc, log = self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(out), "public": True})())
+        self.assertEqual(rc, 0, log)
+        self.assertIn("didn't come from the project's source for it: Sysinternals Suite", log)
+        with zipfile.ZipFile(out) as z:
+            self.assertFalse(any("sysinternals" in n for n in z.namelist()))
+            self.assertTrue(any(n.endswith("systemrescue-12.02-amd64.iso") for n in z.namelist()))
 
     def test_a_pack_made_before_the_release_is_out_says_its_app_is_old(self):
         self.windows_ventoy_upstream()                          # the released app is 0.5.0
