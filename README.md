@@ -175,8 +175,8 @@ name sideways (built into Ventoy, not a setting).
 **Portable apps** for any Windows PE, in `USB:\Apps`, listed by the Lazarus
 launcher and by the Helix Apps menu (`HelixApps.cmd`, for other PEs such as Hiren's):
 Sysinternals, Explorer++, Notepad++, CrystalDiskInfo, CrystalDiskMark, HWiNFO,
-TestDisk & PhotoRec, ProduKey, DiskGenius Free, Microsoft Safety Scanner and
-Kaspersky Virus Removal Tool *(off by default)*. The launcher also carries
+TestDisk & PhotoRec, DiskGenius Free, Microsoft Safety Scanner, and two that
+are *off by default*: Kaspersky Virus Removal Tool and ProduKey. The launcher also carries
 [Chris Titus Tech's WinUtil](https://github.com/ChrisTitusTech/winutil) for
 after a repair: run it from the stick in the fixed Windows to debloat, tweak
 or reinstall apps.
@@ -359,9 +359,10 @@ Check stick also watches the programs you add to the stick yourself, portable
 apps for one. It remembers what each was and tells you when one has changed
 since the last check: expected if you updated it, a warning if you didn't.
 
-Some antivirus programs stop a few tools being written (ProduKey, a product key
-reader, is one). The app says so before an install and offers to leave them
-out; otherwise they are tried, skipped if blocked, and named at the end.
+Some antivirus programs stop a few tools being written. ProduKey is one, which
+is why it is off unless you tick it in **Tools…**. With such a tool ticked, the
+app says so before an install and offers to leave it out; otherwise it is
+tried, skipped if blocked, and named at the end.
 
 The app keeps itself current too. When it starts it looks for a newer Helix
 Boot and asks whether to get it, and **Check for update** under the version

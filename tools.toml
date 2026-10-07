@@ -659,6 +659,7 @@ url = "https://www.nirsoft.net/utils/produkey-x64.zip"
 entry = "ProduKey.exe"
 checksum = ["tofu"]
 flagged = true      # Windows Defender stops it being written (HackTool:Win32/ProductKey)
+enabled = false     # … so it is off unless you tick it in the app's Tools window (or local.toml)
 
 [[tool]]
 name = "diskgenius"

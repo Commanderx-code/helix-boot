@@ -693,7 +693,12 @@ class TestEjectAndChoices(unittest.TestCase):
 
     def test_the_shipped_list_flags_only_what_was_seen_to_be_blocked(self):
         cfg = app.cr.Config(repo=ROOT, manifest=ROOT / "tools.toml")
-        self.assertEqual([t["title"] for t in app.cr.flagged_tools(cfg)], ["ProduKey"])
+        self.assertEqual(app.cr.flagged_tools(cfg), [])                 # it is off as shipped: nothing to warn of
+        produkey = next(t for t in cfg.tools if t["name"] == "produkey")
+        self.assertTrue(produkey["flagged"])
+        self.assertFalse(produkey["enabled"])
+        with mock.patch.dict(produkey, {"enabled": True}):              # ticked in the Tools window: said up front
+            self.assertEqual([t["title"] for t in app.cr.flagged_tools(cfg)], ["ProduKey"])
         choices = app.cr.tool_choices(cfg)
         self.assertGreater(len(choices), 40)
         self.assertTrue(all(c["category"] and c["title"] for c in choices))
