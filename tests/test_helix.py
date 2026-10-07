@@ -2444,8 +2444,11 @@ class TestPack(Base):
         (self.repo / "byo/icons/paid-tool-i-own.png").write_bytes(b"my icon")
         (self.repo / "byo/splash.png").write_bytes(b"my splash")
         put("web/private.zip", zipped({"private.exe": b"MZ private"}))
+        self.assertIn("[settings]\n", toml.read_text())
+        toml.write_text(toml.read_text().replace("[settings]\n", '[settings]\ntheme = "theme"\n', 1))
         (self.repo / "local.toml").write_text(
-            f'[settings]\ntheme = "theme"\n\n[[tool]]\nname = "private"\ntitle = "Private Tool"\nkind = "app"\nsource = "url"\n'
+            f'[settings]\nstick_label = "MYSTICK"\n\n[overrides.memtest86plus]\nenabled = false\n\n'
+            f'[[tool]]\nname = "private"\ntitle = "Private Tool"\nkind = "app"\nsource = "url"\n'
             f'url = "{BASE}/web/private.zip"\nchecksum = ["tofu"]\n')
         self.cfg = cr.Config(repo=self.repo)
         self.assertEqual(self.cfg.own, {"private"})
@@ -2459,14 +2462,18 @@ class TestPack(Base):
         out = self.tmp / "public.zip"
         rc, log = self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(out), "public": True, "split": 0.0625})())
         self.assertEqual(rc, 0, log)
-        self.assertIn("A public pack: leaving out 2 of your own (My Own, Private Tool), and your icons and splash", log)
+        self.assertIn("A public pack: the tools anyone can download, as the project ships them.", log)
         self.assertIn("it can be shared", log)
         with zipfile.ZipFile(out) as z:
             self.assertFalse(any("mine.iso" in n for n in z.namelist()))
             self.assertTrue(any(n.endswith("systemrescue-12.02-amd64.iso") for n in z.namelist()))
             everything = "\n".join(z.namelist()) + "".join(
                 z.read(n).decode("utf-8", "replace") for n in z.namelist() if n.endswith((".json", ".txt", ".cfg")))
-            for yours in ("paid-tool-i-own", "private", "Private Tool", "My Own", "mine/splash"):
+            meta = json.loads(z.read(cr.PACK_META))
+            self.assertEqual(meta["off"], [])                       # what you switched off is your business
+            # (as shipped it is on, so the pack wants it; you never fetched it, which the run says)
+            self.assertIn("Memtest86+: not fetched yet", log)
+            for yours in ("paid-tool-i-own", "private", "Private Tool", "My Own", "mine/splash", "MYSTICK"):
                 where = [n for n in z.namelist() if yours in n or (n.endswith((".json", ".txt", ".cfg", ".toml"))
                                                                     and yours in z.read(n).decode("utf-8", "replace"))]
                 # (tools.toml is the project's own list, slots for tools you bring included: it travels as it is)

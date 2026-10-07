@@ -2853,32 +2853,27 @@ def _zip_file(zf: zipfile.ZipFile, src: Path, arc: str, compress: int = zipfile.
 
 
 def cmd_pack(cfg: Config, args) -> int:
+    public = bool(getattr(args, "public", False))
+    if public:
+        # Only what anyone can download, as the project ships it. So that nothing of yours can get
+        # in by any road, the pack is planned by a configuration that has never seen your folder:
+        # no local.toml (your tools, the ones you repointed or switched off, your settings), no
+        # tool-choices.json, and an empty byo/ (your icons and splash, whose very names say what
+        # you own). It shares only your download cache. Your own files and builds that tools.toml
+        # has a slot for (the bring-your-own ones, Lazarus PE) are then left out by name.
+        theirs = Config(repo=Path(tempfile.mkdtemp(prefix="helix-public-")), assets=cfg.assets, windows=cfg.windows)
+        theirs.cache = cfg.cache
+        cfg = theirs
+
+        def yours(t: dict) -> bool:
+            return bool(t.get("byo")) or (t["source"] == "local" and t["kind"] != "tree")
+        cfg.tools = [t for t in cfg.tools if not yours(t)]
+        info("A public pack: the tools anyone can download, as the project ships them. Your own tools, "
+             "your local.toml and everything in byo/ stay at home.")
     lock = load_lock(cfg)
     placed, apps, missing = _plan(cfg, lock)
     for m in missing:
         warn(f"{m}: not fetched yet — run `helix fetch` (leaving it out of the pack)")
-    public = bool(getattr(args, "public", False))
-    if public:
-        # Only what anyone can download, as the project ships it. Left at home: your own files and
-        # builds (byo/, Lazarus PE), tools you added or repointed in local.toml, and everything else
-        # in byo/ (your icons and splash, whose very names say what you own). From here on `cfg`
-        # looks for byo/ in an empty folder, so nothing later in this function can pick any of it up.
-        def yours(t: dict) -> bool:
-            return t["source"] == "local" or bool(t.get("byo")) or t["name"] in cfg.own
-        by_name = {t["name"]: t for t in cfg.tools}
-        left = ([p["title"] for p in placed if yours(by_name[p["name"]])]
-                + [t["title"] for t, _, _ in apps if yours(t)])
-        placed = [p for p in placed if not yours(by_name[p["name"]])]
-        apps = [a for a in apps if not yours(a[0])]
-        shared = Config.__new__(Config)
-        shared.__dict__.update(cfg.__dict__)
-        shared.repo = Path(tempfile.mkdtemp(prefix="helix-public-"))
-        shared.tools = [t for t in cfg.tools if t["kind"] not in ("iso", "app", "tree") or not yours(t)
-                        or (t["kind"] == "tree" and t["name"] not in cfg.own and not t.get("byo"))]
-        cfg = shared
-        if left:
-            info(f"A public pack: leaving out {len(left)} of your own ({', '.join(left[:6])}"
-                 f"{' …' if len(left) > 6 else ''}), and your icons and splash")
     if not placed:
         raise RescueError("nothing to pack yet — run `helix fetch` first")
     out = Path(args.output or f"helix-boot-{__version__}-{dt.date.today().isoformat()}{'-public' if public else ''}.zip"

@@ -30,9 +30,10 @@ tagged releases also publish the Windows app.
   the latest release's file, checked against the sha256 GitHub gives for it,
   in this one's place.
 - **`helix pack --public`:** a pack with only what anyone can download, as the
-  project ships it. Your own files and builds (`byo/`, Lazarus PE), tools you
-  added or repointed in `local.toml`, and your own icons and splash stay at
-  home, so it can be shared.
+  project ships it, so it can be shared. It is planned by a configuration that
+  has never seen your folder: nothing from `local.toml` (your tools, your
+  settings, what you switched off), `tool-choices.json` or `byo/` (your files,
+  icons and splash) can be in it, and Lazarus PE, your own build, is left out.
 - **`helix pack --split`:** also cuts the pack into pieces (2 GiB if not said)
   in a folder beside it, with its checksum, a README, and scripts for Windows
   and for Linux and Mac that join the pieces, check the result and start the
