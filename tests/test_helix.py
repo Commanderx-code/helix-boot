@@ -2326,15 +2326,17 @@ class TestPack(Base):
         with unittest.mock.patch.object(cr, "_unzip_to", unzip):
             rc, out = self.unpack(pack)
         self.assertEqual(rc, 0, out)
-        self.assertIn("sysinternals: this PC's antivirus stopped it being written. Left out", out)
-        self.assertIn("1 tool(s) are NOT on the stick", out)
+        self.assertIn("Sysinternals Suite: this PC's antivirus stopped it being written. Left out", out)
+        self.assertIn("2 tools are NOT on the stick, because this PC's antivirus stopped them being written: A, B.",
+                      cr.av_text(["A", "B"]))
+        self.assertIn("1 tool is NOT on the stick, because this PC's antivirus stopped it being written", out)
         self.assertIn("0 app(s).", out)
         self.assertTrue((self.stick / "ISO/2-Rescue/systemrescue-12.02-amd64.iso").is_file())   # the rest is there
         self.assertFalse((self.stick / "Apps/sysinternals").exists())
         self.assertFalse((self.stick / "Apps/.sysinternals.new").exists())
         state = json.loads((self.stick / cr.STATE_DIR / "state.json").read_text())
         self.assertNotIn("sysinternals", state["apps"])
-        self.assertEqual(cr.BLOCKED, ["sysinternals"])
+        self.assertEqual(cr.BLOCKED, ["Sysinternals Suite"])
 
         rc, out = self.unpack(pack)                             # allowed now: the next update adds it
         self.assertEqual(rc, 0, out)
@@ -2347,7 +2349,7 @@ class TestPack(Base):
             rc, out = self.run_quiet(cr.cmd_sync, self.cfg, type("A", (), dict(
                 target=str(self.stick), init=False, dry_run=False, verify=False, no_prune=False))())
         self.assertEqual(rc, 0, out)
-        self.assertIn("1 tool(s) are NOT on the stick", out)
+        self.assertIn("1 tool is NOT on the stick, because this PC's antivirus stopped it being written", out)
         self.assertFalse((self.stick / "Apps/sysinternals").exists())
         (self.stick / "ISO/2-Rescue/systemrescue-12.02-amd64.iso").unlink()
         with unittest.mock.patch.object(cr, "_copy", side_effect=virus("x.iso")):

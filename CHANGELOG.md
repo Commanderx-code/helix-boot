@@ -6,6 +6,10 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Fixed
+- The note about tools an antivirus kept off the stick names them as the menu
+  does ("ProduKey", where it said "produkey") and reads right for one tool.
+
 ### Added
 - **Helix Boot in a window on Linux:** `HelixBoot-linux-x86_64` in each
   release, one file with Python and Tk inside. It is the Windows app's window

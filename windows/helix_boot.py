@@ -1085,7 +1085,7 @@ def gui(selftest: bool = False) -> int:
     b_update.config(command=do_update)
     b_pack.config(command=choose_pack)
     print(f"Your files (local.toml, byo/): {user_dir()}")
-    print(f"Pack found beside the app: {found}\n" if found else "")
+    print(f"Pack found beside the app: {found.name}\n" if found else "")
     root.after(50, refresh)
     root.after(100, pump)
     if selftest:

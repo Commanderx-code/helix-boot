@@ -181,11 +181,13 @@ def _av_blocked(e: BaseException) -> bool:
 
 def av_text(tools: list[str]) -> str:
     """What to say about tools this PC's antivirus kept off the stick."""
-    return (f"{len(tools)} tool(s) are NOT on the stick, because this PC's antivirus stopped them being written: "
-            f"{', '.join(tools)}.\n"
+    one = len(tools) == 1
+    return (f"{'1 tool is' if one else f'{len(tools)} tools are'} NOT on the stick, because this PC's antivirus "
+            f"stopped {'it' if one else 'them'} being written: {', '.join(tools)}.\n"
             "  Everything else is on the stick. Antivirus programs often call tools of this kind (ones that read "
-            "product keys or passwords, say) \"potentially unwanted\". If you want them, allow them in your "
-            "antivirus, or leave the stick's drive out of its scanning while you update, and run Update again.")
+            f"product keys or passwords, say) \"potentially unwanted\". If you want {'it' if one else 'them'}, allow "
+            f"{'it' if one else 'them'} in your antivirus, or leave the stick's drive out of its scanning while you "
+            "update, and run Update again.")
 
 
 def _stick_errors(fn):
@@ -2961,7 +2963,8 @@ def cmd_unpack(cfg: Config, args) -> int:
             except OSError as e:
                 if not _av_blocked(e):
                     raise
-                _skip_blocked(name, new, hashes, name, rec)
+                title = next((t["title"] for t in cfg.tools if t["name"] == name), name)   # (a pack knows names)
+                _skip_blocked(title, new, hashes, name, rec)
                 continue
             hashes[name] = {"version": version, "dir": f"{roots.get(name, apps_root)}/{name}", "files": files,
                             "settings": keeps}
