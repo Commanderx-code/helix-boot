@@ -14,8 +14,9 @@ tagged releases also publish the Windows app.
 - **The app updates itself.** At its start the window looks for a newer Helix
   Boot and asks whether to get it; **Check for update**, under the version
   number, does the same when you click it. The new program is downloaded from
-  the release, checked against the checksum GitHub records for it, and put in
-  the running one's place (which steps aside and is deleted at the next
+  the release, checked against the checksum GitHub gives for it at that moment
+  (a copy kept from an earlier download counts only if it is that file), and
+  put in the running one's place (which steps aside and is deleted at the next
   start). A version you say no to isn't offered again, an older one never is,
   and `check_for_updates = false` in `local.toml` turns the look at the start
   off. Also `HelixBoot.exe --self-update`, and the same on Linux. Run from a

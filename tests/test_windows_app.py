@@ -1,4 +1,5 @@
 """Tests for windows/helix_boot.py with PowerShell and Ventoy faked, so they run anywhere."""
+import hashlib
 import importlib.util
 import io
 import json
@@ -558,7 +559,7 @@ class TestSelfUpdate(unittest.TestCase):
         me.write_bytes(b"MZ old")
         new.write_bytes(b"MZ new")
         said = io.StringIO()
-        with self.latest("v99.0.0"), mock.patch.object(app.cr, "fetch_app", lambda cfg, asset: (new, "99.0.0")), \
+        with self.latest("v99.0.0"), mock.patch.object(app.cr, "fetch_app", lambda cfg, asset: (new, "99.0.0", hashlib.sha256(b"MZ new").hexdigest())), \
                 redirect_stdout(said):
             text = app.self_update(me=me)
         self.assertIn("Helix Boot 99.0.0 is in place", text)
@@ -579,7 +580,7 @@ class TestSelfUpdate(unittest.TestCase):
                 mock.patch.object(app.cr, "fetch_app", side_effect=AssertionError("nothing to download")):
             self.assertIn("is the newest version", app.self_update(me=me))
         with self.latest("v99.0.0"), redirect_stdout(io.StringIO()):
-            with mock.patch.object(app.cr, "fetch_app", lambda cfg, asset: (new, app.cr.__version__)):
+            with mock.patch.object(app.cr, "fetch_app", lambda cfg, asset: (new, app.cr.__version__, "0" * 64)):
                 with self.assertRaisesRegex(app.RescueError, "isn't newer than this one"):
                     app.self_update(me=me)
             with mock.patch.object(app, "FROZEN", False):               # from a clone: git pull, nothing swapped
@@ -587,26 +588,63 @@ class TestSelfUpdate(unittest.TestCase):
                     app.self_update()
         self.assertEqual(me.read_bytes(), b"MZ old")
 
-    def test_only_helix_boots_own_programs_are_fetched_and_by_githubs_checksum(self):
-        asked = []
+    def release(self, content=b"MZ new program", asset="HelixBoot-linux-x86_64", digest=None, url=None):
+        digest = digest if digest is not None else "sha256:" + hashlib.sha256(content).hexdigest()
+        url = url or f"{app.cr.GITHUB_WEB}/{app.cr.APP_REPO}/releases/download/v99.0.0/{asset}"
+        return json.dumps({"tag_name": "v99.0.0", "assets": [{"name": asset, "digest": digest,
+                                                             "browser_download_url": url}]}).encode()
 
-        def fetch_tool(cfg, tool, lock, force=False):
-            asked.append(tool)
-            (cfg.cache / tool["name"]).mkdir(parents=True, exist_ok=True)
-            (cfg.cache / tool["name"] / tool["title"]).write_bytes(b"MZ")
-            lock[tool["name"]] = {"source_file": tool["title"], "version": "99.0.0"}
-        with mock.patch.object(app.cr, "fetch_tool", fetch_tool), mock.patch.object(app.cr, "load_lock", lambda cfg: {}), \
-                mock.patch.object(app.cr, "save_lock", lambda cfg, lock: None):
-            f, version = app.cr.fetch_app(self.cfg, "HelixBoot-linux-x86_64")
-            self.assertEqual((f.name, version), ("HelixBoot-linux-x86_64", "99.0.0"))
-            self.assertEqual(asked[0]["checksum"], ["github-digest"])
-            self.assertEqual(asked[0]["repo"], app.cr.APP_REPO)
-            self.assertEqual(asked[0]["asset"], [r"^HelixBoot\-linux\-x86_64$"])
-            self.assertEqual(app.cr.fetch_app(self.cfg, "HelixBoot.exe")[0].parent.name, "helixboot-exe")
-            for bad in ("evil.exe", "../HelixBoot.exe", "HelixBoot.exe/x", ""):
-                with self.assertRaisesRegex(app.cr.RescueError, "isn't one of Helix Boot's programs"):
-                    app.cr.fetch_app(self.cfg, bad)
+    def fetch(self, served=b"MZ new program", **rel):
+        asked, got = [], []
 
+        def download(url, dest):
+            got.append(url)
+            dest.write_bytes(served)
+        with mock.patch.object(app.cr, "http_get", lambda url, *a, **k: asked.append(url) or self.release(**rel)), \
+                mock.patch.object(app.cr, "download", download), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            try:
+                return app.cr.fetch_app(self.cfg, rel.get("asset", "HelixBoot-linux-x86_64")), asked, got
+            except app.cr.RescueError as e:
+                return e, asked, got
+
+    def test_the_download_is_what_github_says_it_is_now_whatever_the_cache_holds(self):
+        (f, version, sha), asked, got = self.fetch()
+        self.assertEqual((f.name, version, f.read_bytes()), ("HelixBoot-linux-x86_64", "99.0.0", b"MZ new program"))
+        self.assertEqual(sha, hashlib.sha256(b"MZ new program").hexdigest())
+        self.assertEqual(asked, [f"{app.cr.GITHUB_API}/repos/{app.cr.APP_REPO}/releases/latest"])
+        self.assertEqual(len(got), 1)
+        _, _, got = self.fetch()                                    # still that file: not downloaded twice
+        self.assertEqual(got, [])
+        f.write_bytes(b"MZ altered in the cache")                   # changed where it was kept: not believed
+        (f, version, sha), _, got = self.fetch()
+        self.assertEqual((len(got), f.read_bytes()), (1, b"MZ new program"))
+
+    def test_a_download_that_isnt_githubs_file_is_deleted_and_nothing_else_is_fetched(self):
+        failed, _, got = self.fetch(served=b"MZ something else")
+        self.assertIn("doesn't have the sha256 GitHub records", str(failed))
+        self.assertFalse((self.cfg.cache / "helixboot-update" / "HelixBoot-linux-x86_64").exists())
+        for rel, why in ((dict(digest=""), "gives no sha256"), (dict(digest="sha256:abc"), "gives no sha256"),
+                         (dict(url="https://example.com/HelixBoot-linux-x86_64"), "gives no sha256"),
+                         (dict(asset="HelixBoot.exe"), None)):
+            failed, _, got = self.fetch(**rel) if why else self.fetch(asset="HelixBoot.exe")
+            if why:
+                self.assertIn(why, str(failed))
+                self.assertEqual(got, [])                           # nothing unverifiable is even downloaded
+        with mock.patch.object(app.cr, "http_get", lambda url, *a, **k: self.release(asset="HelixBoot.exe")):
+            with self.assertRaisesRegex(app.cr.RescueError, "has no HelixBoot-linux-x86_64"):
+                app.cr.fetch_app(self.cfg, "HelixBoot-linux-x86_64")
+        for bad in ("evil.exe", "../HelixBoot.exe", "HelixBoot.exe/x", ""):
+            with self.assertRaisesRegex(app.cr.RescueError, "isn't one of Helix Boot's programs"):
+                app.cr.fetch_app(self.cfg, bad)
+
+    def test_what_goes_into_place_is_the_verified_copy(self):
+        me, new = self.tmp / "HelixBoot.exe", self.tmp / "download.exe"
+        me.write_bytes(b"MZ old")
+        new.write_bytes(b"MZ swapped after it was checked")
+        with self.assertRaisesRegex(app.RescueError, "changed before it could be put in place"):
+            app.replace_program(new, me, hashlib.sha256(b"MZ new").hexdigest())
+        self.assertEqual(me.read_bytes(), b"MZ old")
+        self.assertEqual(sorted(p.name for p in self.tmp.iterdir() if p.is_file()), ["HelixBoot.exe", "download.exe"])
 
 
 if __name__ == "__main__":
