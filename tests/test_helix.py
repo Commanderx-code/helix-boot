@@ -2309,6 +2309,51 @@ class TestPack(Base):
         with self.assertRaisesRegex(cr.RescueError, "no Ventoy installer"):
             self.run_quiet(cr.cmd_ventoy_path, self.cfg, type("A", (), {"from_pack": str(pack)})())
 
+    def test_a_tool_the_antivirus_blocks_is_left_out_and_the_rest_goes_on(self):
+        def virus(path):
+            e = OSError(22, "Operation did not complete successfully because the file contains a virus "
+                            "or potentially unwanted software", str(path))
+            e.winerror = 225
+            return e
+        self.fetch()
+        pack, _ = self.pack()
+        real = cr._unzip_to
+
+        def unzip(zf, member, dst, progress=None):
+            if dst.name == "procexp64.exe":
+                raise virus(dst)
+            return real(zf, member, dst, progress)
+        with unittest.mock.patch.object(cr, "_unzip_to", unzip):
+            rc, out = self.unpack(pack)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("sysinternals: this PC's antivirus stopped it being written. Left out", out)
+        self.assertIn("1 tool(s) are NOT on the stick", out)
+        self.assertIn("0 app(s).", out)
+        self.assertTrue((self.stick / "ISO/2-Rescue/systemrescue-12.02-amd64.iso").is_file())   # the rest is there
+        self.assertFalse((self.stick / "Apps/sysinternals").exists())
+        self.assertFalse((self.stick / "Apps/.sysinternals.new").exists())
+        state = json.loads((self.stick / cr.STATE_DIR / "state.json").read_text())
+        self.assertNotIn("sysinternals", state["apps"])
+        self.assertEqual(cr.BLOCKED, ["sysinternals"])
+
+        rc, out = self.unpack(pack)                             # allowed now: the next update adds it
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((self.stick / "Apps/sysinternals/procexp64.exe").read_bytes(), b"MZ procexp")
+        self.assertEqual(cr.BLOCKED, [])
+
+        # … and the same from the internet; a boot image that is blocked stops the run, and says why
+        shutil.rmtree(self.stick / "Apps/sysinternals")
+        with unittest.mock.patch.object(cr.zipfile.ZipFile, "extractall", side_effect=virus("procexp64.exe")):
+            rc, out = self.run_quiet(cr.cmd_sync, self.cfg, type("A", (), dict(
+                target=str(self.stick), init=False, dry_run=False, verify=False, no_prune=False))())
+        self.assertEqual(rc, 0, out)
+        self.assertIn("1 tool(s) are NOT on the stick", out)
+        self.assertFalse((self.stick / "Apps/sysinternals").exists())
+        (self.stick / "ISO/2-Rescue/systemrescue-12.02-amd64.iso").unlink()
+        with unittest.mock.patch.object(cr, "_copy", side_effect=virus("x.iso")):
+            with self.assertRaisesRegex(cr.RescueError, "antivirus stopped x.iso being written"):
+                self.sync(init=False, verify=False)
+
     def test_a_pack_made_before_the_release_is_out_says_its_app_is_old(self):
         self.windows_ventoy_upstream()                          # the released app is 0.5.0
         self.fetch()

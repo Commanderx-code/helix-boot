@@ -170,6 +170,24 @@ def disk_trouble(e: BaseException, where: Path | str | None = None) -> str | Non
             "  Then update again, and check the stick: if errors come back, the stick is failing.")
 
 
+# What Windows answers when the PC's antivirus stops a file being written, or takes it away.
+AV_WINERRORS = {225, 226}
+BLOCKED: list[str] = []     # the tools the last update couldn't put on the stick for that reason
+
+
+def _av_blocked(e: BaseException) -> bool:
+    return isinstance(e, OSError) and getattr(e, "winerror", None) in AV_WINERRORS
+
+
+def av_text(tools: list[str]) -> str:
+    """What to say about tools this PC's antivirus kept off the stick."""
+    return (f"{len(tools)} tool(s) are NOT on the stick, because this PC's antivirus stopped them being written: "
+            f"{', '.join(tools)}.\n"
+            "  Everything else is on the stick. Antivirus programs often call tools of this kind (ones that read "
+            "product keys or passwords, say) \"potentially unwanted\". If you want them, allow them in your "
+            "antivirus, or leave the stick's drive out of its scanning while you update, and run Update again.")
+
+
 def _stick_errors(fn):
     """A command that reads or writes a stick: a disk error becomes a RescueError saying what to do."""
     def run(*a, **kw):
@@ -178,6 +196,10 @@ def _stick_errors(fn):
         except OSError as e:
             where = next((x for x in a if isinstance(x, Path)), None) or getattr(a[-1] if a else None, "target", None)
             msg = disk_trouble(e, where)
+            if msg is None and _av_blocked(e):          # (a tool is skipped; this is a boot image or a menu file)
+                msg = (f"This PC's antivirus stopped {e.filename2 or e.filename or 'a file'} being written, so the "
+                       "stick isn't finished.\n  Allow that file in your antivirus, or leave the stick's drive out "
+                       "of its scanning while you install, and run this again.")
             if msg is None:
                 raise
             raise RescueError(msg) from None
@@ -2297,6 +2319,18 @@ def _save_hashes(mnt: Path, hashes: dict, app_state: dict) -> None:
         path.write_text(text, encoding="utf-8")
 
 
+def _skip_blocked(title: str, staged: Path, hashes: dict, name: str, rec: dict | None) -> None:
+    """A tool the PC's antivirus wouldn't let onto the stick: leave it out, keep what was there
+    before (and its record), and carry on with the rest."""
+    shutil.rmtree(staged, ignore_errors=True)
+    if rec is None:
+        hashes.pop(name, None)
+    else:
+        hashes[name] = rec
+    BLOCKED.append(title)
+    warn(f"{title}: this PC's antivirus stopped it being written. Left out; the rest carries on.")
+
+
 def _damaged(state: dict) -> tuple[set[str], set[str]]:
     """The boot images and apps `helix verify` found damaged, which the next update copies again."""
     d = state.get("damaged") if isinstance(state.get("damaged"), dict) else {}
@@ -2388,6 +2422,7 @@ def cmd_sync(cfg: Config, args) -> int:
     images: dict[str, str] = {}
     bad_images, bad_apps = _damaged(state)                  # found by `helix verify`: copied again
     me, wrote, wrote_apps = cfg.pc_id(), set(), set()      # what this PC puts on the stick in this run
+    BLOCKED.clear()
     moved: set[str] = set()                                 # old paths of images that only change folder
     for n, p in enumerate(placed, 1):
         dst = _inside(mnt, p["rel"], "boot image path")
@@ -2467,11 +2502,17 @@ def cmd_sync(cfg: Config, args) -> int:
         new = root / f".{t['name']}.new"
         shutil.rmtree(new, ignore_errors=True)
         new.mkdir(parents=True)
-        if unzip:
-            with zipfile.ZipFile(src) as zf:
-                zf.extractall(new, members=_safe_zip_members(zf))
-        else:
-            shutil.copy2(src, new / src.name)
+        try:
+            if unzip:
+                with zipfile.ZipFile(src) as zf:
+                    zf.extractall(new, members=_safe_zip_members(zf))
+            else:
+                shutil.copy2(src, new / src.name)
+        except OSError as e:
+            if not _av_blocked(e):
+                raise
+            _skip_blocked(t["title"], new, hashes, t["name"], rec)
+            continue
         if dst.exists():
             shutil.rmtree(dst)
         os.replace(new, dst)
@@ -2546,7 +2587,9 @@ def cmd_sync(cfg: Config, args) -> int:
         "images": images, "tools": tools, "mine_by": state.get("mine_by") or {},
         **_still_damaged(state, mnt, wrote | (want_files if args.verify else set()), wrote_apps, app_state),
         **_put_by(state, me, want_files, wrote, kept, {t["name"] for t, _, _ in apps}, wrote_apps, kept_apps)})
-    ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps)} app(s).")
+    ok(f"Stick is up to date: {len(placed)} boot image(s), {len(apps) - len(BLOCKED)} app(s).")
+    if BLOCKED:
+        warn(av_text(BLOCKED))
     if due := check_due(state):
         warn(due)
     return 0
@@ -2885,6 +2928,7 @@ def cmd_unpack(cfg: Config, args) -> int:
         roots = meta.get("app_roots", {})         # apps that go elsewhere than Apps: the Mac tools
         keeps_by = meta.get("app_settings") if isinstance(meta.get("app_settings"), dict) else {}
         wrote_apps: set[str] = set()
+        BLOCKED.clear()
         hashes = _load_hashes(mnt)
         for name, version in meta["apps"].items():
             root = _inside(mnt, roots.get(name, apps_root), "apps folder")
@@ -2910,9 +2954,15 @@ def cmd_unpack(cfg: Config, args) -> int:
             new = root / f".{name}.new"
             shutil.rmtree(new, ignore_errors=True)
             files = {}
-            for m in names:
-                if m.startswith(prefix) and not m.endswith("/"):
-                    files[m[len(prefix):]] = _unzip_to(zf, m, _inside(new, m[len(prefix):], "path in pack"))
+            try:
+                for m in names:
+                    if m.startswith(prefix) and not m.endswith("/"):
+                        files[m[len(prefix):]] = _unzip_to(zf, m, _inside(new, m[len(prefix):], "path in pack"))
+            except OSError as e:
+                if not _av_blocked(e):
+                    raise
+                _skip_blocked(name, new, hashes, name, rec)
+                continue
             hashes[name] = {"version": version, "dir": f"{roots.get(name, apps_root)}/{name}", "files": files,
                             "settings": keeps}
             if dst.exists():
@@ -2989,7 +3039,10 @@ def cmd_unpack(cfg: Config, args) -> int:
         **_still_damaged(state, mnt, {i["rel"] for i in todo} | (want_files if args.verify else set()),
                          wrote_apps, app_state),
         **_put_by(state, me, want_files, {i["rel"] for i in todo}, kept, set(meta["apps"]), wrote_apps, kept_apps)})
-    ok(f"Stick is up to date from the pack: {len(meta['isos'])} boot image(s), {len(meta['apps'])} app(s).")
+    ok(f"Stick is up to date from the pack: {len(meta['isos'])} boot image(s), "
+       f"{len(meta['apps']) - len(BLOCKED)} app(s).")
+    if BLOCKED:
+        warn(av_text(BLOCKED))
     if due := check_due(state):
         warn(due)
     return 0

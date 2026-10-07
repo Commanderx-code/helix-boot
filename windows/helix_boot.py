@@ -875,8 +875,11 @@ def gui(selftest: bool = False) -> int:
             q.put(("bytes", copying["pending"]))
             copying.update(pending=0, sent=now)
 
-    def work(fn, *a, done=lambda letter: f"✓ Done. The stick is {letter} — safe to remove once Windows says so.",
-             **kw):
+    def finished(letter):
+        text = f"✓ Done. The stick is {letter} — safe to remove once Windows says so."
+        return text + (f"\n\n{cr.av_text(cr.BLOCKED)}" if cr.BLOCKED else "")     # (tools the antivirus kept off)
+
+    def work(fn, *a, done=finished, **kw):
         set_busy(True)
         bar.config(mode="indeterminate")
         bar_text("Working…")

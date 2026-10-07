@@ -6,6 +6,15 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Fixed
+- **A tool the PC's antivirus blocks no longer stops the whole install.** On
+  Windows, Defender refuses to let some tools be written (a product key reader,
+  for one) and the install ended there with "the file contains a virus or
+  potentially unwanted software", leaving the stick empty. That tool is now
+  left out, the rest of the stick is made, and the end of the run names what
+  is missing and how to add it. A boot image that is blocked still stops the
+  run, with a message that says it was the antivirus.
+
 ## [0.7.2] - 2026-10-05
 
 ### Security
