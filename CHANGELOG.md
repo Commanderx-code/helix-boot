@@ -9,8 +9,9 @@ tagged releases also publish the Windows app.
 ### Changed
 - **ProduKey is off by default.** Windows Defender stops it being written, so
   a new stick no longer meets that. Tick it in the app's Tools window (or
-  enable it in `local.toml`) to have it. An update doesn't take it off a stick
-  that has it.
+  enable it in `local.toml`) to have it. Without that, the next update from
+  the PC that put it on a stick takes it off again, as for any tool that is
+  no longer chosen; a stick filled by another PC keeps it.
 
 ## [0.7.5] - 2026-10-07
 
