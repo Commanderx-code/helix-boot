@@ -2611,6 +2611,62 @@ APP_REPO = "Commanderx-code/helix-boot"   # where HelixBoot.exe is released
 APP_EXE = "HelixBoot.exe"
 
 
+APP_UPDATE_FILE = "app-update.json"     # in the cache: the last look for a newer Helix Boot
+
+
+def app_update(cfg: Config, max_age: float = 6 * 3600, refresh: bool = False) -> dict:
+    """Is there a newer Helix Boot than this one? Asks github.com where the latest release is (not
+    an API request) at most every max_age seconds. {"current", "latest", "newer", "declined"};
+    RescueError when it has never been able to ask."""
+    path = cfg.cache / APP_UPDATE_FILE
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        saved = saved if isinstance(saved, dict) else {}
+    except (OSError, ValueError):
+        saved = {}
+    known = isinstance(saved.get("latest"), str) and re.fullmatch(r"\d+(\.\d+){1,3}", saved["latest"])
+    age = time.time() - saved["at"] if isinstance(saved.get("at"), (int, float)) else max_age
+    if refresh or not known or not 0 <= age < max_age:
+        tag = _latest_tag(APP_REPO)
+        version = clean_tag(tag) if tag else ""
+        if re.fullmatch(r"\d+(\.\d+){1,3}", version):
+            saved.update(at=time.time(), latest=version)
+            cfg.cache.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(saved) + "\n", encoding="utf-8")
+        elif refresh or not known:
+            raise RescueError("couldn't ask GitHub which Helix Boot is the latest (no connection?)")
+    return {"current": __version__, "latest": saved["latest"],
+            "newer": _numbers(saved["latest"]) > _numbers(__version__), "declined": saved.get("declined")}
+
+
+def app_decline(cfg: Config, version: str) -> None:
+    """Remember that this version was offered and turned down, so it isn't offered at every start."""
+    path = cfg.cache / APP_UPDATE_FILE
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        saved["declined"] = version
+        path.write_text(json.dumps(saved) + "\n", encoding="utf-8")
+    except (OSError, ValueError, TypeError):
+        pass
+
+
+def fetch_app(cfg: Config, asset: str) -> tuple[Path, str]:
+    """Download one of the latest release's programs (HelixBoot.exe, HelixBoot-linux-x86_64 …) into
+    the cache, verified against the checksum GitHub records for it. (file, its version)."""
+    if not re.fullmatch(r"HelixBoot[A-Za-z0-9._-]{0,40}", asset):
+        raise RescueError(f"{asset!r} isn't one of Helix Boot's programs")
+    name = "helixboot-exe" if asset == APP_EXE else "helixboot-" + re.sub(r"[^a-z0-9]+", "-", asset.lower()[9:]).strip("-")
+    lock = load_lock(cfg)
+    fetch_tool(cfg, {"name": name, "title": asset, "kind": "file", "source": "github", "repo": APP_REPO,
+                     "asset": [f"^{re.escape(asset)}$"], "checksum": ["github-digest"]}, lock)
+    save_lock(cfg, lock)
+    entry = lock.get(name) or {}
+    f = cfg.cache / name / str(entry.get("source_file") or "-")
+    if not f.is_file():
+        raise RescueError(f"{asset} couldn't be downloaded")
+    return f, str(entry.get("version") or "")
+
+
 def _numbers(version: str | None) -> tuple[int, ...]:
     """'v0.7.0' as (0, 7, 0), to tell older from newer."""
     return tuple(int(n) for n in re.findall(r"\d+", version or "")[:4])

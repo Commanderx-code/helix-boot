@@ -43,7 +43,11 @@ stick, and to nobody else:
   download sites for the latest version number of each tool, to tell you which
   have newer versions. It does this at most once every 6 hours. To turn it off,
   put `check_for_updates = false` under `[settings]` in `local.toml`, next to
-  the `.exe`.
+  the `.exe`. In the same look it asks github.com which release of Helix Boot
+  is the latest, to offer you a newer one; the same setting turns that off.
+- **When you accept a newer Helix Boot**, or click **Check for update**, it
+  downloads that release's program from GitHub and replaces itself with it.
+  Nothing is downloaded or replaced without your yes.
 - **When you press Install or Update** with *the internet* chosen, it downloads
   the tools and their checksums from those same sites. With *a pack* chosen it
   downloads nothing.

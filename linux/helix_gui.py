@@ -7,6 +7,7 @@ and not a drive letter, and Ventoy is installed by its own Linux script.
 
     linux/helix_gui.py              the window
     linux/helix_gui.py --list       USB sticks as JSON (--all: every disk, marked)
+    linux/helix_gui.py --self-update   get the latest release of this program, verified
 
 Nothing here runs as root but two things, each behind the desktop's own password dialog
 (pkexec): Ventoy's installer, which writes the disk, and fsck for Repair stick. Run it as
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -385,6 +387,7 @@ def on_linux() -> None:
     ).items():
         setattr(app, name, mine)
     app.SYSTEM = "system"
+    app.APP_ASSET = f"HelixBoot-linux-{platform.machine()}"     # this program's file in a release
     app.WINDOW = (680, 600)             # (the fonts here are wider than Windows' own)
     app.SAFE_TO_REMOVE = "eject it in your file manager before unplugging it"
     app.NO_LETTER = "or its partition can't be found"
@@ -400,7 +403,11 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
     on_linux()
+    app.tidy_old_program()
     try:
+        if "--self-update" in argv:
+            print(app.self_update())
+            return 0
         if "--version" in argv:
             print(f"helix {cr.__version__}")
             return 0

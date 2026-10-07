@@ -513,5 +513,101 @@ class TestPackaging(unittest.TestCase):
         self.assertEqual(sorted(missing), [], "add these imports to windows/helix_boot.py")
 
 
+class TestSelfUpdate(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.cfg = mock.Mock(cache=self.tmp / "cache", settings={})
+        self.cfg.cache.mkdir()
+        p = mock.patch.object(app, "config", lambda: self.cfg)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def latest(self, tag):
+        return mock.patch.object(app.cr, "_latest_tag", lambda repo: tag)
+
+    def test_asks_where_the_latest_release_is_and_remembers_for_a_while(self):
+        newer = f"v{app.cr.__version__.rsplit('.', 1)[0]}.999"
+        with self.latest(newer):
+            found = app.cr.app_update(self.cfg)
+        self.assertEqual((found["current"], found["latest"], found["newer"]), (app.cr.__version__, newer[1:], True))
+        with mock.patch.object(app.cr, "_latest_tag", side_effect=AssertionError("asked again too soon")):
+            self.assertTrue(app.cr.app_update(self.cfg)["newer"])          # from the last look
+        with self.latest(f"v{app.cr.__version__}"):
+            self.assertFalse(app.cr.app_update(self.cfg, refresh=True)["newer"])
+        with self.latest("v0.0.1"):
+            self.assertFalse(app.cr.app_update(self.cfg, refresh=True)["newer"])    # never offered an older one
+        with self.latest(None):                                             # offline: says so when asked by hand
+            with self.assertRaisesRegex(app.cr.RescueError, "couldn't ask GitHub"):
+                app.cr.app_update(self.cfg, refresh=True)
+            self.assertEqual(app.cr.app_update(self.cfg)["latest"], "0.0.1")       # and otherwise keeps what it knew
+        with self.latest("not-a-version/../x"):
+            with self.assertRaisesRegex(app.cr.RescueError, "couldn't ask GitHub"):
+                app.cr.app_update(self.cfg, refresh=True)
+
+    def test_turned_off_in_local_toml_and_a_declined_version_is_remembered(self):
+        self.cfg.settings = {"check_for_updates": False}
+        with mock.patch.object(app.cr, "_latest_tag", side_effect=AssertionError("it was turned off")):
+            self.assertIsNone(app.app_news(self.cfg))
+        with self.latest("v99.0.0"):
+            self.assertTrue(app.app_news(self.cfg, refresh=True)["newer"])   # asked for by hand: still answers
+            app.cr.app_decline(self.cfg, "99.0.0")
+            self.assertEqual(app.cr.app_update(self.cfg)["declined"], "99.0.0")
+
+    def test_the_new_program_takes_the_running_ones_place(self):
+        me, new = self.tmp / "HelixBoot.exe", self.tmp / "download.exe"
+        me.write_bytes(b"MZ old")
+        new.write_bytes(b"MZ new")
+        said = io.StringIO()
+        with self.latest("v99.0.0"), mock.patch.object(app.cr, "fetch_app", lambda cfg, asset: (new, "99.0.0")), \
+                redirect_stdout(said):
+            text = app.self_update(me=me)
+        self.assertIn("Helix Boot 99.0.0 is in place", text)
+        self.assertEqual(me.read_bytes(), b"MZ new")
+        self.assertEqual((self.tmp / "HelixBoot.old.exe").read_bytes(), b"MZ old")     # stepped aside, deleted at next start
+        self.assertFalse((self.tmp / "HelixBoot.exe.new").exists())
+        if os.name != "nt":
+            self.assertTrue(os.access(me, os.X_OK))
+        with mock.patch.object(app, "FROZEN", True), mock.patch.object(app.sys, "executable", str(me)):
+            app.tidy_old_program()
+        self.assertFalse((self.tmp / "HelixBoot.old.exe").exists())
+
+    def test_nothing_is_replaced_when_there_is_nothing_newer_or_the_download_isnt(self):
+        me, new = self.tmp / "HelixBoot.exe", self.tmp / "download.exe"
+        me.write_bytes(b"MZ old")
+        new.write_bytes(b"MZ what")
+        with self.latest(f"v{app.cr.__version__}"), \
+                mock.patch.object(app.cr, "fetch_app", side_effect=AssertionError("nothing to download")):
+            self.assertIn("is the newest version", app.self_update(me=me))
+        with self.latest("v99.0.0"), redirect_stdout(io.StringIO()):
+            with mock.patch.object(app.cr, "fetch_app", lambda cfg, asset: (new, app.cr.__version__)):
+                with self.assertRaisesRegex(app.RescueError, "isn't newer than this one"):
+                    app.self_update(me=me)
+            with mock.patch.object(app, "FROZEN", False):               # from a clone: git pull, nothing swapped
+                with self.assertRaisesRegex(app.RescueError, "git pull"):
+                    app.self_update()
+        self.assertEqual(me.read_bytes(), b"MZ old")
+
+    def test_only_helix_boots_own_programs_are_fetched_and_by_githubs_checksum(self):
+        asked = []
+
+        def fetch_tool(cfg, tool, lock, force=False):
+            asked.append(tool)
+            (cfg.cache / tool["name"]).mkdir(parents=True, exist_ok=True)
+            (cfg.cache / tool["name"] / tool["title"]).write_bytes(b"MZ")
+            lock[tool["name"]] = {"source_file": tool["title"], "version": "99.0.0"}
+        with mock.patch.object(app.cr, "fetch_tool", fetch_tool), mock.patch.object(app.cr, "load_lock", lambda cfg: {}), \
+                mock.patch.object(app.cr, "save_lock", lambda cfg, lock: None):
+            f, version = app.cr.fetch_app(self.cfg, "HelixBoot-linux-x86_64")
+            self.assertEqual((f.name, version), ("HelixBoot-linux-x86_64", "99.0.0"))
+            self.assertEqual(asked[0]["checksum"], ["github-digest"])
+            self.assertEqual(asked[0]["repo"], app.cr.APP_REPO)
+            self.assertEqual(asked[0]["asset"], [r"^HelixBoot\-linux\-x86_64$"])
+            self.assertEqual(app.cr.fetch_app(self.cfg, "HelixBoot.exe")[0].parent.name, "helixboot-exe")
+            for bad in ("evil.exe", "../HelixBoot.exe", "HelixBoot.exe/x", ""):
+                with self.assertRaisesRegex(app.cr.RescueError, "isn't one of Helix Boot's programs"):
+                    app.cr.fetch_app(self.cfg, bad)
+
+
+
 if __name__ == "__main__":
     unittest.main()

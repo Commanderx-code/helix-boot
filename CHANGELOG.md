@@ -11,6 +11,15 @@ tagged releases also publish the Windows app.
   does ("ProduKey", where it said "produkey") and reads right for one tool.
 
 ### Added
+- **The app updates itself.** At its start the window looks for a newer Helix
+  Boot and asks whether to get it; **Check for update**, under the version
+  number, does the same when you click it. The new program is downloaded from
+  the release, checked against the checksum GitHub records for it, and put in
+  the running one's place (which steps aside and is deleted at the next
+  start). A version you say no to isn't offered again, an older one never is,
+  and `check_for_updates = false` in `local.toml` turns the look at the start
+  off. Also `HelixBoot.exe --self-update`, and the same on Linux. Run from a
+  clone, it says to `git pull`.
 - **Helix Boot in a window on Linux:** `HelixBoot-linux-x86_64` in each
   release, one file with Python and Tk inside. It is the Windows app's window
   on Linux's own parts: sticks come from `lsblk`, a stick is where it is

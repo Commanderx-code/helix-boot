@@ -605,6 +605,75 @@ def repair(target: str, run=None) -> str:
             if code else f"✓ Windows found nothing wrong with the filesystem on {drive}.")
 
 
+# ── A newer Helix Boot ─────────────────────────────────────────────────────
+APP_ASSET = "HelixBoot.exe"         # this program's file in a release (linux/helix_gui.py has its own)
+
+
+def app_news(cfg, refresh: bool = False) -> dict | None:
+    """{"current", "latest", "newer", "declined"}, or None when the look is turned off
+    (check_for_updates = false in local.toml) and wasn't asked for by hand."""
+    if not refresh and cfg.settings.get("check_for_updates", True) is False:
+        return None
+    return cr.app_update(cfg, refresh=refresh)
+
+
+def old_program(me: Path) -> Path:
+    return me.with_name(f"{me.stem}.old{me.suffix}")
+
+
+def replace_program(new: Path, me: Path) -> None:
+    """Put a downloaded program where the running one is. A running program can be renamed, on
+    Windows too, though not written over: it steps aside as <name>.old and the new one takes its
+    name. The old one is deleted at the next start."""
+    staged, old = me.with_name(me.name + ".new"), old_program(me)
+    shutil.copy2(new, staged)
+    if os.name != "nt":
+        staged.chmod(0o755)
+    old.unlink(missing_ok=True)
+    os.replace(me, old)
+    try:
+        os.replace(staged, me)
+    except OSError:
+        os.replace(old, me)             # as it was
+        staged.unlink(missing_ok=True)
+        raise
+
+
+def tidy_old_program() -> None:
+    """Delete what an update left behind (the program that was running then)."""
+    if FROZEN:
+        try:
+            old_program(Path(sys.executable).resolve()).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def self_update(progress=lambda pct: None, me: Path | None = None) -> str:
+    """Download the latest release's program, verified, and put it in this one's place.
+    Returns what to tell the user; RescueError when it can't be done here."""
+    cfg = config()
+    found = cr.app_update(cfg, refresh=True)
+    if not found["newer"]:
+        return f"✓ Helix Boot {found['current']} is the newest version."
+    if me is None:
+        if not FROZEN:
+            raise RescueError(f"Helix Boot {found['latest']} is out (this is {found['current']}), but this one runs "
+                              "from a copy of the repo and not from a downloaded program: update it with `git pull`.")
+        me = Path(sys.executable).resolve()
+    print(f"\nDownloading Helix Boot {found['latest']} ({APP_ASSET}) …")
+    new, version = cr.fetch_app(cfg, APP_ASSET)
+    if cr._numbers(version) <= cr._numbers(found["current"]):
+        raise RescueError(f"the download is Helix Boot {version or '?'}, which isn't newer than this one")
+    try:
+        replace_program(new, me)
+    except OSError as e:
+        raise RescueError(f"couldn't put the new program in place ({e}). It is at {new}: copy it over "
+                          f"{me.name} yourself.") from None
+    progress(100)
+    return (f"✓ Helix Boot {version} is in place of {found['current']}. Close this window and start "
+            f"{me.name} again to use it.")
+
+
 # ── Output plumbing ────────────────────────────────────────────────────────
 class Tee:
     """Stand-in for stdout/stderr: to the GUI queue and/or a log file."""
@@ -660,6 +729,7 @@ def apply_theme(root) -> None:
     style.configure("TLabel", background=BG, foreground=TEXT)
     style.configure("Muted.TLabel", foreground=MUTED)
     style.configure("News.TLabel", foreground=ACCENT_HOT, font=(FONT, 9))
+    style.configure("Link.TLabel", foreground=ACCENT, font=(FONT, 9, "underline"))
     style.configure("Title.TLabel", font=(FONT, 18, "bold"))
     style.configure("TButton", background=PANEL, foreground=TEXT, padding=(12, 7), relief="flat", borderwidth=1)
     style.map("TButton", background=[("disabled", BG), ("pressed", EDGE), ("active", FIELD)],
@@ -754,7 +824,11 @@ def gui(selftest: bool = False) -> int:
     if logo:
         ttk.Label(head, image=logo).pack(side="left", padx=(0, 12))
     ttk.Label(head, text="Helix Boot", style="Title.TLabel").pack(side="left")
-    ttk.Label(head, text=f"v{cr.__version__}", style="Muted.TLabel").pack(side="right", anchor="n")
+    corner = ttk.Frame(head)
+    corner.pack(side="right", anchor="n")
+    ttk.Label(corner, text=f"v{cr.__version__}", style="Muted.TLabel").pack(anchor="e")
+    b_newer = ttk.Label(corner, text="Check for update", style="Link.TLabel", cursor="hand2")
+    b_newer.pack(anchor="e", pady=(2, 0))
     ttk.Separator(frm).pack(fill="x", pady=(12, 10))
 
     ttk.Label(frm, text="USB stick:").pack(anchor="w")
@@ -997,6 +1071,31 @@ def gui(selftest: bool = False) -> int:
                 q.put(("news", f"Couldn't look for newer versions of the tools ({e})."))
         threading.Thread(target=job, daemon=True).start()
 
+    def look_for_newer_app():
+        """In the background, at the start: is there a newer Helix Boot? Asked about once a version."""
+        def job():
+            try:
+                found = app_news(config())
+            except Exception:  # noqa: BLE001 — offline: nothing to say
+                return
+            if found and found["newer"]:
+                q.put(("app", found))
+        threading.Thread(target=job, daemon=True).start()
+
+    def do_self_update(event=None):
+        if not busy["on"]:
+            work(lambda progress: self_update(progress), done=lambda text: text)
+
+    def offer_newer_app(found):
+        b_newer.config(text=f"Update to v{found['latest']}")
+        if not FROZEN or busy["on"] or found.get("declined") == found["latest"]:
+            return                      # (from a clone it is `git pull`: the link says so when clicked)
+        if messagebox.askyesno(APP, f"Helix Boot {found['latest']} is out. This is {found['current']}.\n\n"
+                                    "Download it and put it in this one's place?"):
+            do_self_update()
+        else:
+            cr.app_decline(config(), found["latest"])
+
     def do_check():
         d = selected()
         if not d:
@@ -1036,6 +1135,8 @@ def gui(selftest: bool = False) -> int:
                         status.config(text=last[0][:110])
                 elif item[0] == "news":
                     news.config(text=item[1])
+                elif item[0] == "app":
+                    offer_newer_app(item[1])
                 elif item[0] == "total":
                     copying.update(total=item[1], done=0)
                 elif item[0] == "bytes":
@@ -1081,6 +1182,7 @@ def gui(selftest: bool = False) -> int:
     b_look.config(command=do_look)
     b_check.config(command=do_check)
     b_repair.config(command=do_repair)
+    b_newer.bind("<Button-1>", do_self_update)
     b_install.config(command=do_install)
     b_update.config(command=do_update)
     b_pack.config(command=choose_pack)
@@ -1092,6 +1194,7 @@ def gui(selftest: bool = False) -> int:
         root.after(2500, root.destroy)
     else:
         root.after(300, look_for_updates)
+        root.after(1500, look_for_newer_app)
     root.mainloop()
     return 0
 
@@ -1433,6 +1536,8 @@ def cli(argv: list[str]) -> int:
     ap.add_argument("--repair", metavar="DRIVE", help="have Windows repair a stick's filesystem (chkdsk /f)")
     ap.add_argument("--boot-script", metavar="VOLUME", help=argparse.SUPPRESS)   # with --sync-to: Ventoy's partition
     ap.add_argument("--updates", action="store_true", help="say which tools have newer versions than this PC has")
+    ap.add_argument("--self-update", action="store_true",
+                    help="download the latest Helix Boot, verified, and put it in this one's place")
     ap.add_argument("--yes", action="store_true", help="confirm --install")
     ap.add_argument("--mbr", action="store_true", help="MBR instead of GPT")
     ap.add_argument("--no-secure-boot", action="store_true")
@@ -1468,6 +1573,9 @@ def cli(argv: list[str]) -> int:
         if a.updates:
             print(updates_notice(config(), refresh=True))
             return 0
+        if a.self_update:
+            print(self_update())
+            return 0
         if a.list:
             disks = all_disks() if a.all else usb_disks()
             print(json.dumps(disks, indent=2))
@@ -1498,6 +1606,7 @@ def cli(argv: list[str]) -> int:
 
 def main() -> int:
     try:
+        tidy_old_program()
         if len(sys.argv) > 1:
             return cli(sys.argv[1:])
         return gui()

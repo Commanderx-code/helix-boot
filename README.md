@@ -342,6 +342,12 @@ to the disk.
 5. **Repair stick** has Windows repair the stick's filesystem (`chkdsk /f`),
    for when an update or a check says it is damaged. It asks first.
 
+The app keeps itself current too. When it starts it looks for a newer Helix
+Boot and asks whether to get it, and **Check for update** under the version
+number does that whenever you click it. The new program is downloaded from the
+release, checked against the checksum GitHub records for it, and takes the
+place of the one that is running; close the window and start it again.
+
 Under the title the app says whether newer versions of your tools are out. It
 looks at most every 6 hours, because GitHub limits how often a PC that isn't
 signed in may ask. `check_for_updates = false` under `[settings]` in
