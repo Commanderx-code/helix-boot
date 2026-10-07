@@ -37,9 +37,12 @@ tagged releases also publish the Windows app.
   The download cache is still yours, so a tool you pointed somewhere of your
   own is left out as well, and so is any cached copy that didn't come from the
   project's source for that tool: boot images, apps, Ventoy, the menu's
-  platform and the bundled programs alike. The file itself is held to the
+  platform and the bundled programs alike. What is taken is held to the
   cache's record as well: it has to be in that tool's own folder of the cache
-  and still have the checksum it had when it was downloaded.
+  and still have the checksum it had when it was downloaded, a folder
+  included. Whatever can't be checked is left out and named. (A cache from
+  before this version has no checksum for the PortableApps.com platform's
+  folder: `helix fetch --force portableapps` records one.)
 - Making any pack re-checks Ventoy and the bundled `HelixBoot.exe` against the
   checksums they were verified to have when downloaded, as it does the apps.
 - **`helix pack --split`:** also cuts the pack into pieces (2 GiB if not said)

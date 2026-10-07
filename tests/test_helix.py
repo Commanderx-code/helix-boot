@@ -2478,8 +2478,7 @@ class TestPack(Base):
                 z.read(n).decode("utf-8", "replace") for n in z.namelist() if n.endswith((".json", ".txt", ".cfg")))
             meta = json.loads(z.read(cr.PACK_META))
             self.assertEqual(meta["off"], [])                       # what you switched off is your business
-            # (as shipped it is on, so the pack wants it; you never fetched it, which the run says)
-            self.assertIn("Memtest86+: not fetched yet", log)
+            self.assertFalse(any(i["name"] == "memtest86plus" for i in meta["isos"]))   # (never fetched here)
             for yours in ("paid-tool-i-own", "private", "Private Tool", "My Own", "mine/splash", "MYSTICK"):
                 where = [n for n in z.namelist() if yours in n or (n.endswith((".json", ".txt", ".cfg", ".toml"))
                                                                     and yours in z.read(n).decode("utf-8", "replace"))]
@@ -2594,24 +2593,50 @@ class TestPack(Base):
 
     def test_every_kind_of_thing_in_a_public_pack_passes_the_same_gate(self):
         cfg = self.cfg
-        good = {"url": "https://github.com/ventoy/Ventoy/releases/download/v1/ventoy.tar.gz"}
-        gh = {"source": "github", "repo": "ventoy/Ventoy"}
-        for kind in ("iso", "app", "ventoy", "file", "tree"):
-            t = {**gh, "kind": kind, "name": "x"}
-            self.assertEqual(cr._shareable(cfg, t, good), "yes", kind)
-            self.assertEqual(cr._shareable(cfg, t, {"url": "https://my.example/ventoy.tar.gz"}), "elsewhere", kind)
-            self.assertEqual(cr._shareable(cfg, t, {**good, "path": "/home/me/mine.bin"}), "no", kind)
-            self.assertEqual(cr._shareable(cfg, {**t, "byo": True}, good), "no", kind)
-            self.assertEqual(cr._shareable(cfg, t, {}), "yes", kind)                # nothing cached, nothing to carry
+        self.fetch()
+        lock = cr.load_lock(cfg)
+        tools = {t["name"]: t for t in cfg.tools}
+        with unittest.mock.patch.object(cr, "_from_its_source", lambda t, e: "my.example" not in str(e.get("url"))):
+            for name in ("systemrescue", "memtest86plus", "sysinternals", "ventoy"):    # iso, iso from a zip, app, Ventoy
+                t, entry = tools[name], lock[name]
+                self.assertEqual(cr._shareable(cfg, t, entry), "yes", name)
+                self.assertEqual(cr._shareable(cfg, t, {**entry, "url": "https://my.example/x"}), "elsewhere", name)
+                self.assertEqual(cr._shareable(cfg, t, {**entry, "path": "/home/me/mine.bin"}), "no", name)
+                self.assertEqual(cr._shareable(cfg, {**t, "byo": True}, entry), "no", name)
+                self.assertEqual(cr._shareable(cfg, t, {}), "absent", name)
+                # nothing gets through unchecked: no checksum in the record, no file, no name
+                for missing in ({"sha256": None, "sha256_download": None}, {"final": None}, {"source_file": None},
+                                {"final": "gone.iso", "source_file": "gone.iso"}, {"sha256": "x", "sha256_download": "x"}):
+                    self.assertEqual(cr._shareable(cfg, t, {**entry, **missing}), "changed", (name, missing))
+            # Ventoy is its archive: the folder it unpacks to isn't what a pack carries
+            archive = cfg.cache / "ventoy" / lock["ventoy"]["source_file"]
+            archive.write_bytes(archive.read_bytes() + b"x")
+            self.assertEqual(cr._shareable(cfg, tools["ventoy"], lock["ventoy"]), "changed")
+            # A folder that goes on the stick as it is (the menu's platform) is held to a checksum of the folder
+            tree = cfg.cache / "platform" / "tree-1"
+            (tree / "App").mkdir(parents=True)
+            (tree / "App/Platform.exe").write_bytes(b"MZ platform")
+            (cfg.cache / "platform/setup.paf.exe").write_bytes(b"MZ setup")
+            t = {"name": "platform", "kind": "tree", "source": "page"}
+            entry = {"final": "tree-1", "source_file": "setup.paf.exe", "url": "https://portableapps.com/x",
+                     "sha256": cr.folder_hash(tree), "sha256_download": sha(b"MZ setup")}
+            self.assertEqual(cr._shareable(cfg, t, entry), "yes")
+            self.assertEqual(cr._shareable(cfg, t, {**entry, "sha256": None}), "changed")      # an older cache: no record
+            (tree / "App/Platform.exe").write_bytes(b"MZ platform, with something added")
+            self.assertEqual(cr._shareable(cfg, t, entry), "changed")
         # "local": a build of yours when it is a boot image or an app; the project's own files otherwise,
-        # and then only from the project's folder, never from byo/ or the PE's output
+        # and then only from the project's folder, unchanged, never from byo/ or the PE's output
         local = {"source": "local", "name": "x"}
-        inside = str(self.repo / "pe/launcher/HelixApps.cmd")
-        self.assertEqual(cr._shareable(cfg, {**local, "kind": "iso"}, {"path": inside}), "no")
-        self.assertEqual(cr._shareable(cfg, {**local, "kind": "tree"}, {"path": inside}), "yes")
-        self.assertEqual(cr._shareable(cfg, {**local, "kind": "file"}, {"path": str(self.repo / "byo/thing")}), "no")
-        self.assertEqual(cr._shareable(cfg, {**local, "kind": "tree"}, {"path": str(self.repo / "pe/out/x")}), "no")
-        self.assertEqual(cr._shareable(cfg, {**local, "kind": "file"}, {"path": "/home/someone/else"}), "no")
+        launcher = self.repo / "pe/launcher/HelixApps.cmd"
+        rec = {"path": str(launcher), "sha256": sha(launcher.read_bytes())}
+        self.assertEqual(cr._shareable(cfg, {**local, "kind": "iso"}, rec), "no")
+        self.assertEqual(cr._shareable(cfg, {**local, "kind": "file"}, rec), "yes")
+        self.assertEqual(cr._shareable(cfg, {**local, "kind": "tree"}, {"path": str(launcher.parent),
+                                                                        "sha256": cr.folder_hash(launcher.parent)}), "yes")
+        self.assertEqual(cr._shareable(cfg, {**local, "kind": "file"}, {**rec, "sha256": None}), "changed")
+        self.assertEqual(cr._shareable(cfg, {**local, "kind": "file"}, {"sha256": rec["sha256"]}), "no")
+        for elsewhere in (self.repo / "byo/thing", self.repo / "pe/out/x", Path("/home/someone/else")):
+            self.assertEqual(cr._shareable(cfg, {**local, "kind": "file"}, {**rec, "path": str(elsewhere)}), "no")
 
         # In a real pack: Ventoy and the app for Windows that came from somewhere else are left out
         self.windows_ventoy_upstream()
@@ -2645,7 +2670,7 @@ class TestPack(Base):
             out = self.tmp / "public.zip"
             rc, log = self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(out), "public": True})())
             self.assertEqual(rc, 0, log)
-            self.assertIn("isn't the one that was downloaded: SystemRescue", log)
+            self.assertIn("isn't what was downloaded, or can't be shown to be: SystemRescue", log)
             with zipfile.ZipFile(out) as z:
                 self.assertFalse(any(b"my own licensed image" in z.read(n) for n in z.namelist() if n.endswith(".iso")))
                 self.assertFalse(any("systemrescue" in n for n in z.namelist()))
