@@ -405,5 +405,41 @@ class TestFront(unittest.TestCase):
         self.assertNotIn("Windows", app.SAFE_TO_REMOVE + app.NO_LETTER + app.SYSTEM + gui.repair_question({"Ventoy": "/dev/sdb1"}))
 
 
+class TestEjectAndLauncher(unittest.TestCase):
+    def test_eject_unmounts_every_partition_then_switches_the_stick_off(self):
+        calls = []
+        d = disks(VENTOY)[0]
+        fakes = dict(partitions=lambda dev: [f"{dev}1", f"{dev}2"], unmount=lambda part: calls.append(("unmount", part)),
+                     run=lambda cmd, timeout=60, **kw: calls.append(tuple(cmd)) or "")
+        with mock.patch.multiple(gui, **fakes), mock.patch.object(gui.subprocess, "run"):
+            self.assertIn("/dev/sdb is ejected: safe to unplug", gui.eject(d))
+        self.assertEqual(calls, [("unmount", "/dev/sdb1"), ("unmount", "/dev/sdb2"),
+                                 ("udisksctl", "power-off", "-b", "/dev/sdb")])
+
+        def busy(part):
+            raise app.RescueError("target is busy")
+        with mock.patch.multiple(gui, **{**fakes, "unmount": busy}), mock.patch.object(gui.subprocess, "run"):
+            with self.assertRaisesRegex(app.RescueError, "still in use, so the stick wasn't ejected"):
+                gui.eject(d)
+        with mock.patch.object(gui.subprocess, "run", side_effect=AssertionError("nothing may be run")):
+            with self.assertRaisesRegex(app.RescueError, "isn't a stick that can be ejected"):
+                gui.eject({**disks(NVME)[0]})
+
+    def test_the_applications_menu_entry_starts_this_program(self):
+        tmp = Path(tempfile.mkdtemp())
+        with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(tmp)}), \
+                mock.patch.object(gui, "program", lambda: ["/opt/my tools/HelixBoot-linux-x86_64"]):
+            self.assertIn("is in your applications menu", gui.add_launcher())
+            entry = (tmp / "applications/helix-boot.desktop").read_text()
+            self.assertIn('Exec="/opt/my tools/HelixBoot-linux-x86_64"\n', entry)
+            self.assertIn("Terminal=false\n", entry)
+            self.assertIn("Icon=helix-boot\n", entry)
+            self.assertTrue((tmp / "icons/hicolor/256x256/apps/helix-boot.png").is_file())
+            self.assertIn("out of your applications menu", gui.remove_launcher())
+            self.assertFalse((tmp / "applications/helix-boot.desktop").exists())
+            self.assertFalse((tmp / "icons/hicolor/256x256/apps/helix-boot.png").exists())
+
+
+
 if __name__ == "__main__":
     unittest.main()

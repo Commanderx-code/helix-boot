@@ -8,6 +8,7 @@ and not a drive letter, and Ventoy is installed by its own Linux script.
     linux/helix_gui.py              the window
     linux/helix_gui.py --list       USB sticks as JSON (--all: every disk, marked)
     linux/helix_gui.py --self-update   get the latest release of this program, verified
+    linux/helix_gui.py --add-launcher  put Helix Boot in your applications menu (--remove-launcher takes it out)
 
 Nothing here runs as root but two things, each behind the desktop's own password dialog
 (pkexec): Ventoy's installer, which writes the disk, and fsck for Repair stick. Run it as
@@ -370,6 +371,60 @@ def repair(target: str, run_=None) -> str:
             if code else f"✓ fsck found nothing wrong with the filesystem on {part}.")
 
 
+def eject(d: dict, run_=None) -> str:
+    """Unmount the stick's partitions and switch it off, as the file manager's Eject does."""
+    dev = d.get("Path") or ""
+    if not re.fullmatch(r"/dev/[A-Za-z0-9]+", dev) or d.get("System"):
+        raise RescueError("that isn't a stick that can be ejected")
+    subprocess.run(["sync"], capture_output=True, timeout=600)
+    for part in partitions(dev):
+        try:
+            unmount(part)
+        except RescueError as e:
+            raise RescueError(f"{part} is still in use, so the stick wasn't ejected. Close whatever has it open "
+                              f"(a file manager window, a terminal in it) and try again.\n({e})") from None
+    try:
+        run(["udisksctl", "power-off", "-b", dev], timeout=60)
+    except RescueError:
+        return f"✓ {dev} is unmounted: safe to unplug. (It couldn't be switched off, which some sticks don't allow.)"
+    return f"✓ {dev} is ejected: safe to unplug."
+
+
+# ── An entry in the applications menu ──────────────────────────────────────
+def launcher_paths() -> tuple[Path, Path]:
+    data = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    return data / "applications" / "helix-boot.desktop", data / "icons" / "hicolor" / "256x256" / "apps" / "helix-boot.png"
+
+
+def program() -> list[str]:
+    """The command that starts this window: the one-file program, or this script."""
+    if getattr(sys, "frozen", False):
+        return [str(Path(sys.executable).resolve())]
+    return [sys.executable, str(Path(__file__).resolve())]
+
+
+def add_launcher() -> str:
+    """Put Helix Boot in the desktop's applications menu, for you only (~/.local/share)."""
+    desktop, icon = launcher_paths()
+    picture = next((p for p in (app.bundle_dir() / "icon.png", app.bundle_dir() / "windows" / "icon.png") if p.is_file()), None)
+    desktop.parent.mkdir(parents=True, exist_ok=True)
+    if picture:
+        icon.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(picture, icon)
+    quoted = " ".join('"' + part.replace("\\", "\\\\").replace('"', '\\"') + '"' for part in program())
+    desktop.write_text("[Desktop Entry]\nType=Application\nName=Helix Boot\n"
+                       "Comment=Build or refresh a Helix Boot rescue stick\n"
+                       f"Exec={quoted}\nIcon={'helix-boot' if picture else 'drive-removable-media'}\n"
+                       "Terminal=false\nCategories=System;\nStartupWMClass=Tk\n", encoding="utf-8")
+    return f"✓ Helix Boot is in your applications menu ({desktop}). If the program is moved, add it again."
+
+
+def remove_launcher() -> str:
+    for f in launcher_paths():
+        f.unlink(missing_ok=True)
+    return "✓ Helix Boot is out of your applications menu."
+
+
 def open_path(path: Path) -> bool:
     opener = shutil.which("xdg-open")
     if not opener:
@@ -384,7 +439,7 @@ def on_linux() -> None:
         all_disks=all_disks, disk_identity=disk_identity, stick_path=stick_path, where_text=where_text,
         wait_for_ventoy_letter=wait_for_stick, ventoy_dir=ventoy_dir, pack_ventoy_dir=pack_ventoy_dir,
         ventoy_command=ventoy_command, run_ventoy=run_ventoy, name_stick=name_stick, boot_script=boot_script,
-        repair=repair, repair_question=repair_question, open_path=open_path,
+        repair=repair, repair_question=repair_question, open_path=open_path, eject=eject,
     ).items():
         setattr(app, name, mine)
     app.SYSTEM = "system"
@@ -408,6 +463,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if "--self-update" in argv:
             print(app.self_update())
+            return 0
+        if "--add-launcher" in argv or "--remove-launcher" in argv:
+            print(add_launcher() if "--add-launcher" in argv else remove_launcher())
             return 0
         if "--version" in argv:
             print(f"helix {cr.__version__}")

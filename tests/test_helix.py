@@ -2432,19 +2432,48 @@ class TestPack(Base):
         toml = self.repo / "tools.toml"
         toml.write_text(toml.read_text() + '\n[[tool]]\nname = "mine"\ntitle = "My Own"\nkind = "iso"\n'
                         'category = "rescue"\nsource = "local"\npath = "mine.iso"\nbyo = true\n')
+        # … and what else is yours: an icon named for a tool you own, your splash, a tool of your own
+        # in local.toml that downloads from somewhere of yours
+        theme = self.repo / "theme"
+        (theme / "icons").mkdir(parents=True)
+        (theme / "theme.txt").write_text('desktop-image: "background.png"\n')
+        (theme / "background.png").write_bytes(b"background")
+        (theme / "splash.png").write_bytes(b"stock splash")
+        (theme / "icons/systemrescue.png").write_bytes(b"stock icon")
+        (self.repo / "byo/icons").mkdir(parents=True)
+        (self.repo / "byo/icons/paid-tool-i-own.png").write_bytes(b"my icon")
+        (self.repo / "byo/splash.png").write_bytes(b"my splash")
+        put("web/private.zip", zipped({"private.exe": b"MZ private"}))
+        (self.repo / "local.toml").write_text(
+            f'[settings]\ntheme = "theme"\n\n[[tool]]\nname = "private"\ntitle = "Private Tool"\nkind = "app"\nsource = "url"\n'
+            f'url = "{BASE}/web/private.zip"\nchecksum = ["tofu"]\n')
         self.cfg = cr.Config(repo=self.repo)
+        self.assertEqual(self.cfg.own, {"private"})
         self.fetch()
         private, _ = self.pack(self.tmp / "private.zip")
         with zipfile.ZipFile(private) as z:
+            everything = "\n".join(z.namelist())
             self.assertTrue(any(n.endswith("mine.iso") for n in z.namelist()))
+            self.assertIn("paid-tool-i-own", everything)
+            self.assertIn("Apps/private/private.exe", everything)
         out = self.tmp / "public.zip"
         rc, log = self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(out), "public": True, "split": 0.0625})())
         self.assertEqual(rc, 0, log)
-        self.assertIn("A public pack: leaving out 1 of your own (My Own)", log)
+        self.assertIn("A public pack: leaving out 2 of your own (My Own, Private Tool), and your icons and splash", log)
         self.assertIn("it can be shared", log)
         with zipfile.ZipFile(out) as z:
             self.assertFalse(any("mine.iso" in n for n in z.namelist()))
             self.assertTrue(any(n.endswith("systemrescue-12.02-amd64.iso") for n in z.namelist()))
+            everything = "\n".join(z.namelist()) + "".join(
+                z.read(n).decode("utf-8", "replace") for n in z.namelist() if n.endswith((".json", ".txt", ".cfg")))
+            for yours in ("paid-tool-i-own", "private", "Private Tool", "My Own", "mine/splash"):
+                where = [n for n in z.namelist() if yours in n or (n.endswith((".json", ".txt", ".cfg", ".toml"))
+                                                                    and yours in z.read(n).decode("utf-8", "replace"))]
+                # (tools.toml is the project's own list, slots for tools you bring included: it travels as it is)
+                self.assertEqual([n for n in where if n != "installer/tools.toml"], [], yours)
+            self.assertNotIn(b"my splash", b"".join(z.read(n) for n in z.namelist() if "splash" in n))
+            self.assertIn("icons/systemrescue.png", everything)     # the project's own look is all there
+            self.assertIn("Apps/sysinternals/procexp64.exe", everything)
         folder = self.tmp / "public-pieces"
         names = sorted(p.name for p in folder.iterdir())
         self.assertEqual(names, ["README.txt", "SHA256.txt", "build-stick.cmd", "build-stick.sh", "public.zip.part00"])

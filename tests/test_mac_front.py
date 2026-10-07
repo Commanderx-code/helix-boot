@@ -326,6 +326,23 @@ class TestMacFront(unittest.TestCase):
         self.assertEqual(seen["dir"], str(self.tmp))
         self.assertTrue((self.tmp / "byo").is_dir())
 
+    def test_self_update_gets_this_macs_program_and_only_for_a_downloaded_one(self):
+        cfg = mock.Mock()
+        asked = []
+        with mock.patch.object(mac, "config", lambda: cfg), redirect_stdout(io.StringIO()) as out, redirect_stderr(out):
+            with mock.patch.object(mac.cr, "app_update", lambda cfg, refresh=False: {"newer": False, "current": "1.0", "latest": "1.0"}):
+                self.assertEqual(mac.self_update("arm64"), 0)
+            self.assertIn("is the newest version", out.getvalue())
+            newer = {"newer": True, "current": "1.0", "latest": "2.0"}
+            with mock.patch.object(mac.cr, "app_update", lambda cfg, refresh=False: newer):
+                with mock.patch.object(mac, "FROZEN", False), self.assertRaisesRegex(mac.cr.RescueError, "git pull"):
+                    mac.self_update("arm64")
+                with mock.patch.object(mac, "FROZEN", True), mock.patch.object(mac.sys, "executable", "/x/HelixBoot-mac-arm64"), \
+                        mock.patch.object(mac.cr, "update_program", lambda cfg, asset, me: asked.append((asset, me.name)) or "✓ done"):
+                    self.assertEqual(mac.self_update("x86_64"), 0)
+        self.assertEqual(asked, [("HelixBoot-mac-x86_64", "HelixBoot-mac-arm64")])
+
+
     def test_every_module_the_engine_imports_is_named_for_the_one_file_build(self):
         # PyInstaller can't see inside helix (it's a data file), so helix-mac imports them for it
         import ast

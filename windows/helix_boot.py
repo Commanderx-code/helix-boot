@@ -214,7 +214,7 @@ def powershell(script: str) -> str:
 # What differs on another system is kept to these few names, which linux/helix-gui replaces:
 # the disk layer below, Ventoy's installer, and the words that name Windows' own things.
 SYSTEM = "Windows"
-WINDOW = (600, 584)                 # the main window's size, which is also the smallest it goes (less 40 x 20)
+WINDOW = (600, 610)                 # the main window's size, which is also the smallest it goes (less 40 x 20)
 SAFE_TO_REMOVE = "safe to remove once Windows says so"
 NO_LETTER = "or Windows gave it no drive letter"
 
@@ -242,6 +242,25 @@ def open_path(path: Path) -> bool:
         os.startfile(path)  # noqa: S606
         return True
     return False
+
+
+def eject(d: dict, run=None) -> str:
+    """Flush what was written and have Windows eject the stick, as "Safely remove" does.
+    Returns what to tell the user; RescueError if Windows won't let go of it."""
+    run = run or powershell
+    letter = str(d.get("Ventoy") or "")
+    if not re.fullmatch(r"[A-Za-z]", letter):
+        raise RescueError(f"That disk has no stick's drive letter to eject, {NO_LETTER}.")
+    cr._flush_volume(Path(f"{letter}:\\"))
+    run(f"$d = (New-Object -ComObject Shell.Application).Namespace(17).ParseName('{letter}:'); "
+        "if (-not $d) { throw 'no such drive' }; $d.InvokeVerb('Eject')")
+    for _ in range(10):                 # (the verb returns at once; the drive goes a moment later)
+        time.sleep(1)
+        now = next((x for x in all_disks(run) if x["Number"] == d["Number"]), None)
+        if not now or not now.get("Ventoy"):
+            return f"✓ {letter}: is ejected: safe to unplug."
+    raise RescueError(f"Windows wouldn't eject {letter}: — something still has it open (a window showing it, "
+                      "or a program on it). Close that and try again.")
 
 
 def all_disks(run=powershell) -> list[dict]:
@@ -395,16 +414,20 @@ def pack_ventoy_dir(cfg, pack) -> Path:
     return cr._ventoy_from_pack(cfg, str(pack), windows=True)
 
 
+LEAVE_OUT: set[str] = set()         # tools to do without in this run (the window's antivirus box)
+
+
 def unpack(cfg, target: str, pack, init: bool) -> None:
     print(f"\nCopying from {Path(pack).name} to {target} …")
     if cr.cmd_unpack(cfg, ns(pack=str(pack), target=target, init=init, dry_run=False, verify=True,
-                             no_prune=False)):
+                             no_prune=False, leave_out=sorted(LEAVE_OUT))):
         raise RescueError("copying from the pack failed (see above)")
 
 
 def sync(cfg, target: str, init: bool) -> None:
     print(f"\nCopying tools to {target} …")
-    if cr.cmd_sync(cfg, ns(target=target, init=init, dry_run=False, verify=True, no_prune=False)):
+    if cr.cmd_sync(cfg, ns(target=target, init=init, dry_run=False, verify=True, no_prune=False,
+                           leave_out=sorted(LEAVE_OUT))):
         raise RescueError("copying to the stick failed (see above)")
 
 
@@ -607,6 +630,7 @@ def repair(target: str, run=None) -> str:
 
 # ── A newer Helix Boot ─────────────────────────────────────────────────────
 APP_ASSET = "HelixBoot.exe"         # this program's file in a release (linux/helix_gui.py has its own)
+UPDATED = {"to": ""}                # the version self_update just put in place, for "start it now?"
 GETS_THEM = "Update stick gets them"    # in the engine's line about newer tools (true with the internet chosen)
 
 
@@ -643,6 +667,7 @@ def self_update(progress=lambda pct: None, me: Path | None = None) -> str:
     """Download the latest release's program, verified, and put it in this one's place.
     Returns what to tell the user; RescueError when it can't be done here."""
     cfg = config()
+    UPDATED["to"] = ""
     found = cr.app_update(cfg, refresh=True)
     if not found["newer"]:
         return f"✓ Helix Boot {found['current']} is the newest version."
@@ -661,8 +686,18 @@ def self_update(progress=lambda pct: None, me: Path | None = None) -> str:
         raise RescueError(f"couldn't put the new program in place ({e}). It is at {new}: copy it over "
                           f"{me.name} yourself.") from None
     progress(100)
+    UPDATED["to"] = version
     return (f"✓ Helix Boot {version} is in place of {found['current']}. Close this window and start "
             f"{me.name} again to use it.")
+
+
+def start_again() -> None:
+    """Start this program afresh (the one an update just put in place): its own copy of what it
+    carries inside, not this one's."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("_MEI") and k != "_PYI_ARCHIVE_FILE"}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    subprocess.Popen([sys.executable], env=env, close_fds=True,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 # ── Output plumbing ────────────────────────────────────────────────────────
@@ -825,6 +860,8 @@ def gui(selftest: bool = False) -> int:
     ttk.Label(frm, text="USB stick:").pack(anchor="w")
     pick_row = ttk.Frame(frm)
     pick_row.pack(fill="x", pady=(3, 8))
+    b_eject = ttk.Button(pick_row, text="Eject", padding=(10, 5))
+    b_eject.pack(side="right", padx=(6, 0))
     b_refresh = ttk.Button(pick_row, text="Refresh", padding=(10, 5))
     b_refresh.pack(side="right", padx=(8, 0))
     drive = ttk.Combobox(pick_row, state="readonly", values=[])
@@ -839,6 +876,16 @@ def gui(selftest: bool = False) -> int:
     ttk.Checkbutton(frm, text="Install tests the stick first (slow: fills it and reads it back)",
                     variable=testv).pack(anchor="w")
     ttk.Checkbutton(frm, text="Update also refreshes Ventoy", variable=upv).pack(anchor="w")
+    # Tools this system's antivirus is known to stop being written: said here, before anything is
+    # copied, with the choice of doing without them. (Unticked, they are tried, and skipped if blocked.)
+    try:
+        flagged = cr.flagged_tools(config()) if SYSTEM == "Windows" else []
+    except cr.RescueError:
+        flagged = []
+    avoid = tk.BooleanVar(value=False)
+    if flagged:
+        titles = ", ".join(t["title"] for t in flagged[:3]) + (" …" if len(flagged) > 3 else "")
+        ttk.Checkbutton(frm, text=f"Leave out what antivirus usually blocks ({titles})", variable=avoid).pack(anchor="w")
 
     # Where the tools come from: the internet, or a pack (picked up beside the app if there is one)
     found = find_pack()
@@ -875,13 +922,14 @@ def gui(selftest: bool = False) -> int:
 
     foot = ttk.Frame(frm)
     foot.pack(fill="x", side="bottom")
-    foot.columnconfigure((0, 1, 2, 3), weight=1, uniform="foot")
-    b_look = ttk.Button(foot, text="Look…")
-    b_check = ttk.Button(foot, text="Check stick")
-    b_repair = ttk.Button(foot, text="Repair stick")
-    b_folder = ttk.Button(foot, text="My tools folder")
-    for i, b in enumerate((b_look, b_check, b_repair, b_folder)):
-        b.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 4, 0 if i == 3 else 4))
+    foot.columnconfigure((0, 1, 2, 3, 4), weight=1, uniform="foot")
+    b_look = ttk.Button(foot, text="Look…", padding=(4, 7))
+    b_tools = ttk.Button(foot, text="Tools…", padding=(4, 7))
+    b_check = ttk.Button(foot, text="Check stick", padding=(4, 7))
+    b_repair = ttk.Button(foot, text="Repair stick", padding=(4, 7))
+    b_folder = ttk.Button(foot, text="My folder", padding=(4, 7))
+    for i, b in enumerate((b_look, b_tools, b_check, b_repair, b_folder)):
+        b.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 3, 0 if i == 4 else 3))
     # The log: out of the way until asked for
     out = tk.Text(frm, height=10, wrap="word", font=("Consolas" if os.name == "nt" else "DejaVu Sans Mono", 9),
                   relief="flat", background="#0d0b16", foreground="#cfc8e6", insertbackground="#cfc8e6",
@@ -958,7 +1006,7 @@ def gui(selftest: bool = False) -> int:
 
     def set_busy(on):
         busy["on"] = on
-        for b in (b_refresh, b_install, b_update, b_pack, b_look, b_check, b_repair):
+        for b in (b_refresh, b_eject, b_install, b_update, b_pack, b_look, b_tools, b_check, b_repair):
             b.state(["disabled"] if on else ["!disabled"])
         drive.state(["disabled"] if on else ["!disabled", "readonly"])
 
@@ -1012,10 +1060,27 @@ def gui(selftest: bool = False) -> int:
         q.put(("confirm", summary, answer))
         return answer.get()
 
+    def leave_out():
+        LEAVE_OUT.clear()
+        if avoid.get():
+            LEAVE_OUT.update(t["name"] for t in flagged)
+
+    def do_eject():
+        d = selected()
+        if d:
+            work(lambda progress: eject(d), done=lambda text: text)
+
+    def do_tools():
+        try:
+            tools_window(root, on_saved=lambda text: status.config(text=text))
+        except cr.RescueError as e:
+            messagebox.showerror(APP, str(e))
+
     def do_install():
         d = selected()
         if not d:
             return
+        leave_out()
         pack = chosen_pack()
         if pack is False:
             return
@@ -1034,6 +1099,7 @@ def gui(selftest: bool = False) -> int:
         d = selected()
         pack = chosen_pack() if d else None
         if d and pack is not False:
+            leave_out()
             work(update, d["Number"], upgrade_ventoy=upv.get(), secure_boot=secure.get(), pack=pack,
                  confirm=confirm_update, expected=d, on_plan=lambda nbytes: q.put(("total", nbytes)))
 
@@ -1174,6 +1240,12 @@ def gui(selftest: bool = False) -> int:
                     refresh()
                     look_for_updates()      # what was just fetched counts now (no new look upstream)
                     (messagebox.showinfo if item[0] == "done" else messagebox.showerror)(APP, item[1])
+                    if item[0] == "done" and UPDATED["to"] and FROZEN:
+                        UPDATED["to"] = ""
+                        if messagebox.askyesno(APP, "Start the new version now? (This window closes.)"):
+                            start_again()
+                            root.destroy()
+                            return
         except queue.Empty:
             pass
         root.after(100, pump)
@@ -1184,6 +1256,8 @@ def gui(selftest: bool = False) -> int:
     b_look.config(command=do_look)
     b_check.config(command=do_check)
     b_repair.config(command=do_repair)
+    b_eject.config(command=do_eject)
+    b_tools.config(command=do_tools)
     use_pack.trace_add("write", show_news)
     b_newer.bind("<Button-1>", do_self_update)
     b_install.config(command=do_install)
@@ -1194,6 +1268,7 @@ def gui(selftest: bool = False) -> int:
     root.after(50, refresh)
     root.after(100, pump)
     if selftest:
+        root.after(500, lambda: tools_window(root, selftest=True))      # (opened and closed, to see that it can be)
         root.after(2500, root.destroy)
     else:
         root.after(300, look_for_updates)
@@ -1203,6 +1278,78 @@ def gui(selftest: bool = False) -> int:
 
 
 # ── The Look window ────────────────────────────────────────────────────────
+def tools_window(parent, on_saved=lambda text: None, selftest: bool = False):
+    """Which tools go on a stick: a list to tick, by category. What is chosen here is kept in
+    tool-choices.json beside local.toml and applies from the next Install or Update."""
+    import tkinter as tk
+    from tkinter import ttk
+
+    cfg = config()
+    tools = cr.tool_choices(cfg)
+    win = tk.Toplevel(parent)
+    win.title(f"{APP}: tools")
+    win.geometry("520x620")
+    win.minsize(420, 360)
+    win.configure(background=BG)
+    win.transient(parent)
+    frm = ttk.Frame(win, padding=(16, 12, 16, 14))
+    frm.pack(fill="both", expand=True)
+    ttk.Label(frm, text="Tick what goes on the stick. A tool you untick is taken off at the next Update.",
+              style="Muted.TLabel", wraplength=480, justify="left").pack(anchor="w", pady=(0, 8))
+    foot = ttk.Frame(frm)
+    foot.pack(fill="x", side="bottom", pady=(10, 0))
+    count = ttk.Label(foot, style="Muted.TLabel")
+    count.pack(side="left")
+    holder = ttk.Frame(frm)
+    holder.pack(fill="both", expand=True)
+    canvas = tk.Canvas(holder, background=BG, highlightthickness=0)
+    bar = ttk.Scrollbar(holder, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=bar.set)
+    bar.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+    inner = ttk.Frame(canvas)
+    canvas.create_window((0, 0), window=inner, anchor="nw")
+    inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+    canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+    canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+
+    ticks: dict[str, tk.BooleanVar] = {}
+
+    def counted(*_):
+        count.config(text=f"{sum(v.get() for v in ticks.values())} of {len(ticks)} tools")
+
+    last = None
+    for t in tools:                             # (in the order of tools.toml, which goes by category)
+        if t["category"] != last:
+            last = t["category"]
+            ttk.Label(inner, text=last, font=(FONT, 10, "bold")).pack(anchor="w", pady=(10 if ticks else 0, 2))
+        ticks[t["name"]] = var = tk.BooleanVar(value=t["on"])
+        var.trace_add("write", counted)
+        ttk.Checkbutton(inner, text=t["title"] + ("  (yours)" if t["yours"] else ""), variable=var).pack(anchor="w", padx=(8, 0))
+    counted()
+
+    def close():
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            canvas.unbind_all(seq)
+        win.destroy()
+
+    def save():
+        saved = cr.save_choices(cfg, {n for n, v in ticks.items() if v.get()})
+        changed = len(saved["off"]) + len(saved["on"])
+        on_saved(f"Tools chosen: {sum(v.get() for v in ticks.values())} of {len(ticks)}"
+                 + (f" ({changed} differ from the usual set)." if changed else " (the usual set).")
+                 + " Update stick applies it.")
+        close()
+
+    ttk.Button(foot, text="Save", style="Go.TButton", command=save).pack(side="right")
+    ttk.Button(foot, text="Cancel", command=close).pack(side="right", padx=(0, 8))
+    win.protocol("WM_DELETE_WINDOW", close)
+    if selftest:
+        win.after(1200, close)
+    return win
+
+
 def look_window(mnt: Path, parent=None, selftest: bool = False):
     """A stick's look: its theme, icons, background and splash, with a preview of the boot menu.
     Works on the stick alone, so it needs no downloads. Raises RescueError for a stick that

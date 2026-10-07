@@ -22,6 +22,7 @@ import argparse
 import importlib.machinery
 import importlib.util
 import os
+import platform
 import plistlib
 import re
 import subprocess
@@ -432,6 +433,21 @@ def install(a, run=diskutil, ask=input, root=sudo) -> int:
     return 0
 
 
+def self_update(machine: str | None = None) -> int:
+    """Replace this program with the latest release's, checked against the sha256 GitHub gives for it."""
+    cfg = config()
+    found = cr.app_update(cfg, refresh=True)
+    if not found["newer"]:
+        cr.ok(f"Helix Boot {found['current']} is the newest version.")
+        return 0
+    if not FROZEN:
+        raise cr.RescueError(f"Helix Boot {found['latest']} is out (this is {found['current']}), but this one runs "
+                             "from a copy of the repo and not from a downloaded program: update it with `git pull`.")
+    me = Path(sys.executable).resolve()
+    print(cr.update_program(cfg, f"HelixBoot-mac-{machine or platform.machine()}", me))
+    return 0
+
+
 def engine(argv: list[str]) -> int:
     """Run the engine's own command line, with your folder as it is here."""
     os.environ["HELIX_USER_DIR"] = str(user_folder())
@@ -469,6 +485,7 @@ def main(argv: list[str] | None = None) -> int:
     stick_arg(p)
     p = sub.add_parser("look", help="show or change the stick's look", add_help=False)
     p = sub.add_parser("list", help="the Helix Boot / Ventoy sticks plugged in")
+    sub.add_parser("self-update", help="get the latest release of this program, verified, in this one's place")
     p = sub.add_parser("helix", help="the engine itself: helix list, check, fetch, pack …", add_help=False)
     if argv is None:
         argv = sys.argv[1:]
@@ -493,6 +510,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if a.cmd == "install":
             return install(a)
+        if a.cmd == "self-update":
+            return self_update()
         if a.cmd == "check":
             mnt = mount(pick(a.disk)["data"])
             return cr.cmd_verify(config(), ns(target=str(mnt), json=False))

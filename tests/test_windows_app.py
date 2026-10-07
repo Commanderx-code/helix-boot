@@ -654,5 +654,51 @@ class TestSelfUpdate(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in self.tmp.iterdir() if p.is_file()), ["HelixBoot.exe", "download.exe"])
 
 
+class TestEjectAndChoices(unittest.TestCase):
+    def test_eject_flushes_asks_windows_and_waits_for_the_drive_to_go(self):
+        asked, after = [], {"gone": False}
+
+        def run(script):
+            if "InvokeVerb" in script:
+                asked.append(script)
+                after["gone"] = True
+                return ""
+            return ps({**VENTOY, "Ventoy": "", "Letters": []} if after["gone"] else VENTOY)(script)
+        with mock.patch.object(app.cr, "_flush_volume") as flush, mock.patch.object(app.time, "sleep"):
+            text = app.eject({**VENTOY, "IsVentoy": True}, run)
+        self.assertIn("E: is ejected: safe to unplug", text)
+        self.assertEqual(len(asked), 1)
+        self.assertIn("ParseName('E:')", asked[0])
+        flush.assert_called_once()
+        with mock.patch.object(app.cr, "_flush_volume"), mock.patch.object(app.time, "sleep"):
+            with self.assertRaisesRegex(app.RescueError, "wouldn't eject E:"):
+                app.eject({**VENTOY, "IsVentoy": True}, ps(VENTOY))            # still there: something has it open
+            for letter in ("", "E:\\", "E'; calc; '"):
+                with self.assertRaisesRegex(app.RescueError, "no stick's drive letter"):
+                    app.eject({**VENTOY, "Ventoy": letter}, lambda s: self.fail("nothing may be run"))
+
+    def test_tools_left_out_for_antivirus_reach_the_engine_and_only_for_that_run(self):
+        seen = []
+        with mock.patch.object(app.cr, "cmd_sync", lambda cfg, a: seen.append(("sync", a.leave_out)) or 0), \
+                mock.patch.object(app.cr, "cmd_unpack", lambda cfg, a: seen.append(("unpack", a.leave_out)) or 0), \
+                redirect_stdout(io.StringIO()):
+            app.LEAVE_OUT.update({"produkey"})
+            try:
+                app.sync("cfg", "E:\\", init=True)
+                app.unpack("cfg", "E:\\", "pack.zip", init=True)
+            finally:
+                app.LEAVE_OUT.clear()
+            app.sync("cfg", "E:\\", init=False)
+        self.assertEqual(seen, [("sync", ["produkey"]), ("unpack", ["produkey"]), ("sync", [])])
+
+    def test_the_shipped_list_flags_only_what_was_seen_to_be_blocked(self):
+        cfg = app.cr.Config(repo=ROOT, manifest=ROOT / "tools.toml")
+        self.assertEqual([t["title"] for t in app.cr.flagged_tools(cfg)], ["ProduKey"])
+        choices = app.cr.tool_choices(cfg)
+        self.assertGreater(len(choices), 40)
+        self.assertTrue(all(c["category"] and c["title"] for c in choices))
+
+
+
 if __name__ == "__main__":
     unittest.main()

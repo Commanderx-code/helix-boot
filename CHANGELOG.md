@@ -6,6 +6,38 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **A check watches the programs you put on the stick yourself.** Portable
+  apps and the like have no checksum from a download to be held to, so a check
+  now remembers what each program file was and says when one has changed since
+  the last check. If you updated it, that is why; if you didn't, something
+  changed it, which is how a virus that infects programs shows. Helix Boot's
+  own files are told apart and checked against their checksums as before.
+- **Eject**, beside Refresh in the window: what was written is flushed and the
+  stick is ejected, so it is safe to unplug (Windows and Linux).
+- **Tools…** in the window: a list of every tool to tick, by category. What you
+  choose is kept in `tool-choices.json` beside `local.toml`, which is left
+  alone, and applies from the next Install or Update.
+- **Said before the install: what antivirus will block.** A tool known to be
+  stopped by antivirus is marked `flagged` in `tools.toml` (ProduKey, so far).
+  The Windows app names such tools before anything is copied and offers to
+  leave them out. Unticked, they are tried as before and skipped if blocked.
+- **The Linux window in the applications menu:**
+  `HelixBoot-linux-x86_64 --add-launcher` adds it, with its icon, for you only;
+  `--remove-launcher` takes it out.
+- **After an update of the app: "Start the new version now?"**
+- **`self-update` for the Mac program and `HelixBoot.sh`** (also in its menu):
+  the latest release's file, checked against the sha256 GitHub gives for it,
+  in this one's place.
+- **`helix pack --public`:** a pack with only what anyone can download, as the
+  project ships it. Your own files and builds (`byo/`, Lazarus PE), tools you
+  added or repointed in `local.toml`, and your own icons and splash stay at
+  home, so it can be shared.
+- **`helix pack --split`:** also cuts the pack into pieces (2 GiB if not said)
+  in a folder beside it, with its checksum, a README, and scripts for Windows
+  and for Linux and Mac that join the pieces, check the result and start the
+  installer: for uploading or sending.
+
 ## [0.7.4] - 2026-10-07
 
 ### Fixed

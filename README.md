@@ -89,7 +89,8 @@ Install or Update, with Look, Check stick and Repair stick beside them. Run it
 as your normal user. It asks for your password, in your desktop's own dialog,
 only to install Ventoy and to repair a filesystem. From a clone it is
 `python3 linux/helix_gui.py`, which needs Tk (`tk` on Arch, `python3-tk` on
-Debian and Ubuntu).
+Debian and Ubuntu). `./HelixBoot-linux-x86_64 --add-launcher` puts it in your
+applications menu.
 
 ![The Helix Boot window on Linux](docs/linux-app.png)
 
@@ -287,6 +288,12 @@ bring-your-own tools and the Ventoy installer, and a new stick needs no internet
 ./refresh.sh --from helix-boot-<version>-<date>.zip # update a stick
 ```
 
+`./helix pack --public` makes a pack you can share: only the tools anyone can
+download, without your own files, your additions in `local.toml`, or your
+icons and splash. `--split` also cuts a pack into 2 GiB pieces in a folder
+beside it, with a checksum and a script that joins them, checks the result and
+starts the installer: for uploading or sending one.
+
 The pack carries its own installer, so on another Linux PC the zip is all you need:
 
 ```fish
@@ -341,6 +348,20 @@ to the disk.
    reminds you when a stick has gone a month without a check.
 5. **Repair stick** has Windows repair the stick's filesystem (`chkdsk /f`),
    for when an update or a check says it is damaged. It asks first.
+6. **Tools…** is a list of every tool to tick, by category: what goes on the
+   stick, without editing `local.toml`. It applies from the next Update.
+7. **Eject**, beside Refresh, flushes what was written and ejects the stick, so
+   it is safe to unplug.
+
+![The Tools window: every tool to tick, by category](docs/tools-window.png)
+
+Check stick also watches the programs you add to the stick yourself, portable
+apps for one. It remembers what each was and tells you when one has changed
+since the last check: expected if you updated it, a warning if you didn't.
+
+Some antivirus programs stop a few tools being written (ProduKey, a product key
+reader, is one). The app says so before an install and offers to leave them
+out; otherwise they are tried, skipped if blocked, and named at the end.
 
 The app keeps itself current too. When it starts it looks for a newer Helix
 Boot and asks whether to get it, and **Check for update** under the version

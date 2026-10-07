@@ -9,10 +9,11 @@ standard-library Python script:
 | `helix check [--json] [--outage-ok]` | compares your cache against upstream, no downloads |
 | `helix fetch [tool…] [--force] [--outage-ok]` | downloads, verifies and caches (`~/.cache/helix-boot`); resumes interrupted downloads; when a tool's site is down, keeps the copy already verified |
 | `helix sync <mount> [--dry-run] [--verify] [--prune-unknown]` | copies the cache to a Ventoy stick, replaces old versions, writes the menu; `--dry-run` ends with what it would copy, remove and keep |
-| `helix pack [file.zip] [--need-app]` | the whole stick, your own tools and Ventoy in one zip, named `helix-boot-<version>-<date>.zip` |
+| `helix pack [file.zip] [--public] [--split [GiB]] [--need-app]` | the whole stick, your own tools and Ventoy in one zip, named `helix-boot-<version>-<date>.zip` |
 | `helix unpack <pack.zip> <mount> [--dry-run] [--verify] [--prune-unknown]` | fills a Ventoy stick from a pack, no downloads |
 | `helix theme <mount> [--theme ID] [--icons ID] [--background PIC] [--splash PIC] [--menu] [--preview FILE]` | shows or changes a stick's look ([themes](look.md#the-boot-menus-look)); `--export ZIP` / `--import ZIP` save and load it |
 | `helix verify <mount> [--json]` | reads the stick back and finds damaged or missing files, no downloads ([checking a stick](#checking-a-stick)) |
+| `helix self-update --asset NAME --program FILE` | replaces a downloaded Helix Boot program with the latest release's, verified |
 | `helix test <mount> [--gb N]` | writes the stick's free space full, reads it back and deletes it: finds a failing or fake stick ([testing a stick](#testing-a-stick)) |
 | `helix splash <VTOYEFI mount>` | adds the splash to Ventoy's boot script (`install.sh` and `refresh.sh` run it) |
 

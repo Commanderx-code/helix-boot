@@ -232,7 +232,8 @@ def tool_choices(cfg: "Config") -> list[dict]:
         cat = cfg.categories.get(t.get("category"), {}).get("title") or ("Mac" if t.get("platform") == "mac" else "Apps")
         out.append({"name": t["name"], "title": t["title"], "category": cat, "on": bool(t.get("enabled", True)),
                     "yours": bool(t.get("byo")), "description": t.get("description") or ""})
-    return out
+    order = {c: n for n, c in enumerate(dict.fromkeys(t["category"] for t in out))}
+    return sorted(out, key=lambda t: order[t["category"]])     # each category's tools together, as first met
 
 
 def save_choices(cfg: "Config", wanted: set[str]) -> dict:
@@ -296,6 +297,10 @@ class Config:
         # off as shipped (Kaspersky): another PC may have them on, and an update here mustn't remove theirs.
         self.switched_off = ({n for n, o in overrides.items() if o.get("enabled") is False}
                              | {t.get("name") for t in ldata_tools if t.get("enabled") is False})
+        # Tools that are yours and not the project's: added in local.toml, or pointed somewhere of
+        # your own there. A pack made to be shared (`helix pack --public`) leaves them at home.
+        self.own = ({t.get("name") for t in ldata_tools}
+                    | {n for n, o in overrides.items() if set(o) & {"path", "url", "page", "repo", "project", "source"}})
 
         self.settings = data.get("settings", {})
         self.categories = {c["id"]: c for c in data.get("category", [])}
@@ -2853,13 +2858,27 @@ def cmd_pack(cfg: Config, args) -> int:
     for m in missing:
         warn(f"{m}: not fetched yet — run `helix fetch` (leaving it out of the pack)")
     public = bool(getattr(args, "public", False))
-    if public:      # only what anyone can download: your own files and builds (byo/, Lazarus PE) stay home
-        left = [p["title"] for p in placed if p["local"]] + [t["title"] for t, _, _ in apps if t["source"] == "local"]
-        placed = [p for p in placed if not p["local"]]
-        apps = [a for a in apps if a[0]["source"] != "local"]
+    if public:
+        # Only what anyone can download, as the project ships it. Left at home: your own files and
+        # builds (byo/, Lazarus PE), tools you added or repointed in local.toml, and everything else
+        # in byo/ (your icons and splash, whose very names say what you own). From here on `cfg`
+        # looks for byo/ in an empty folder, so nothing later in this function can pick any of it up.
+        def yours(t: dict) -> bool:
+            return t["source"] == "local" or bool(t.get("byo")) or t["name"] in cfg.own
+        by_name = {t["name"]: t for t in cfg.tools}
+        left = ([p["title"] for p in placed if yours(by_name[p["name"]])]
+                + [t["title"] for t, _, _ in apps if yours(t)])
+        placed = [p for p in placed if not yours(by_name[p["name"]])]
+        apps = [a for a in apps if not yours(a[0])]
+        shared = Config.__new__(Config)
+        shared.__dict__.update(cfg.__dict__)
+        shared.repo = Path(tempfile.mkdtemp(prefix="helix-public-"))
+        shared.tools = [t for t in cfg.tools if t["kind"] not in ("iso", "app", "tree") or not yours(t)
+                        or (t["kind"] == "tree" and t["name"] not in cfg.own and not t.get("byo"))]
+        cfg = shared
         if left:
             info(f"A public pack: leaving out {len(left)} of your own ({', '.join(left[:6])}"
-                 f"{' …' if len(left) > 6 else ''})")
+                 f"{' …' if len(left) > 6 else ''}), and your icons and splash")
     if not placed:
         raise RescueError("nothing to pack yet — run `helix fetch` first")
     out = Path(args.output or f"helix-boot-{__version__}-{dt.date.today().isoformat()}{'-public' if public else ''}.zip"
@@ -2957,7 +2976,11 @@ def cmd_pack(cfg: Config, args) -> int:
                 if f.is_file():
                     _zip_file(zf, f, f"installer/{rel}")
             zf.writestr(BUNDLED_MARK, f"{__version__}\n", zipfile.ZIP_DEFLATED)
-            zf.writestr("installer/README.txt", BUNDLED_README.format(zip=out.name), zipfile.ZIP_DEFLATED)
+            readme = BUNDLED_README.format(zip=out.name)
+            if public:
+                readme = readme.replace("including your own tools. Keep it private.",
+                                        "with the tools anyone can download. It can be shared.")
+            zf.writestr("installer/README.txt", readme, zipfile.ZIP_DEFLATED)
             zf.writestr(PACK_META, json.dumps({
                 "format": PACK_FORMAT, "helix": __version__,
                 "created": dt.datetime.now().isoformat(timespec="seconds"),
@@ -2992,6 +3015,8 @@ def cmd_pack(cfg: Config, args) -> int:
         info(f"On Windows: put installer\\{APP_EXE} beside the pack and run it.")
     if old_app:
         warn(old_app)
+    if public:
+        shutil.rmtree(cfg.repo, ignore_errors=True)     # (the empty stand-in for your folder)
     return 0
 
 
