@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-07
+
 ### Fixed
 - **A tool the PC's antivirus blocks no longer stops the whole install.** On
   Windows, Defender refuses to let some tools be written (a product key reader,
@@ -708,7 +710,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.6.14...v0.7.0
