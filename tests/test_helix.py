@@ -2631,6 +2631,34 @@ class TestPack(Base):
             self.assertTrue(any(n.endswith("systemrescue-12.02-amd64.iso") for n in names))
         self.assertIn("this pack can refresh a stick but not set up a new one", log)
 
+    def test_the_file_a_public_pack_takes_is_the_one_the_record_is_about(self):
+        self.fetch()
+        lock = cr.load_lock(self.cfg)
+        iso = self.cfg.cache / "systemrescue" / lock["systemrescue"]["final"]
+        tool = next(t for t in self.cfg.tools if t["name"] == "systemrescue")
+        with unittest.mock.patch.object(cr, "_from_its_source", lambda t, e: True):
+            self.assertEqual(cr._shareable(self.cfg, tool, lock["systemrescue"]), "yes")
+            # the record says the project's address; the file in its place is another
+            was = iso.read_bytes()
+            iso.write_bytes(b"my own licensed image, same name")
+            self.assertEqual(cr._shareable(self.cfg, tool, lock["systemrescue"]), "changed")
+            out = self.tmp / "public.zip"
+            rc, log = self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(out), "public": True})())
+            self.assertEqual(rc, 0, log)
+            self.assertIn("isn't the one that was downloaded: SystemRescue", log)
+            with zipfile.ZipFile(out) as z:
+                self.assertFalse(any(b"my own licensed image" in z.read(n) for n in z.namelist() if n.endswith(".iso")))
+                self.assertFalse(any("systemrescue" in n for n in z.namelist()))
+            iso.write_bytes(was)
+            # … or the record points out of the tool's own folder, or names no checksum to hold it to
+            secret = self.tmp / "secret.iso"
+            secret.write_bytes(was)
+            for final in (str(secret), "../memtest86plus/memtest.iso", "..", "", "a/b.iso"):
+                self.assertEqual(cr._shareable(self.cfg, tool, {**lock["systemrescue"], "final": final}), "changed", final)
+            self.assertEqual(cr._shareable(self.cfg, tool, {**lock["systemrescue"], "sha256": None,
+                                                           "sha256_download": None}), "changed")
+            self.assertEqual(cr._shareable(self.cfg, tool, lock["systemrescue"]), "yes")
+
     def test_a_pack_made_before_the_release_is_out_says_its_app_is_old(self):
         self.windows_ventoy_upstream()                          # the released app is 0.5.0
         self.fetch()

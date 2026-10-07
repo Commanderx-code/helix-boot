@@ -2878,7 +2878,8 @@ def _from_its_source(tool: dict, entry: dict) -> bool:
 def _shareable(cfg: Config, tool: dict, entry: dict) -> str:
     """May a pack made to be shared carry this tool, of whatever kind, as the cache has it?
     "yes"; "no" (yours, or your own build); "elsewhere" (a download, but not from the project's
-    source for it, so not known to be the project's)."""
+    source for it, so not known to be the project's); "changed" (the file in the cache isn't
+    the one that was downloaded)."""
     if tool.get("byo"):
         return "no"
     if tool["source"] == "local":
@@ -2898,7 +2899,33 @@ def _shareable(cfg: Config, tool: dict, entry: dict) -> str:
         return "no"                     # recorded as a file of yours, not a download
     if not entry:
         return "yes"                    # nothing cached: nothing of yours to carry
-    return "yes" if _from_its_source(tool, entry) else "elsewhere"
+    if not _from_its_source(tool, entry):
+        return "elsewhere"
+    # The address is what the record says. What goes in the pack is a file, found by other fields
+    # of the same record: so the file itself is held to the record too. It has to be in this
+    # tool's own folder of the cache, under a plain name, and still have the checksum it had
+    # when it was fetched from that address.
+    home = (cfg.cache / tool["name"]).resolve()
+    for key in ("final", "source_file"):
+        name = entry.get(key)
+        if name is not None and (not isinstance(name, str) or not name or Path(name).name != name or name in (".", "..")):
+            return "changed"
+    final, download = entry.get("final"), entry.get("source_file")
+    try:
+        f = (home / final).resolve() if final else None
+        d = (home / download).resolve() if download else None
+        if f is not None and not f.is_relative_to(home) or d is not None and not d.is_relative_to(home):
+            return "changed"
+        if f is not None and f.is_file():
+            want = entry.get("sha256") or (entry.get("sha256_download") if final == download else None)
+            if not want or file_hash(f) != want:
+                return "changed"
+        if d is not None and d.is_file() and d != f:        # (the archive a folder was unpacked from: Ventoy's)
+            if not entry.get("sha256_download") or file_hash(d) != entry["sha256_download"]:
+                return "changed"
+    except OSError:
+        return "changed"
+    return "yes"
 
 
 def cmd_pack(cfg: Config, args) -> int:
@@ -2926,6 +2953,10 @@ def cmd_pack(cfg: Config, args) -> int:
         if elsewhere:       # (a tool once pointed elsewhere, say: what is cached isn't known to be the project's)
             warn(f"left out, because the copy in the cache didn't come from the project's source for it: "
                  f"{', '.join(elsewhere)}. `helix fetch --force <tool>` gets the project's.")
+        changed = [t["title"] for t in cfg.tools if gate.get(t["name"]) == "changed"]
+        if changed:
+            warn(f"left out, because the file in the cache isn't the one that was downloaded: "
+                 f"{', '.join(changed)}. `helix fetch --force <tool>` downloads it again.")
         cfg.tools = [t for t in cfg.tools if gate.get(t["name"]) == "yes"]
         info("A public pack: the tools anyone can download, as the project ships them. Your own tools, "
              "your local.toml and everything in byo/ stay at home.")
