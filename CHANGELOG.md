@@ -16,7 +16,12 @@ tagged releases also publish the Windows app.
   and mounted here again only after it is detached. Nothing is added to the
   VM's settings.
 
+### Fixed
+- The app's window opens in the middle of the screen. Where Windows put it on
+  a small screen, the bottom row of buttons could be under the taskbar.
+
 ### Changed
+- [What has been tried on real hardware](docs/testing.md), and what hasn't.
 - `scripts/release.sh` waits for CI on the commit it is about to release, and
   stops if a run failed or was cancelled.
 - CI downloads and verifies every tool (about 4 GB) on the weekly run, for a

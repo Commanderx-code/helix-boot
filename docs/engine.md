@@ -109,8 +109,9 @@ take it when it starts.
 
 To use the stick in a VM, hand it over: `scripts/vm-stick.sh give win11`
 unmounts it here and attaches it to the running VM; eject it inside the VM
-when you are done, then `scripts/vm-stick.sh take win11` detaches it and
-mounts it here again.
+when you are done, then `scripts/vm-stick.sh take win11` detaches it. A stick
+that Windows ejected has switched itself off, so `take` asks you to unplug it
+and plug it in again, and mounts it here when it is back.
 
 ## When a tool's site is down
 

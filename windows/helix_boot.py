@@ -836,7 +836,11 @@ def gui(selftest: bool = False) -> int:
 
     root = tk.Tk()
     root.title(APP)
-    root.geometry(f"{WINDOW[0]}x{WINDOW[1]}")
+    # In the middle of the screen, a little above it: where the system would put it, the bottom row
+    # can end up under the taskbar on a small screen (1366 x 768, or a virtual machine's).
+    across = max((root.winfo_screenwidth() - WINDOW[0]) // 2, 0)
+    down = max((root.winfo_screenheight() - WINDOW[1]) // 2 - 40, 0)
+    root.geometry(f"{WINDOW[0]}x{WINDOW[1]}+{across}+{down}")
     root.minsize(WINDOW[0] - 40, WINDOW[1] - 20)
     apply_theme(root)
     set_icon(root)

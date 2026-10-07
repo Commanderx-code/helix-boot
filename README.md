@@ -528,7 +528,7 @@ and splash, saving a look, and how the default theme is put together.
 | | Checksums and build attestations on every release | 0.6.6 |
 | | Hardening: the confirmed disk is the one written, plain file trees only, pinned download sites | 0.6.11 – 0.6.13 |
 
-The [changelog](CHANGELOG.md) has every release in detail.
+The [changelog](CHANGELOG.md) has every release in detail. [Testing on real hardware](docs/testing.md) says what has been tried on a real stick, Windows and Mac, and what hasn't.
 
 ## Contributing
 
