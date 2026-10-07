@@ -619,29 +619,15 @@ def app_news(cfg, refresh: bool = False) -> dict | None:
 
 
 def old_program(me: Path) -> Path:
-    return me.with_name(f"{me.stem}.old{me.suffix}")
+    return cr.old_program(me)
 
 
 def replace_program(new: Path, me: Path, sha256: str) -> None:
-    """Put a downloaded program where the running one is. A running program can be renamed, on
-    Windows too, though not written over: it steps aside as <name>.old and the new one takes its
-    name. The old one is deleted at the next start. What takes its name is the copy made here,
-    and only if that copy has the sha256 the download was verified to have."""
-    staged, old = me.with_name(me.name + ".new"), old_program(me)
-    shutil.copy2(new, staged)
-    if cr.file_hash(staged) != sha256:
-        staged.unlink(missing_ok=True)
-        raise RescueError("the downloaded program changed before it could be put in place; nothing was replaced")
-    if os.name != "nt":
-        staged.chmod(0o755)
-    old.unlink(missing_ok=True)
-    os.replace(me, old)
+    """Put a downloaded program where the running one is (the engine's swap_program)."""
     try:
-        os.replace(staged, me)
-    except OSError:
-        os.replace(old, me)             # as it was
-        staged.unlink(missing_ok=True)
-        raise
+        cr.swap_program(new, me, sha256)
+    except cr.RescueError as e:
+        raise RescueError(str(e)) from None
 
 
 def tidy_old_program() -> None:

@@ -210,6 +210,50 @@ def _stick_errors(fn):
 
 
 # ── Config ────────────────────────────────────────────────────────────────
+CHOICES_FILE = "tool-choices.json"      # beside local.toml: what the app's Tools window was told
+
+
+def _load_choices(repo: Path) -> dict:
+    try:
+        data = json.loads((repo / CHOICES_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    data = data if isinstance(data, dict) else {}
+    return {k: sorted({n for n in data.get(k) or [] if isinstance(n, str) and re.fullmatch(r"[a-z0-9][a-z0-9_-]*", n)})
+            for k in ("off", "on")}
+
+
+def tool_choices(cfg: "Config") -> list[dict]:
+    """Every tool, for a list to tick: name, title, its category's title, and whether it is on."""
+    out = []
+    for t in cfg.tools:
+        if t["kind"] not in ("iso", "app"):
+            continue                    # (Ventoy and the menu's own parts aren't a choice)
+        cat = cfg.categories.get(t.get("category"), {}).get("title") or ("Mac" if t.get("platform") == "mac" else "Apps")
+        out.append({"name": t["name"], "title": t["title"], "category": cat, "on": bool(t.get("enabled", True)),
+                    "yours": bool(t.get("byo")), "description": t.get("description") or ""})
+    return out
+
+
+def save_choices(cfg: "Config", wanted: set[str]) -> dict:
+    """Remember which tools are to be on: only what differs from tools.toml and local.toml is
+    written, so a tool added or switched off upstream later still follows upstream."""
+    names = {c["name"] for c in tool_choices(cfg)}
+    off = sorted(n for n in names if cfg.shipped_on.get(n, True) and n not in wanted)
+    on = sorted(n for n in names if not cfg.shipped_on.get(n, True) and n in wanted)
+    path = cfg.repo / CHOICES_FILE
+    if off or on:
+        path.write_text(json.dumps({"off": off, "on": on}, indent=1) + "\n", encoding="utf-8")
+    else:
+        path.unlink(missing_ok=True)
+    return {"off": off, "on": on}
+
+
+def flagged_tools(cfg: "Config") -> list[dict]:
+    """The enabled tools that antivirus programs are known to stop being written (`flagged = true`)."""
+    return [{"name": t["name"], "title": t["title"]} for t in cfg.enabled() if t.get("flagged")]
+
+
 class Config:
     def __init__(self, repo: Path = REPO, manifest: Path | None = None, assets: Path | None = None,
                  windows: bool | None = None):
@@ -239,8 +283,17 @@ class Config:
             ldata_tools = ldata.get("tool", [])
         else:
             ldata_tools = []
-        # Tools you switched off yourself, in local.toml. Not the ones that are off as shipped
-        # (Kaspersky): another PC may have them on, and an update here mustn't remove theirs.
+        # What you ticked and unticked in the app's Tools window (tool-choices.json beside local.toml):
+        # on top of local.toml, and only for tools that still exist.
+        known = {t.get("name"): t for t in data.get("tool", [])}
+        self.shipped_on = {n: {**t, **overrides.get(n, {})}.get("enabled", True) for n, t in known.items()}
+        self.choices = _load_choices(repo) if manifest is None else {"off": [], "on": []}
+        for key, value in (("off", False), ("on", True)):
+            for n in self.choices[key]:
+                if n in known:
+                    overrides[n] = {**overrides.get(n, {}), "enabled": value}
+        # Tools you switched off yourself, in local.toml or the Tools window. Not the ones that are
+        # off as shipped (Kaspersky): another PC may have them on, and an update here mustn't remove theirs.
         self.switched_off = ({n for n, o in overrides.items() if o.get("enabled") is False}
                              | {t.get("name") for t in ldata_tools if t.get("enabled") is False})
 
@@ -2237,6 +2290,17 @@ def _write_extras(cfg: Config, mnt: Path, state: dict, extras: list[tuple[str, P
     if fresh_theme and not legacy:
         changed |= _tidy_theme_source(cfg, mnt, state, {rel for rel, _ in extras})
     _apply_look(cfg, mnt, changed)
+    # The programs among these are Helix Boot's own, rewritten by any update: a check that watches
+    # the programs you added yourself for changes must know which ones aren't yours.
+    ours = sorted(rel for rel, _ in extras if Path(rel).suffix.lower() in WATCHED_SUFFIXES)
+    record = mnt / STATE_DIR / OURS_FILE
+    text = json.dumps(ours) + "\n"
+    try:
+        if not (record.is_file() and record.read_text(encoding="utf-8") == text):
+            record.parent.mkdir(exist_ok=True)
+            record.write_text(text, encoding="utf-8")
+    except OSError:
+        pass
     return vjson
 
 
@@ -2477,7 +2541,11 @@ def cmd_sync(cfg: Config, args) -> int:
     app_state = dict(state.get("apps", {}))
     app_root = mnt / cfg.apps_root
     hashes = _load_hashes(mnt)
+    leave = set(getattr(args, "leave_out", None) or ())     # tools the user asked to do without this time
     for t, entry, src in apps:
+        if t["name"] in leave:
+            info(f"{t['title']}: left out, as asked")
+            continue
         _check_app_cache(entry, src)
         root = mnt / _app_root(cfg, t)
         dst = root / t["name"]
@@ -2686,6 +2754,58 @@ def fetch_app(cfg: Config, asset: str) -> tuple[Path, str, str]:
     return dest, version, want
 
 
+def old_program(me: Path) -> Path:
+    return me.with_name(f"{me.stem}.old{me.suffix}")
+
+
+def swap_program(new: Path, me: Path, sha256: str) -> None:
+    """Put a downloaded program where another is, the running one included. A running program can
+    be renamed, on Windows too, though not written over: it steps aside as <name>.old and the new
+    one takes its name. What takes its name is the copy made here, and only if that copy has the
+    sha256 the download was verified to have."""
+    staged, old = me.with_name(me.name + ".new"), old_program(me)
+    shutil.copy2(new, staged)
+    if file_hash(staged) != sha256:
+        staged.unlink(missing_ok=True)
+        raise RescueError("the downloaded program changed before it could be put in place; nothing was replaced")
+    if os.name != "nt":
+        staged.chmod(0o755)
+    old.unlink(missing_ok=True)
+    os.replace(me, old)
+    try:
+        os.replace(staged, me)
+    except OSError:
+        os.replace(old, me)             # as it was
+        staged.unlink(missing_ok=True)
+        raise
+
+
+def update_program(cfg: Config, asset: str, me: Path) -> str:
+    """Get the latest release's `asset`, verified, and put it where `me` is. What to tell the user."""
+    found = app_update(cfg, refresh=True)
+    if not found["newer"]:
+        return f"✓ Helix Boot {found['current']} is the newest version."
+    info(f"Helix Boot {found['latest']} is out (this is {found['current']}): getting {asset}")
+    new, version, sha256 = fetch_app(cfg, asset)
+    if _numbers(version) <= _numbers(found["current"]):
+        raise RescueError(f"the download is Helix Boot {version or '?'}, which isn't newer than this one")
+    try:
+        swap_program(new, me, sha256)
+    except OSError as e:
+        raise RescueError(f"couldn't put the new program in place ({e}). It is at {new}: copy it over "
+                          f"{me.name} yourself.") from None
+    return f"✓ Helix Boot {version} is in place of {found['current']}: start {me.name} again to use it."
+
+
+def cmd_self_update(cfg: Config, args) -> int:
+    me = Path(args.program).expanduser().resolve()
+    if not me.is_file():
+        raise RescueError(f"{me} isn't a file")
+    print(update_program(cfg, args.asset, me))
+    old_program(me).unlink(missing_ok=True)         # (this one isn't the program that is running)
+    return 0
+
+
 def _numbers(version: str | None) -> tuple[int, ...]:
     """'v0.7.0' as (0, 7, 0), to tell older from newer."""
     return tuple(int(n) for n in re.findall(r"\d+", version or "")[:4])
@@ -2732,9 +2852,18 @@ def cmd_pack(cfg: Config, args) -> int:
     placed, apps, missing = _plan(cfg, lock)
     for m in missing:
         warn(f"{m}: not fetched yet — run `helix fetch` (leaving it out of the pack)")
+    public = bool(getattr(args, "public", False))
+    if public:      # only what anyone can download: your own files and builds (byo/, Lazarus PE) stay home
+        left = [p["title"] for p in placed if p["local"]] + [t["title"] for t, _, _ in apps if t["source"] == "local"]
+        placed = [p for p in placed if not p["local"]]
+        apps = [a for a in apps if a[0]["source"] != "local"]
+        if left:
+            info(f"A public pack: leaving out {len(left)} of your own ({', '.join(left[:6])}"
+                 f"{' …' if len(left) > 6 else ''})")
     if not placed:
         raise RescueError("nothing to pack yet — run `helix fetch` first")
-    out = Path(args.output or f"helix-boot-{__version__}-{dt.date.today().isoformat()}.zip").expanduser().resolve()
+    out = Path(args.output or f"helix-boot-{__version__}-{dt.date.today().isoformat()}{'-public' if public else ''}.zip"
+               ).expanduser().resolve()
     if out.suffix.lower() != ".zip":
         raise RescueError(f"{out.name}: a pack must end in .zip")
 
@@ -2850,7 +2979,12 @@ def cmd_pack(cfg: Config, args) -> int:
         raise
     os.replace(part, out)
     ok(f"Pack written: {out} ({_fmt_bytes(out.stat().st_size)})")
-    info("It holds your own tools as well, so keep it somewhere private. To use it here:")
+    if getattr(args, "split", None):
+        folder = split_pack(out, int(float(args.split) * (1 << 30)))
+        ok(f"In pieces, to upload or send: {folder} ({len(list(folder.glob('*.part*')))} pieces, a checksum, "
+           "a README and a script that puts them together)")
+    info("Only what anyone can download is in it: it can be shared. To use it here:" if public else
+         "It holds your own tools as well, so keep it somewhere private. To use it here:")
     info(f"  new stick:      ./install.sh --from {out}")
     info(f"  existing stick: ./refresh.sh --from {out}")
     info(f"On another PC it needs nothing else: unzip {out.name} 'installer/*', then installer/install.sh")
@@ -2859,6 +2993,180 @@ def cmd_pack(cfg: Config, args) -> int:
     if old_app:
         warn(old_app)
     return 0
+
+
+JOIN_CMD = r'''@echo off
+setlocal enabledelayedexpansion
+cd /d "%~dp0"
+title Helix Boot pack
+set "PACK=@PACK@"
+
+echo.
+echo  Helix Boot: putting the pack together
+echo.
+
+if exist "%PACK%" goto check
+
+rem Every piece has to be here, and they are joined in order by name.
+set "LIST="
+for %%n in (@PIECES@) do (
+  if not exist "%PACK%.part%%n" (
+    echo  Piece %PACK%.part%%n is missing. Download every file into this folder and run this again.
+    goto fail
+  )
+  if defined LIST (set "LIST=!LIST!+%PACK%.part%%n") else (set "LIST=%PACK%.part%%n")
+)
+echo  Joining @COUNT@ pieces. This takes a few minutes and needs @SIZE@ free...
+copy /b !LIST! "%PACK%" >nul
+if errorlevel 1 (
+  echo  Joining failed. Is there @SIZE@ free on this drive?
+  del "%PACK%" 2>nul
+  goto fail
+)
+
+:check
+echo  Checking it arrived whole. This takes a few minutes...
+set "WANT="
+for /f "usebackq tokens=1" %%h in ("SHA256.txt") do if not defined WANT set "WANT=%%h"
+set "GOT="
+for /f "skip=1 tokens=*" %%h in ('certutil -hashfile "%PACK%" SHA256') do if not defined GOT set "GOT=%%h"
+set "GOT=%GOT: =%"
+if /i not "%GOT%"=="%WANT%" (
+  echo.
+  echo  The pack is damaged: its checksum does not match SHA256.txt.
+  echo    expected %WANT%
+  echo    got      %GOT%
+  echo  Delete %PACK%, download the pieces again and run this again.
+  goto fail
+)
+echo  The pack is whole.
+
+if exist HelixBoot.exe goto run
+echo  Taking HelixBoot.exe out of the pack...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; $z = [IO.Compression.ZipFile]::OpenRead('%PACK%'); try { $e = $z.GetEntry('installer/HelixBoot.exe'); if (-not $e) { exit 2 }; [IO.Compression.ZipFileExtensions]::ExtractToFile($e, 'HelixBoot.exe', $true) } finally { $z.Dispose() }"
+if not exist HelixBoot.exe (
+  echo  Couldn't take HelixBoot.exe out of the pack. Open the zip, copy installer\HelixBoot.exe
+  echo  into this folder and run HelixBoot.exe.
+  goto fail
+)
+
+:run
+echo.
+echo  Starting Helix Boot. It asks for administrator rights, and it finds the pack by itself.
+echo  Plug in the USB stick, choose it, and press "Install Helix Boot". That ERASES the stick.
+echo  The pieces can be deleted now.
+echo.
+start "" HelixBoot.exe
+pause
+exit /b 0
+
+:fail
+echo.
+pause
+exit /b 1
+'''
+
+JOIN_SH = '''#!/bin/sh
+# Put the pieces of a Helix Boot pack together, check it, and start the installer.
+set -eu
+cd "$(dirname "$0")"
+pack='@PACK@'
+if [ ! -f "$pack" ]; then
+  for n in @PIECES@; do
+    [ -f "$pack.part$n" ] || { echo "Piece $pack.part$n is missing: download every file into this folder."; exit 1; }
+  done
+  echo "Joining @COUNT@ pieces (needs @SIZE@ free) ..."
+  for n in @PIECES@; do cat "$pack.part$n"; done > "$pack"
+fi
+echo "Checking it arrived whole ..."
+if command -v sha256sum >/dev/null; then got=$(sha256sum "$pack" | cut -d" " -f1)
+else got=$(shasum -a 256 "$pack" | cut -d" " -f1); fi
+want=$(cut -d" " -f1 SHA256.txt)
+if [ "$got" != "$want" ]; then
+  echo "The pack is damaged: its checksum does not match SHA256.txt. Delete $pack and download the pieces again."
+  exit 1
+fi
+echo "The pack is whole. The pieces can be deleted now."
+if [ "$(uname)" = Linux ]; then
+  unzip -o -q "$pack" 'installer/*'
+  echo "To make a stick (it ERASES the stick you pick):  installer/install.sh"
+else
+  echo "On a Mac: download HelixBoot-mac from the releases page, then  ./HelixBoot-mac-arm64 update --from $pack"
+fi
+'''
+
+JOIN_README = '''Helix Boot pack, in @COUNT@ pieces
+==================================
+
+1. Download every file in this folder into one folder of its own.
+
+2. Windows: double-click build-stick.cmd
+   Linux or Mac: sh build-stick.sh
+
+   It joins the pieces into @PACK@, checks it against SHA256.txt, and on Windows starts
+   the installer. Windows may warn about a downloaded script: More info, Run anyway.
+
+By hand, if you would rather:
+
+   Windows (Command Prompt in that folder):
+       copy /b @PACK@.part* @PACK@
+       certutil -hashfile @PACK@ SHA256
+   Linux or Mac:
+       cat @PACK@.part* > @PACK@
+       sha256sum -c SHA256.txt
+
+   The checksum has to be the one in SHA256.txt. Then on Windows, copy installer\\HelixBoot.exe
+   out of the zip, put it beside the zip and run it; on Linux, unzip the installer folder
+   and run installer/install.sh. Installing ERASES the USB stick you pick.
+
+You need about @DOUBLE@ free while both the pieces and the joined pack exist, and a USB stick
+big enough for the pack. The pieces can be deleted once the pack checks out.
+'''
+
+
+def split_pack(pack: Path, piece: int = 2 << 30) -> Path:
+    """A pack as pieces small enough to upload or send, in a folder beside it, with its checksum,
+    a README and scripts (Windows, Linux/Mac) that join the pieces, check the result and start
+    the installer. Returns the folder."""
+    if piece < (64 << 20):
+        raise RescueError("pieces of at least 64 MB, please (--split takes a size in GiB: 2, or 0.5)")
+    folder = pack.with_name(pack.stem + "-pieces")
+    if folder.exists():
+        for old in folder.iterdir():                # (only ever this pack's pieces and their four files)
+            if old.is_file() and (".part" in old.name or old.name in ("SHA256.txt", "README.txt", "build-stick.cmd",
+                                                                    "build-stick.sh")):
+                old.unlink()
+    folder.mkdir(exist_ok=True)
+    size = pack.stat().st_size
+    count = max(1, -(-size // piece))
+    width = max(2, len(str(count - 1)))
+    names, whole = [f"{n:0{width}d}" for n in range(count)], hashlib.sha256()
+    prog = Progress(size)
+    with open(pack, "rb") as src:
+        for n in names:
+            prog.file(f"piece {n}", min(piece, size))
+            with open(folder / f"{pack.name}.part{n}", "wb") as dst:
+                left = piece
+                while left and (chunk := src.read(min(8 << 20, left))):
+                    dst.write(chunk)
+                    whole.update(chunk)
+                    prog.add(len(chunk))
+                    left -= len(chunk)
+    prog.clear()
+    fill = {"@PACK@": pack.name, "@PIECES@": " ".join(names), "@COUNT@": str(count), "@SIZE@": _fmt_bytes(size),
+            "@DOUBLE@": _fmt_bytes(size * 2)}
+
+    def filled(text: str) -> str:
+        for k, v in fill.items():
+            text = text.replace(k, v)
+        return text
+    (folder / "SHA256.txt").write_text(f"{whole.hexdigest()}  {pack.name}\n", encoding="utf-8")
+    (folder / "README.txt").write_text(filled(JOIN_README), encoding="utf-8")
+    (folder / "build-stick.cmd").write_bytes(filled(JOIN_CMD).replace("\n", "\r\n").encode("ascii"))   # (cmd needs CRLF)
+    sh = folder / "build-stick.sh"
+    sh.write_text(filled(JOIN_SH), encoding="utf-8")
+    sh.chmod(0o755)
+    return folder
 
 
 def _pack_download(cfg: Config, tool: dict, lock: dict) -> tuple[Path, dict] | None:
@@ -3007,7 +3315,11 @@ def cmd_unpack(cfg: Config, args) -> int:
         wrote_apps: set[str] = set()
         BLOCKED.clear()
         hashes = _load_hashes(mnt)
+        leave = set(getattr(args, "leave_out", None) or ())
         for name, version in meta["apps"].items():
+            if name in leave:
+                info(f"{name}: left out, as asked")
+                continue
             root = _inside(mnt, roots.get(name, apps_root), "apps folder")
             dst = _inside(root, name, "app folder")
             prefix = f"stick/{roots.get(name, apps_root)}/{name}/"
@@ -3204,7 +3516,9 @@ def check_stick(mnt: Path, hook=None) -> dict:
              "unrecorded": sorted(n for n in (state.get("apps") or {}) if n not in apps),
              "images": len(images), "apps": len({a for *_, a in todo if a}), "menu": None}
 
-    prog = Progress(sum(p.stat().st_size for _, p, _, _ in todo if p.is_file()), hook=hook)
+    mine = _own_programs(mnt, set(images), [rec["dir"] for rec in apps.values()])
+    prog = Progress(sum(p.stat().st_size for _, p, _, _ in todo if p.is_file()) + sum(size for _, _, size in mine),
+                    hook=hook)
     for what, path, sha, app in todo:
         if not path.is_file():
             found["missing"].append(what)
@@ -3220,6 +3534,7 @@ def check_stick(mnt: Path, hook=None) -> dict:
             found[kind].setdefault(app, []).append(what)
         else:
             found["damaged"].append(what)
+    found["others"] = _watch_own(mnt, state_dir, mine, prog)
     prog.clear()
     try:
         json.loads((mnt / "ventoy" / "ventoy.json").read_text(encoding="utf-8"))
@@ -3244,6 +3559,67 @@ def check_stick(mnt: Path, hook=None) -> dict:
     (state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     _flush_volume(mnt)
     return found
+
+
+# Programs you put on the stick yourself (portable apps, say) have no checksum from a download to
+# be held to. What a check can do is remember what each was, and say when one is no longer that:
+# a program doesn't change by itself, and a virus that infects programs changes many at once.
+WATCHED_SUFFIXES = {".exe", ".dll", ".sys", ".scr", ".com", ".msi", ".cpl", ".ocx", ".bat", ".cmd", ".ps1", ".vbs"}
+WATCHED_FILE = "watched.json"       # in the stick's .helix-boot: {path: sha256} as of the last check
+OURS_FILE = "ours.json"             # … and the launcher and other programs Helix Boot writes there itself
+
+
+def _own_programs(mnt: Path, images: set[str], app_dirs: list[str]) -> list[tuple[str, Path, int]]:
+    """(path on the stick, file, size) of every program file that isn't Helix Boot's to verify."""
+    skip_top = {STATE_DIR.lower(), "ventoy", "helixboot", TEST_DIR.lower()} | SYSTEM_DIRS
+    managed = tuple(d.rstrip("/") + "/" for d in app_dirs)
+    try:
+        ours = json.loads((mnt / STATE_DIR / OURS_FILE).read_text(encoding="utf-8"))
+        images = images | {r for r in ours if isinstance(r, str)}
+    except (OSError, ValueError, TypeError):
+        pass
+    out = []
+    for folder, dirs, files in os.walk(mnt, followlinks=False):
+        if Path(folder) == mnt:
+            dirs[:] = [d for d in dirs if d.lower() not in skip_top]
+        for name in files:
+            path = Path(folder) / name
+            rel = path.relative_to(mnt).as_posix()
+            if path.suffix.lower() not in WATCHED_SUFFIXES or rel in images or rel.startswith(managed):
+                continue
+            try:
+                if path.is_symlink() or not path.is_file():
+                    continue
+                out.append((rel, path, path.stat().st_size))
+            except OSError:
+                continue
+    return sorted(out)
+
+
+def _watch_own(mnt: Path, state_dir: Path, mine: list[tuple[str, Path, int]], prog: "Progress") -> dict:
+    """Read your own program files back and compare each with what it was at the last check."""
+    path = state_dir / WATCHED_FILE
+    try:
+        before = json.loads(path.read_text(encoding="utf-8"))
+        before = before if isinstance(before, dict) else {}
+    except (OSError, ValueError):
+        before = None                               # the first check that looks: nothing to compare with
+    now, changed, new = {}, [], 0
+    for rel, f, size in mine:
+        prog.file(Path(rel).name, size)
+        try:
+            now[rel] = _read_from_disk(f, progress=prog)
+        except OSError:
+            continue
+        if before is None or rel not in before:
+            new += 1
+        elif before[rel] != now[rel]:
+            changed.append(rel)
+    if now or before:
+        text = json.dumps(now, separators=(",", ":"), sort_keys=True) + "\n"
+        path.write_text(text, encoding="utf-8")
+    return {"watched": len(now), "new": new if before is not None else 0, "first": before is None,
+            "changed": changed, "gone": len(set(before or {}) - set(now))}
 
 
 def _nth(n: int) -> str:
@@ -3370,6 +3746,17 @@ def check_text(found: dict) -> str:
     if not lines:
         lines.append(f"✓ Everything checks out: {found['images']} boot image(s) and {found['apps']} app(s), "
                      f"{found['checked']} file(s) read back.")
+    own = found.get("others") or {}
+    if own.get("changed"):
+        names = ", ".join(own["changed"][:5]) + (f" and {len(own['changed']) - 5} more" if len(own["changed"]) > 5 else "")
+        lines.append(f"! {len(own['changed'])} program file(s) you put on the stick yourself have changed since the "
+                     f"last check: {names}.")
+        lines.append("  If you updated those programs, that is why. If you didn't, something changed them: "
+                     "scan the stick with an antivirus before you run them.")
+    elif own.get("watched"):
+        lines.append(f"• {own['watched']} program file(s) of your own are watched for changes"
+                     + (" from now on." if own.get("first") else f" ({own['new']} new since the last check)."
+                        if own.get("new") else ": none has changed."))
     kept = found.get("settings") or {}
     if kept:
         lines.append(f"• {sum(len(f) for f in kept.values())} settings file(s) were changed by the tools themselves "
@@ -4396,6 +4783,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("pack", help="put the whole stick (and Ventoy) into one .zip for offline use")
     p.add_argument("output", nargs="?", help="where to write it (default: helix-boot-<version>-<date>.zip here)")
+    p.add_argument("--public", action="store_true",
+                   help="only what anyone can download: your own files and builds (byo/, Lazarus PE) are left "
+                        "out, so the pack can be shared")
+    p.add_argument("--split", type=float, nargs="?", const=2.0, metavar="GiB",
+                   help="also cut the pack into pieces of this size (2 if not said) in a folder beside it, "
+                        "with a checksum, a README and a script that joins them: for uploading or sending")
     p.add_argument("--need-app", action="store_true",
                    help=f"fail, and write nothing, if the released {APP_EXE} is older than this Helix Boot")
     p.set_defaults(fn=cmd_pack)
@@ -4410,6 +4803,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--prune-unknown", action="store_true",
                    help="also remove tools on the stick that this PC has no copy of (by default they stay)")
     p.set_defaults(fn=cmd_unpack)
+
+    p = sub.add_parser("self-update", help="replace a downloaded Helix Boot program (HelixBoot.sh, "
+                                           "HelixBoot-mac-arm64 …) with the latest release's, verified")
+    p.add_argument("--asset", required=True, help="the program's name in a release")
+    p.add_argument("--program", required=True, help="the file to replace")
+    p.set_defaults(fn=cmd_self_update)
 
     p = sub.add_parser("verify", help="read a stick back and find damaged or missing files (no downloads)")
     p.add_argument("target", help="mount point of the Ventoy data partition")

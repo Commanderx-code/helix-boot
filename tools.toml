@@ -27,6 +27,9 @@
 #               one of those, or to any .ini .cfg .conf .log, isn't taken for damage, so an
 #               update that verifies leaves the tool's settings alone. Never a program file.
 #   enabled     include in fetch/sync (default true)
+#   flagged     true on a tool that antivirus programs are known to stop being written. The
+#               Windows app says so before an install and offers to leave it out. Only for
+#               tools seen to be blocked, not ones that might be.
 #   source      "github" | "sourceforge" | "url" | "page" | "local"
 #     github:       repo = "owner/name"   (+ optional download_template when the
 #                   release has no files: "https://site/v{version}/file-{version}.iso")
@@ -655,6 +658,7 @@ source = "url"
 url = "https://www.nirsoft.net/utils/produkey-x64.zip"
 entry = "ProduKey.exe"
 checksum = ["tofu"]
+flagged = true      # Windows Defender stops it being written (HackTool:Win32/ProductKey)
 
 [[tool]]
 name = "diskgenius"

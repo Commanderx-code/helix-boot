@@ -1817,6 +1817,76 @@ class TestFetchAndSync(Base):
             cr.test_stick(self.stick / "nowhere")
 
 
+    def test_your_own_programs_are_watched_for_changes(self):
+        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.sync(verify=False)[0], 0)
+        mine = self.stick / "PortableApps/7-ZipPortable"
+        mine.mkdir(parents=True)
+        (mine / "7-ZipPortable.exe").write_bytes(b"MZ seven zip")
+        (mine / "7z.dll").write_bytes(b"MZ library")
+        (mine / "readme.txt").write_text("not a program")
+        (self.stick / "HelixBoot").mkdir(exist_ok=True)
+        (self.stick / "HelixBoot/HelixBoot.exe").write_bytes(b"MZ the app replaces itself")
+        rc, out = self.verify()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("2 program file(s) of your own are watched for changes from now on.", out)
+        rc, out = self.verify()
+        self.assertIn("2 program file(s) of your own are watched for changes: none has changed.", out)
+
+        (mine / "7z.dll").write_bytes(b"MZ library" + b"\x88\x9f" * 40)        # as a file infector leaves it
+        (mine / "new.exe").write_bytes(b"MZ added by you")
+        (self.stick / "HelixBoot/HelixBoot.exe").write_bytes(b"MZ a newer app")
+        (self.stick / "Apps/sysinternals/procexp64.exe").write_bytes(b"MZ procexX")     # Helix Boot's own: its checksum
+        rc, out = self.verify()
+        self.assertEqual(rc, 1, out)                                # (for the app it knows, as before)
+        self.assertIn("1 program file(s) you put on the stick yourself have changed since the last check: "
+                      "PortableApps/7-ZipPortable/7z.dll.", out)
+        self.assertIn("scan the stick with an antivirus", out)
+        self.assertNotIn("HelixBoot.exe", out)
+        self.assertNotIn("new.exe", out)                            # new isn't changed
+        watched = json.loads((self.stick / cr.STATE_DIR / cr.WATCHED_FILE).read_text())
+        self.assertEqual(sorted(watched), ["PortableApps/7-ZipPortable/7-ZipPortable.exe",
+                                           "PortableApps/7-ZipPortable/7z.dll", "PortableApps/7-ZipPortable/new.exe"])
+        self.assertEqual(self.sync(init=False, verify=False)[0], 0)             # an update leaves the record alone
+        rc, out = self.verify()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("3 program file(s) of your own are watched for changes: none has changed.", out)   # said once
+
+    def test_tools_can_be_chosen_without_editing_local_toml(self):
+        names = {c["name"]: c for c in cr.tool_choices(self.cfg)}
+        self.assertTrue(names["systemrescue"]["on"])
+        self.assertEqual(names["systemrescue"]["category"], "Linux Rescue")
+        self.assertNotIn("ventoy", names)
+        saved = cr.save_choices(self.cfg, set(names) - {"sysinternals"})
+        self.assertEqual(saved, {"off": ["sysinternals"], "on": []})
+        cfg = cr.Config(repo=self.repo)
+        self.assertNotIn("sysinternals", [t["name"] for t in cfg.enabled()])
+        self.assertIn("sysinternals", cfg.switched_off)             # so an update removes it from this stick
+        self.assertFalse({c["name"]: c for c in cr.tool_choices(cfg)}["sysinternals"]["on"])
+        cr.save_choices(cfg, set(names))                            # back to what ships: no file left behind
+        self.assertFalse((self.repo / cr.CHOICES_FILE).exists())
+        # A tool that has gone upstream, or rubbish in the file, is ignored
+        (self.repo / cr.CHOICES_FILE).write_text(json.dumps({"off": ["no-such-tool", "../x", 7], "on": "nope"}))
+        self.assertEqual(len(cr.Config(repo=self.repo).enabled()), len(self.cfg.enabled()))
+        (self.repo / cr.CHOICES_FILE).write_text("not json")
+        self.assertEqual(len(cr.Config(repo=self.repo).enabled()), len(self.cfg.enabled()))
+
+    def test_a_tool_can_be_left_out_of_one_run(self):
+        self.assertEqual(self.fetch()[0], 0)
+        rc, out = self.sync(verify=False, leave_out=["sysinternals"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Sysinternals Suite: left out, as asked", out)
+        self.assertFalse((self.stick / "Apps/sysinternals").exists())
+        self.assertEqual(self.sync(init=False, verify=False)[0], 0)             # the next run puts it on
+        self.assertTrue((self.stick / "Apps/sysinternals/procexp64.exe").is_file())
+        rc, out = self.sync(init=False, verify=False, leave_out=["sysinternals"])
+        self.assertTrue((self.stick / "Apps/sysinternals/procexp64.exe").is_file())    # leaving out never removes
+        toml = self.repo / "tools.toml"
+        toml.write_text(toml.read_text().replace('name = "sysinternals"', 'name = "sysinternals"\nflagged = true'))
+        self.assertEqual(cr.flagged_tools(cr.Config(repo=self.repo)), [{"name": "sysinternals", "title": "Sysinternals Suite"}])
+        self.assertEqual(cr.flagged_tools(self.cfg), [])
+
+
 class TestPack(Base):
     def pack(self, out=None):
         out = out or self.tmp / "pack.zip"
@@ -2355,6 +2425,77 @@ class TestPack(Base):
         with unittest.mock.patch.object(cr, "_copy", side_effect=virus("x.iso")):
             with self.assertRaisesRegex(cr.RescueError, "antivirus stopped x.iso being written"):
                 self.sync(init=False, verify=False)
+
+    def test_a_public_pack_leaves_your_own_out_and_a_pack_can_be_cut_into_pieces(self):
+        own = self.repo / "mine.iso"
+        own.write_bytes(b"my own licensed image")
+        toml = self.repo / "tools.toml"
+        toml.write_text(toml.read_text() + '\n[[tool]]\nname = "mine"\ntitle = "My Own"\nkind = "iso"\n'
+                        'category = "rescue"\nsource = "local"\npath = "mine.iso"\nbyo = true\n')
+        self.cfg = cr.Config(repo=self.repo)
+        self.fetch()
+        private, _ = self.pack(self.tmp / "private.zip")
+        with zipfile.ZipFile(private) as z:
+            self.assertTrue(any(n.endswith("mine.iso") for n in z.namelist()))
+        out = self.tmp / "public.zip"
+        rc, log = self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(out), "public": True, "split": 0.0625})())
+        self.assertEqual(rc, 0, log)
+        self.assertIn("A public pack: leaving out 1 of your own (My Own)", log)
+        self.assertIn("it can be shared", log)
+        with zipfile.ZipFile(out) as z:
+            self.assertFalse(any("mine.iso" in n for n in z.namelist()))
+            self.assertTrue(any(n.endswith("systemrescue-12.02-amd64.iso") for n in z.namelist()))
+        folder = self.tmp / "public-pieces"
+        names = sorted(p.name for p in folder.iterdir())
+        self.assertEqual(names, ["README.txt", "SHA256.txt", "build-stick.cmd", "build-stick.sh", "public.zip.part00"])
+        self.assertEqual((folder / "SHA256.txt").read_text(), f"{sha(out.read_bytes())}  public.zip\n")
+        cmd = (folder / "build-stick.cmd").read_bytes()
+        self.assertNotIn(b"@", cmd.replace(b"@echo off", b""))      # every blank filled in
+        self.assertEqual(cmd.count(b"\n"), cmd.count(b"\r\n"))      # Windows line ends, or its gotos fail
+        self.assertIn(b'set "PACK=public.zip"', cmd)
+        self.assertIn(b"for %%n in (00) do", cmd)
+        with self.assertRaisesRegex(cr.RescueError, "at least 64 MB"):
+            cr.split_pack(out, 1 << 20)
+
+        # The pieces, somewhere else, put back together by the script that goes with them
+        big = self.tmp / "big.zip"
+        with zipfile.ZipFile(big, "w") as z:
+            z.writestr("installer/install.sh", "#!/bin/sh\n")
+            z.writestr("stuff.bin", os.urandom(150 << 20))
+        got = cr.split_pack(big, 64 << 20)
+        self.assertEqual(len(list(got.glob("*.part*"))), 3)
+        there = self.tmp / "downloaded"
+        shutil.copytree(got, there)
+        r = subprocess.run(["sh", str(there / "build-stick.sh")], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("The pack is whole", r.stdout)
+        self.assertEqual(sha((there / "big.zip").read_bytes()), sha(big.read_bytes()))
+        (there / "big.zip").unlink()
+        with open(there / "big.zip.part01", "r+b") as f:
+            f.write(b"damaged in transit")
+        r = subprocess.run(["sh", str(there / "build-stick.sh")], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("The pack is damaged", r.stdout)
+        cr.split_pack(big, 100 << 20)                               # cut again: the old pieces don't linger
+        self.assertEqual(len(list(got.glob("*.part*"))), 2)
+
+    def test_self_update_from_the_command_line_replaces_the_program_named(self):
+        me, new = self.tmp / "HelixBoot.sh", self.tmp / "dl.sh"
+        me.write_text("#!/bin/sh\necho old\n")
+        new.write_text("#!/bin/sh\necho new\n")
+        args = type("A", (), {"asset": "HelixBoot.sh", "program": str(me)})()
+        with unittest.mock.patch.object(cr, "_latest_tag", lambda repo: "v99.0.0"), \
+                unittest.mock.patch.object(cr, "fetch_app", lambda cfg, asset: (new, "99.0.0", sha(new.read_bytes()))):
+            rc, out = self.run_quiet(cr.cmd_self_update, self.cfg, args)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Helix Boot 99.0.0 is in place", out)
+        self.assertEqual(me.read_text(), "#!/bin/sh\necho new\n")
+        self.assertTrue(os.access(me, os.X_OK))
+        self.assertEqual([p.name for p in self.tmp.glob("HelixBoot*")], ["HelixBoot.sh"])     # nothing left beside it
+        with unittest.mock.patch.object(cr, "_latest_tag", lambda repo: f"v{cr.__version__}"), \
+                unittest.mock.patch.object(cr, "fetch_app", side_effect=AssertionError("nothing newer")):
+            rc, out = self.run_quiet(cr.cmd_self_update, self.cfg, args)
+        self.assertIn("is the newest version", out)
 
     def test_a_pack_made_before_the_release_is_out_says_its_app_is_old(self):
         self.windows_ventoy_upstream()                          # the released app is 0.5.0
