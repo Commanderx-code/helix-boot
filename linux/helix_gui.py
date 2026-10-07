@@ -161,12 +161,43 @@ def wait_for_stick(disk_no, run_=None, timeout: float = 60, expected: dict | Non
 
 
 # ── Ventoy (its own script, as root) ───────────────────────────────────────
+# What runs as root is decided here, not by what happens to be on disk when the password is
+# typed. Your cache is yours to write, so root never runs anything out of it: it is handed
+# Ventoy's archive and the checksum that archive was verified against, makes its own copy where
+# only root can write, checks that copy, unpacks it there and runs Ventoy's script from there.
+ROOT_TOOLS = ("/usr/bin", "/usr/sbin", "/bin", "/sbin")     # root's programs are found here, never on your PATH
+VERIFIED: dict[str, str] = {}                               # Ventoy archive -> the sha256 it was verified to have
+RUN_VENTOY = r'''
+set -eu
+archive=$1; want=$2; shift 2
+work=$(mktemp -d /run/helix-boot.XXXXXX)
+trap 'rm -rf "$work"' EXIT INT TERM
+cp -- "$archive" "$work/ventoy.tar.gz"
+if ! echo "$want  $work/ventoy.tar.gz" | sha256sum -c --status -; then
+  echo "Ventoy's archive is not the one that was verified; nothing was written" >&2
+  exit 97
+fi
+mkdir "$work/x"
+tar -xzf "$work/ventoy.tar.gz" -C "$work/x" --no-same-owner
+cd "$work"/x/ventoy-*/
+./Ventoy2Disk.sh "$@"
+'''
+
+
+def root_tool(name: str) -> str:
+    for folder in ROOT_TOOLS:
+        if os.access(f"{folder}/{name}", os.X_OK):
+            return f"{folder}/{name}"
+    raise RescueError(f"'{name}' isn't installed, and this step needs it")
+
+
 def as_root(cmd: list[str], feed: str = "", timeout: float = ROOT_TIMEOUT) -> tuple[int, str]:
     """Run one command as root, behind the desktop's password dialog. (code, what it printed)."""
-    pkexec = shutil.which("pkexec")
-    if not pkexec:
+    try:
+        pkexec = root_tool("pkexec")
+    except RescueError:
         raise RescueError("this step needs your password, and there is no pkexec (polkit) to ask for it. "
-                          "Use ./install.sh or ./refresh.sh in a terminal instead.")
+                          "Use ./install.sh or ./refresh.sh in a terminal instead.") from None
     try:
         r = subprocess.run([pkexec, *cmd], input=feed, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -177,15 +208,28 @@ def as_root(cmd: list[str], feed: str = "", timeout: float = ROOT_TIMEOUT) -> tu
 
 
 def ventoy_dir(cfg) -> Path:
-    entry = cr.load_lock(cfg).get("ventoy")
-    path = cfg.cache / "ventoy" / entry["final"] if entry and entry.get("final") else None
-    if not path or not (path / "Ventoy2Disk.sh").is_file():
-        raise RescueError("Ventoy isn't downloaded: check your connection and try again")
-    return path
+    """Ventoy's archive as it was downloaded, still the file whose checksum Ventoy publishes."""
+    entry = cr.load_lock(cfg).get("ventoy") or {}
+    want = str(entry.get("sha256_download") or "")
+    archive = cfg.cache / "ventoy" / str(entry.get("source_file") or "-")
+    if not archive.is_file() or not re.fullmatch(r"[0-9a-f]{64}", want) or "sha256" not in str(entry.get("verified_by")):
+        raise RescueError("Ventoy isn't downloaded and verified: check your connection and try again")
+    if cr.file_hash(archive) != want:
+        raise RescueError(f"{archive} has changed since it was downloaded and verified. Delete it and try again.")
+    VERIFIED[str(archive)] = want
+    return archive
 
 
 def pack_ventoy_dir(cfg, pack) -> Path:
-    return cr._ventoy_from_pack(cfg, str(pack), windows=False)
+    """Ventoy's archive out of a pack, in the cache, with the checksum of what came out."""
+    with cr._open_pack(str(pack)) as zf:
+        v = cr._read_pack(zf).get("ventoy")
+        if not v or not str(v.get("file", "")).endswith(".tar.gz"):
+            raise RescueError("this pack has no Ventoy installer for Linux. Make it again after `helix fetch ventoy`.")
+        dest = cr._inside(cfg.cache.resolve(), f"ventoy-from-pack/{Path(v['file']).name}", "Ventoy archive")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        VERIFIED[str(dest)] = cr._unzip_to(zf, v["file"], dest)
+    return dest
 
 
 def ventoy_command(vdir: Path, mode: str, disk_no, gpt: bool = True, secure_boot: bool = True) -> list[str]:
@@ -204,13 +248,16 @@ def ventoy_command(vdir: Path, mode: str, disk_no, gpt: bool = True, secure_boot
 
 
 def run_ventoy(args: list[str], vdir: Path, progress=lambda pct: None, timeout: float = ROOT_TIMEOUT) -> None:
-    """Unmount the disk and run Ventoy2Disk.sh on it as root. It asks "Continue?" twice, which was
-    answered in the window; it exits 0 even when it gives up, so its own words decide."""
-    dev = args[-1]
+    """Unmount the disk and have root run Ventoy2Disk.sh on it, from its own checked copy of the
+    archive `vdir`. Ventoy asks "Continue?" twice, which was answered in the window; it exits 0
+    even when it gives up, so its own words decide."""
+    dev, want = args[-1], VERIFIED.get(str(vdir))
+    if not want or not re.fullmatch(r"[0-9a-f]{64}", want):
+        raise RescueError(f"{vdir} isn't a Ventoy archive this run verified; refusing to run it as root")
     for part in partitions(dev):
         unmount(part)
-    code, said = as_root(["/bin/sh", "-c", 'cd "$1" && shift && exec ./Ventoy2Disk.sh "$@"', "helix-boot",
-                          str(vdir), *args], feed="y\ny\n", timeout=timeout)
+    code, said = as_root(["/bin/sh", "-c", RUN_VENTOY, "helix-boot", str(vdir), want, *args],
+                         feed="y\ny\n", timeout=timeout)
     lines = [line.rstrip() for line in said.splitlines() if line.strip()]
     print("\n".join(lines[-12:]))
     try:
@@ -218,8 +265,7 @@ def run_ventoy(args: list[str], vdir: Path, progress=lambda pct: None, timeout: 
     except (OSError, subprocess.TimeoutExpired):
         time.sleep(3)
     if code or "successfully finished" not in said:
-        raise RescueError(f"Ventoy's installer didn't finish on {dev} (see {vdir / 'log.txt'}):\n"
-                          + "\n".join(lines[-4:]))
+        raise RescueError(f"Ventoy's installer didn't finish on {dev}:\n" + "\n".join(lines[-4:]))
     progress(100)
 
 
@@ -268,7 +314,7 @@ def repair(target: str, run_=None) -> str:
     part = run(["findmnt", "-no", "SOURCE", "--target", str(target)]).strip().split("[")[0]
     if not re.fullmatch(r"/dev/[A-Za-z0-9]+", part) or not mounted_at(part):
         raise RescueError(f"{target} isn't a mounted stick")
-    fsck = shutil.which("fsck") or "/usr/sbin/fsck"
+    fsck = root_tool("fsck")
     print(f"\nRepairing the filesystem on {part} (fsck -y) …")
     unmount(part)
     try:

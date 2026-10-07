@@ -1,7 +1,11 @@
 """Tests for linux/helix_gui.py: the Linux parts under the window, with lsblk, udisks, pkexec and
 Ventoy faked, so they run anywhere and touch no disk."""
+import hashlib
 import importlib.util
 import io
+import os
+import subprocess
+import tarfile
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -94,28 +98,37 @@ class TestVentoy(unittest.TestCase):
         with mock.patch.object(app, "config", lambda: mock.Mock(stick_label="Ventoy")):
             self.assertEqual(gui.ventoy_command(Path("v"), "/I", "sdb"), ["-I", "-g", "-s", "/dev/sdb"])
 
-    def run_ventoy(self, code=0, said="Install Ventoy to /dev/sdb successfully finished.\n"):
+    WANT = "ab" * 32
+
+    def run_ventoy(self, code=0, said="Install Ventoy to /dev/sdb successfully finished.\n", verified=True):
         calls = []
 
         def as_root(cmd, feed="", timeout=0):
             calls.append(("root", cmd, feed))
             return code, said
+        archive = Path("/cache/ventoy/ventoy-1.1.17-linux.tar.gz")
         out = io.StringIO()
         with mock.patch.object(gui, "partitions", lambda dev: [f"{dev}1", f"{dev}2"]), \
                 mock.patch.object(gui, "unmount", lambda part: calls.append(("unmount", part))), \
                 mock.patch.object(gui, "as_root", as_root), mock.patch.object(gui.subprocess, "run"), \
+                mock.patch.dict(gui.VERIFIED, {str(archive): self.WANT} if verified else {}, clear=True), \
                 redirect_stdout(out):
-            gui.run_ventoy(["-I", "-g", "-s", "/dev/sdb"], Path("/cache/ventoy-1.1.17"))
+            gui.run_ventoy(["-I", "-g", "-s", "/dev/sdb"], archive)
         return calls
 
-    def test_the_disk_is_unmounted_and_ventoys_script_run_as_root_from_its_folder(self):
+    def test_the_disk_is_unmounted_and_root_is_given_the_archive_and_its_checksum(self):
         calls = self.run_ventoy()
         self.assertEqual(calls[:2], [("unmount", "/dev/sdb1"), ("unmount", "/dev/sdb2")])
         kind, cmd, feed = calls[2]
         self.assertEqual(cmd[:2], ["/bin/sh", "-c"])
-        self.assertEqual(cmd[3:], ["helix-boot", "/cache/ventoy-1.1.17", "-I", "-g", "-s", "/dev/sdb"])
-        self.assertIn('cd "$1" && shift && exec ./Ventoy2Disk.sh "$@"', cmd[2])      # arguments stay arguments
-        self.assertEqual(feed, "y\ny\n")                                             # its two "Continue?"s
+        self.assertEqual(cmd[2], gui.RUN_VENTOY)                                     # a fixed script, nothing built in
+        self.assertEqual(cmd[3:], ["helix-boot", "/cache/ventoy/ventoy-1.1.17-linux.tar.gz", self.WANT,
+                                   "-I", "-g", "-s", "/dev/sdb"])                    # arguments stay arguments
+        self.assertEqual(feed, "y\ny\n")                                             # Ventoy's two "Continue?"s
+
+    def test_an_archive_this_run_didnt_verify_is_never_run_as_root(self):
+        with self.assertRaisesRegex(app.RescueError, "refusing to run it as root"):
+            self.run_ventoy(verified=False)
 
     def test_ventoys_own_words_decide_whether_it_worked(self):
         for code, said in ((0, "Continue? (y/n) n\n"), (1, "Install Ventoy to /dev/sdb successfully finished."),
@@ -123,26 +136,76 @@ class TestVentoy(unittest.TestCase):
             with self.assertRaisesRegex(app.RescueError, "didn't finish on /dev/sdb"):
                 self.run_ventoy(code, said)
 
-    def test_no_password_no_writing(self):
-        with mock.patch.object(gui.shutil, "which", lambda name: "/usr/bin/pkexec"), \
+    def root_script(self, tmp, archive, want, *args):
+        """Root's script, run as you: its working folder in a temporary folder and not /run."""
+        script = gui.RUN_VENTOY.replace("/run/helix-boot.", f"{tmp}/work/helix-boot.")
+        (tmp / "work").mkdir(exist_ok=True)
+        return subprocess.run(["/bin/sh", "-c", script, "helix-boot", str(archive), want, *args],
+                              capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+
+    def test_root_runs_its_own_checked_copy_and_nothing_from_your_folders(self):
+        tmp = Path(tempfile.mkdtemp())
+        src = tmp / "ventoy-9.9"
+        src.mkdir()
+        (src / "Ventoy2Disk.sh").write_text('#!/bin/sh\necho "ran in $PWD with $*"\necho "successfully finished"\n')
+        (src / "Ventoy2Disk.sh").chmod(0o755)
+        archive = tmp / "ventoy-9.9-linux.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(src, arcname="ventoy-9.9")
+        want = hashlib.sha256(archive.read_bytes()).hexdigest()
+        # What is unpacked beside it is yours to change: it is not what runs
+        (src / "Ventoy2Disk.sh").write_text("#!/bin/sh\necho CHANGED\n")
+        r = self.root_script(tmp, archive, want, "-I", "-g", "/dev/sdz")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("with -I -g /dev/sdz", r.stdout)
+        self.assertIn(f"ran in {tmp}/work/helix-boot.", r.stdout)                    # from root's own copy
+        self.assertNotIn("CHANGED", r.stdout)
+        self.assertEqual(list((tmp / "work").iterdir()), [])                         # and that copy is gone again
+
+        # An archive that isn't the verified one is refused before anything in it is run
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(src, arcname="ventoy-9.9")
+        r = self.root_script(tmp, archive, want, "-I", "/dev/sdz")
+        self.assertEqual(r.returncode, 97)
+        self.assertIn("not the one that was verified", r.stderr)
+        self.assertNotIn("CHANGED", r.stdout)
+        self.assertEqual(list((tmp / "work").iterdir()), [])
+
+    def test_no_password_no_writing_and_roots_tools_are_not_found_on_your_path(self):
+        with mock.patch.object(gui, "root_tool", lambda name: f"/usr/bin/{name}"), \
                 mock.patch.object(gui.subprocess, "run", return_value=mock.Mock(returncode=126, stdout="", stderr="")):
             with self.assertRaisesRegex(app.RescueError, "password wasn't given"):
                 gui.as_root(["/bin/true"])
-        with mock.patch.object(gui.shutil, "which", lambda name: None):
+        with mock.patch.object(gui, "ROOT_TOOLS", ("/nonexistent",)), \
+                mock.patch.object(gui.subprocess, "run", side_effect=AssertionError("nothing may be run")):
             with self.assertRaisesRegex(app.RescueError, "no pkexec"):
                 gui.as_root(["/bin/true"])
+        mine = Path(tempfile.mkdtemp())
+        (mine / "sh").write_text("#!/bin/sh\n")
+        (mine / "sh").chmod(0o755)
+        with mock.patch.dict(os.environ, {"PATH": f"{mine}:{os.environ['PATH']}"}):
+            self.assertNotEqual(Path(gui.root_tool("sh")).parent, mine)
+            self.assertTrue(gui.root_tool("sh").startswith(gui.ROOT_TOOLS))
 
-    def test_ventoy_comes_from_the_cache_or_the_pack(self):
+    def test_ventoys_archive_must_be_the_one_that_was_verified(self):
         tmp = Path(tempfile.mkdtemp())
         cfg = mock.Mock(cache=tmp)
-        with mock.patch.object(gui.cr, "load_lock", lambda cfg: {"ventoy": {"final": "ventoy-1.1.17"}}):
-            with self.assertRaisesRegex(app.RescueError, "isn't downloaded"):
+        (tmp / "ventoy").mkdir()
+        archive = tmp / "ventoy/ventoy-1.1.17-linux.tar.gz"
+        entry = {"source_file": archive.name, "sha256_download": hashlib.sha256(b"ventoy").hexdigest(),
+                 "verified_by": "sha256 from sha256.txt"}
+        with mock.patch.object(gui.cr, "load_lock", lambda cfg: {"ventoy": entry}), mock.patch.dict(gui.VERIFIED, clear=True):
+            with self.assertRaisesRegex(app.RescueError, "isn't downloaded and verified"):
                 gui.ventoy_dir(cfg)
-            (tmp / "ventoy/ventoy-1.1.17").mkdir(parents=True)
-            (tmp / "ventoy/ventoy-1.1.17/Ventoy2Disk.sh").write_text("#!/bin/sh\n")
-            self.assertEqual(gui.ventoy_dir(cfg), tmp / "ventoy/ventoy-1.1.17")
-        with mock.patch.object(gui.cr, "_ventoy_from_pack", lambda cfg, pack, windows: (pack, windows)):
-            self.assertEqual(gui.pack_ventoy_dir(cfg, "pack.zip"), ("pack.zip", False))
+            archive.write_bytes(b"ventoy")
+            self.assertEqual(gui.ventoy_dir(cfg), archive)
+            self.assertEqual(gui.VERIFIED[str(archive)], entry["sha256_download"])
+            archive.write_bytes(b"something else")
+            with self.assertRaisesRegex(app.RescueError, "has changed since it was downloaded and verified"):
+                gui.ventoy_dir(cfg)
+        with mock.patch.object(gui.cr, "load_lock", lambda cfg: {"ventoy": {**entry, "verified_by": "unverified"}}):
+            with self.assertRaisesRegex(app.RescueError, "isn't downloaded and verified"):
+                gui.ventoy_dir(cfg)
 
 
 class TestFlows(unittest.TestCase):
@@ -232,7 +295,7 @@ class TestRepairAndBootScript(unittest.TestCase):
             run=lambda cmd, timeout=60, **kw: "/dev/sdb1\n", mounted_at=lambda part: "/run/media/me/HelixBoot",
             unmount=lambda part: calls.append(("unmount", part)), mount=lambda part: calls.append(("mount", part)) or "/m",
             as_root=lambda cmd, feed="", timeout=0: calls.append(("root", cmd[1:])) or (code, said))
-        with mock.patch.multiple(gui, **fakes), mock.patch.object(gui.shutil, "which", lambda n: "/usr/sbin/fsck"), \
+        with mock.patch.multiple(gui, **fakes), mock.patch.object(gui, "root_tool", lambda n: f"/usr/sbin/{n}"), \
                 redirect_stdout(io.StringIO()):
             try:
                 return gui.repair("/run/media/me/HelixBoot"), calls

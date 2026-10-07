@@ -23,6 +23,13 @@ Ventoy's installer (its Linux script, as root through `pkexec`) and Repair
 stick (`fsck`). The window, the install and update steps and their safety
 checks are the same code on both systems.
 
+Only those two steps run as root. Your cache is yours to write, so root is
+never pointed at a script in it: it gets Ventoy's archive and the checksum that
+archive was verified against when it was downloaded, copies the archive to a
+folder only root can write, checks the copy, unpacks it there and runs
+Ventoy's script from there. Root's own programs (`pkexec`, `fsck`) are taken
+from the system's folders, never found on your `PATH`.
+
 `theme.sh` and `check.sh` wrap `helix theme` and `helix verify` the same way:
 they find and mount the stick first.
 Pillow is the one optional extra: with it the engine draws previews, the
