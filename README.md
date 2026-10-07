@@ -494,7 +494,7 @@ and splash, saving a look, and how the default theme is put together.
 | | The Look window, Check stick, newer-version notices | 0.6.0 – 0.6.6 |
 | | A dark, compact look and the HB logo; adds the splash and menu keys like Linux | 0.6.8 – 0.6.9 |
 | Linux | One-file installer (`HelixBoot.sh`) | 0.5.2 |
-| | The window, as on Windows: `HelixBoot-linux-x86_64` | next |
+| | The window, as on Windows: `HelixBoot-linux-x86_64` | 0.7.4 |
 | Lazarus PE | PhoenixPE preset and build VM, the Lazarus launcher, PortableApps.com with Helix themes | 0.1 – 0.5.1 |
 | Mac | 32 tools for a working Mac, each opened and checked on a real Mac in CI | 0.6.1 – 0.6.12 |
 | | Updating a stick from a Mac; creating one (experimental) | 0.6.14 |

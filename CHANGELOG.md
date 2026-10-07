@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-10-07
+
 ### Fixed
 - With a pack chosen, the window's line about newer tools said "Update stick
   gets them", which a pack can't do: it holds the versions it was made with.
@@ -743,7 +745,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.4...HEAD
+[0.7.4]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.0...v0.7.1
