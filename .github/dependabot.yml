@@ -11,7 +11,7 @@ updates:
       actions:
         patterns: ["*"]
   - package-ecosystem: pip
-    directories: ["/windows", "/mac", "/tests"]
+    directories: ["/windows", "/mac", "/linux", "/tests"]
     schedule:
       interval: weekly
     groups:

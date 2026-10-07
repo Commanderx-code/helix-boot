@@ -211,6 +211,39 @@ def powershell(script: str) -> str:
     return r.stdout
 
 
+# What differs on another system is kept to these few names, which linux/helix-gui replaces:
+# the disk layer below, Ventoy's installer, and the words that name Windows' own things.
+SYSTEM = "Windows"
+WINDOW = (600, 584)                 # the main window's size, which is also the smallest it goes (less 40 x 20)
+SAFE_TO_REMOVE = "safe to remove once Windows says so"
+NO_LETTER = "or Windows gave it no drive letter"
+
+
+def stick_path(d: dict) -> str:
+    """Where the stick's files are: its drive, as E:\\ ."""
+    return f"{d['Ventoy']}:\\"
+
+
+def where_text(d: dict) -> str:
+    """The drive letters of a disk, for the list of sticks."""
+    return f"{d['Ventoy']}:" if d.get("Ventoy") else ", ".join(f"{x}:" for x in d["Letters"])
+
+
+def repair_question(d: dict) -> str:
+    return (f"Have Windows repair the filesystem on {d['Ventoy']}:?\n\n"
+            f"This runs chkdsk {d['Ventoy']}: /f. It is for a stick that an update or a "
+            "check says is damaged; it erases nothing, though a file that was damaged "
+            "may be lost. Close anything that has the stick open first.")
+
+
+def open_path(path: Path) -> bool:
+    """Show a folder in the file manager. False if this system has no way that is known here."""
+    if os.name == "nt":
+        os.startfile(path)  # noqa: S606
+        return True
+    return False
+
+
 def all_disks(run=powershell) -> list[dict]:
     out = run(DISKS_PS).strip()
     data = json.loads(out) if out else []
@@ -234,7 +267,7 @@ def pick(disk_no: int, run=powershell) -> dict:
     for d in all_disks(run):
         if d["Number"] == disk_no:
             if d.get("System"):
-                raise RescueError(f"Disk {disk_no} holds the running Windows. Refusing.")
+                raise RescueError(f"Disk {disk_no} holds the running {SYSTEM}. Refusing.")
             if d.get("Bus") not in USB_BUSES:
                 raise RescueError(f"Disk {disk_no} ({d['Name']}) isn't a USB/SD disk. Refusing.")
             return d
@@ -269,7 +302,7 @@ def wait_for_ventoy_letter(disk_no: int, run=powershell, timeout: float = 90, ex
         if d and expected is not None:
             d = recheck_disk(expected, run)
         if d and d.get("Ventoy") and d.get("IsVentoy"):
-            return f"{d['Ventoy']}:\\"
+            return stick_path(d)
         time.sleep(2)
     raise RescueError(f"the Ventoy partition on disk {disk_no} didn't get a drive letter. "
                       "Open Disk Management, give it one, then use Update.")
@@ -400,12 +433,13 @@ def copy_bytes(plan: list) -> int:
 
 
 def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None, run=powershell,
-            ventoy=run_ventoy, keep_going=lambda: True, pack=None, expected=None, on_plan=lambda nbytes: None,
+            ventoy=None, keep_going=lambda: True, pack=None, expected=None, on_plan=lambda nbytes: None,
             test=False) -> str:
     """Erase disk N, put Ventoy on it, fill it (from the internet, or from a pack). With `test`,
     the empty stick is written full and read back first, and a stick that fails is left empty.
     Returns the stick's drive letter."""
     cfg = config()
+    ventoy = ventoy or run_ventoy
     d = recheck_disk(expected, run) if expected is not None else pick(disk_no, run)
     disk_identity(d)
     if pack:   # everything comes out of the pack: check it has Ventoy for Windows before erasing
@@ -421,7 +455,7 @@ def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None,
     print(f"✓ Ventoy installed, stick is {letter}")
     name_stick(letter, getattr(cfg, "stick_label", ""), run)
     d = recheck_disk(d, run)
-    if f"{d['Ventoy']}:\\" != letter:
+    if stick_path(d) != letter:
         raise RescueError("The stick drive letter changed before copying")
     if test:
         test_stick(letter, progress)
@@ -442,11 +476,12 @@ def install(disk_no: int, gpt=True, secure_boot=True, progress=lambda pct: None,
 
 
 def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda pct: None,
-           run=powershell, ventoy=run_ventoy, pack=None, confirm=lambda summary: True, expected=None,
+           run=powershell, ventoy=None, pack=None, confirm=lambda summary: True, expected=None,
            on_plan=lambda nbytes: None) -> str:
     """Refresh a Helix Boot / Ventoy stick in place. Never erases. `confirm` is shown what the
     update will copy, remove and keep before anything is written, and can call it off."""
     cfg = config()
+    ventoy = ventoy or run_ventoy
     d = recheck_disk(expected, run) if expected is not None else pick(disk_no, run)
     disk_identity(d)
     if not d.get("IsVentoy") or not d.get("Ventoy"):
@@ -455,7 +490,7 @@ def update(disk_no: int, upgrade_ventoy=False, secure_boot=True, progress=lambda
         fetch(cfg)
     recheck_disk(d, run, same_volume=True)
     # (init=True below: this disk was just checked to be a Ventoy stick, whatever it has been named)
-    summary = update_summary(cfg, f"{d['Ventoy']}:\\", pack, on_plan=on_plan)
+    summary = update_summary(cfg, stick_path(d), pack, on_plan=on_plan)
     print(f"\nThis update will:\n{summary}\n")
     if not confirm(summary):
         raise RescueError("stopped — nothing on the stick was changed")
@@ -705,8 +740,8 @@ def gui(selftest: bool = False) -> int:
 
     root = tk.Tk()
     root.title(APP)
-    root.geometry("600x584")
-    root.minsize(560, 564)
+    root.geometry(f"{WINDOW[0]}x{WINDOW[1]}")
+    root.minsize(WINDOW[0] - 40, WINDOW[1] - 20)
     apply_theme(root)
     set_icon(root)
     style = ttk.Style(root)
@@ -794,7 +829,7 @@ def gui(selftest: bool = False) -> int:
         if out.winfo_ismapped():
             out.pack_forget()
             b_log.config(text="Show log")
-            root.geometry(f"{root.winfo_width()}x{max(root.winfo_height() - 190, 564)}")
+            root.geometry(f"{root.winfo_width()}x{max(root.winfo_height() - 190, WINDOW[1] - 20)}")
         else:
             out.pack(fill="both", expand=True, pady=(10, 10))
             b_log.config(text="Hide log")
@@ -838,7 +873,7 @@ def gui(selftest: bool = False) -> int:
         disks[:] = found
         names = []
         for d in found:
-            where = f"{d['Ventoy']}:" if d.get("Ventoy") else ", ".join(f"{x}:" for x in d["Letters"])
+            where = where_text(d)
             names.append(f"Disk {d['Number']}:  {d['Name']}  ({human(d['Size'])})"
                          + (f"  {where}" if where else "") + ("  ·  Ventoy stick" if d["IsVentoy"] else ""))
         drive.config(values=names)
@@ -876,7 +911,7 @@ def gui(selftest: bool = False) -> int:
             copying.update(pending=0, sent=now)
 
     def finished(letter):
-        text = f"✓ Done. The stick is {letter} — safe to remove once Windows says so."
+        text = f"✓ Done. The stick is {letter} — {SAFE_TO_REMOVE}."
         return text + (f"\n\n{cr.av_text(cr.BLOCKED)}" if cr.BLOCKED else "")     # (tools the antivirus kept off)
 
     def work(fn, *a, done=finished, **kw):
@@ -942,11 +977,11 @@ def gui(selftest: bool = False) -> int:
         if not d:
             return
         if not d.get("Ventoy"):
-            messagebox.showinfo(APP, "That disk has no Helix Boot stick on it yet, or Windows gave it no drive "
-                                     "letter. Install first, then choose its look.")
+            messagebox.showinfo(APP, f"That disk has no Helix Boot stick on it yet, {NO_LETTER}. "
+                                     "Install first, then choose its look.")
             return
         try:
-            look_window(Path(f"{d['Ventoy']}:\\"), parent=root)
+            look_window(Path(stick_path(d)), parent=root)
         except cr.RescueError as e:
             messagebox.showerror(APP, str(e))
         except Exception as e:  # noqa: BLE001 — a button that does nothing is worse than a message
@@ -967,31 +1002,26 @@ def gui(selftest: bool = False) -> int:
         if not d:
             return
         if not d.get("Ventoy"):
-            messagebox.showinfo(APP, "That disk has no Helix Boot stick on it yet, or Windows gave it no drive "
-                                     "letter, so there's nothing to check.")
+            messagebox.showinfo(APP, f"That disk has no Helix Boot stick on it yet, {NO_LETTER}, "
+                                     "so there's nothing to check.")
             return
-        work(check, f"{d['Ventoy']}:\\", done=lambda text: text)
+        work(check, stick_path(d), done=lambda text: text)
 
     def do_repair():
         d = selected()
         if not d:
             return
         if not d.get("Ventoy"):
-            messagebox.showinfo(APP, "That disk has no Helix Boot stick on it yet, or Windows gave it no drive "
-                                     "letter, so there's nothing to repair.")
+            messagebox.showinfo(APP, f"That disk has no Helix Boot stick on it yet, {NO_LETTER}, "
+                                     "so there's nothing to repair.")
             return
-        if messagebox.askokcancel(APP, f"Have Windows repair the filesystem on {d['Ventoy']}:?\n\n"
-                                       f"This runs chkdsk {d['Ventoy']}: /f. It is for a stick that an update or a "
-                                       "check says is damaged; it erases nothing, though a file that was damaged "
-                                       "may be lost. Close anything that has the stick open first."):
-            work(lambda target, progress: repair(target), f"{d['Ventoy']}:\\", done=lambda text: text)
+        if messagebox.askokcancel(APP, repair_question(d)):
+            work(lambda target, progress: repair(target), stick_path(d), done=lambda text: text)
 
     def open_folder():
         path = user_dir() / "byo"
         path.mkdir(exist_ok=True)
-        if os.name == "nt":
-            os.startfile(path)  # noqa: S606
-        else:
+        if not open_path(path):
             messagebox.showinfo(APP, str(path))
 
     def pump():

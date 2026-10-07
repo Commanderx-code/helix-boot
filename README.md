@@ -81,6 +81,18 @@ for damage; `./HelixBoot.sh --help` lists the rest. Your
 `local.toml` and `byo/` folder live next to it, and a pack beside it is used
 with no downloads.
 
+**Linux, in a window.** Download **`HelixBoot-linux-x86_64`** from
+[Releases](https://github.com/Commanderx-code/helix-boot/releases), put it in a
+folder of its own, then `chmod +x HelixBoot-linux-x86_64 && ./HelixBoot-linux-x86_64`.
+It is the same window as the [Windows app](#windows-app): pick the stick, then
+Install or Update, with Look, Check stick and Repair stick beside them. Run it
+as your normal user. It asks for your password, in your desktop's own dialog,
+only to install Ventoy and to repair a filesystem. From a clone it is
+`python3 linux/helix_gui.py`, which needs Tk (`tk` on Arch, `python3-tk` on
+Debian and Ubuntu).
+
+![The Helix Boot window on Linux](docs/linux-app.png)
+
 **Windows.** Download **`HelixBoot.exe`** from
 [Releases](https://github.com/Commanderx-code/helix-boot/releases), put it
 in a folder of its own and run it (see [below](#windows-app)).
@@ -476,6 +488,7 @@ and splash, saving a look, and how the default theme is put together.
 | | The Look window, Check stick, newer-version notices | 0.6.0 – 0.6.6 |
 | | A dark, compact look and the HB logo; adds the splash and menu keys like Linux | 0.6.8 – 0.6.9 |
 | Linux | One-file installer (`HelixBoot.sh`) | 0.5.2 |
+| | The window, as on Windows: `HelixBoot-linux-x86_64` | next |
 | Lazarus PE | PhoenixPE preset and build VM, the Lazarus launcher, PortableApps.com with Helix themes | 0.1 – 0.5.1 |
 | Mac | 32 tools for a working Mac, each opened and checked on a real Mac in CI | 0.6.1 – 0.6.12 |
 | | Updating a stick from a Mac; creating one (experimental) | 0.6.14 |

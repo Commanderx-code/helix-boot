@@ -223,11 +223,66 @@ jobs:
           name: HelixBoot-mac-${{ matrix.runner }}
           path: dist/HelixBoot-mac-*
 
+  # The Linux window: linux/helix_gui.py as one file with Python and Tk inside. Built on the oldest
+  # Ubuntu the runners offer, so it starts on systems with an older C library than the newest.
+  linux-app:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Build HelixBoot-linux
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb imagemagick fonts-dejavu-core
+          python -c "import tkinter; print('Tk', tkinter.TkVersion)"
+          pip install --disable-pip-version-check --require-hashes -r linux/requirements.txt
+          pyinstaller --noconfirm linux/HelixBoot-linux.spec
+          mv dist/HelixBoot-linux "dist/HelixBoot-linux-$(uname -m)"
+          ls -l dist
+      - name: Try the real program
+        env:
+          NO_COLOR: "1"
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/app" && cp dist/HelixBoot-linux-* "$RUNNER_TEMP/app/HelixBoot-linux"
+          app="$RUNNER_TEMP/app/HelixBoot-linux"
+          "$app" --version
+          "$app" --help | grep -q -- --list
+          "$app" --list --all | tee disks.json
+          # The runner's own disk is found, and marked as the one the system runs from
+          python - <<'EOF'
+          import json
+          disks = json.load(open("disks.json"))
+          assert any(d["System"] for d in disks), disks
+          assert not [d for d in disks if d["System"] and d["Bus"] in ("USB", "SD")], disks
+          EOF
+          test "$("$app" --list)" = "[]"                       # no USB stick here: nothing is offered
+          # The window itself, on a virtual display: it opens and closes by itself, and then once
+          # more as you would see it, for a picture of it
+          xvfb-run -a -s "-screen 0 760x640x24" "$app" --selftest-gui
+          xvfb-run -a -s "-screen 0 760x640x24" sh -c '"$0" & pid=$!; sleep 12; import -window root linux-app.png; kill $pid' "$app"
+          test -s linux-app.png
+          test -d "$RUNNER_TEMP/app/byo"                       # your folder is the one beside the program
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: HelixBoot-linux
+          path: dist/HelixBoot-linux-*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: linux-app-screenshot
+          path: linux-app.png
+
   # A pushed v* tag, or "Run workflow" on main with a version: the release (and its tag,
   # at this commit) is created from the .exe the job above built and tested, by a job of its
   # own, the only one with write access.
   release:
-    needs: [app, mac-app]
+    needs: [app, mac-app, linux-app]
     if: startsWith(github.ref, 'refs/tags/v') || (inputs.release != '' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -248,12 +303,16 @@ jobs:
           pattern: HelixBoot-mac-*
           merge-multiple: true
           path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: HelixBoot-linux
+          path: dist
       - name: Build HelixBoot.sh (the one-file Linux installer)
         run: linux/build.sh dist/HelixBoot.sh
       # Anyone can check a download: sha256sum -c SHA256SUMS, or
       # gh attestation verify HelixBoot.exe --repo Commanderx-code/helix-boot (built here, from this commit)
       - name: Checksums
-        run: cd dist && ls HelixBoot-mac-arm64 HelixBoot-mac-x86_64 && sha256sum HelixBoot.exe HelixBoot.sh HelixBoot-mac-* > SHA256SUMS && cat SHA256SUMS
+        run: cd dist && ls HelixBoot-mac-arm64 HelixBoot-mac-x86_64 HelixBoot-linux-x86_64 && sha256sum HelixBoot.exe HelixBoot.sh HelixBoot-mac-* HelixBoot-linux-* > SHA256SUMS && cat SHA256SUMS
       - name: Attest where the files were built
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
@@ -282,4 +341,5 @@ jobs:
             dist/HelixBoot.exe
             dist/HelixBoot.sh
             dist/HelixBoot-mac-*
+            dist/HelixBoot-linux-*
             dist/SHA256SUMS

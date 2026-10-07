@@ -6,6 +6,17 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **Helix Boot in a window on Linux:** `HelixBoot-linux-x86_64` in each
+  release, one file with Python and Tk inside. It is the Windows app's window
+  on Linux's own parts: sticks come from `lsblk`, a stick is where it is
+  mounted and not a drive letter, and Ventoy is installed by its own Linux
+  script. It runs as you, and asks for your password in the desktop's dialog
+  (pkexec) only to install Ventoy and for Repair stick. A disk holding the
+  running system is never offered, by the same check `install.sh` makes, and a
+  stick swapped for another after you chose it is refused. From a clone:
+  `python3 linux/helix_gui.py`.
+
 ## [0.7.3] - 2026-10-07
 
 ### Fixed
