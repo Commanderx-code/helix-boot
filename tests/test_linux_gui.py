@@ -8,6 +8,7 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
+import zipfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
@@ -187,25 +188,77 @@ class TestVentoy(unittest.TestCase):
             self.assertNotEqual(Path(gui.root_tool("sh")).parent, mine)
             self.assertTrue(gui.root_tool("sh").startswith(gui.ROOT_TOOLS))
 
-    def test_ventoys_archive_must_be_the_one_that_was_verified(self):
+    def test_ventoys_archive_must_be_the_file_ventoy_published(self):
         tmp = Path(tempfile.mkdtemp())
         cfg = mock.Mock(cache=tmp)
         (tmp / "ventoy").mkdir()
-        archive = tmp / "ventoy/ventoy-1.1.17-linux.tar.gz"
-        entry = {"source_file": archive.name, "sha256_download": hashlib.sha256(b"ventoy").hexdigest(),
-                 "verified_by": "sha256 from sha256.txt"}
-        with mock.patch.object(gui.cr, "load_lock", lambda cfg: {"ventoy": entry}), mock.patch.dict(gui.VERIFIED, clear=True):
-            with self.assertRaisesRegex(app.RescueError, "isn't downloaded and verified"):
+        name = "ventoy-1.1.17-linux.tar.gz"
+        archive = tmp / "ventoy" / name
+        good = hashlib.sha256(b"ventoy as published").hexdigest()
+        # What the cache says about itself counts for nothing: this lock vouches for the altered file
+        lock = {"ventoy": {"source_file": name, "sha256_download": hashlib.sha256(b"altered").hexdigest(),
+                           "verified_by": "sha256 from sha256.txt"}}
+        with mock.patch.object(gui.cr, "load_lock", lambda cfg: lock), mock.patch.dict(gui.VERIFIED, clear=True), \
+                mock.patch.dict(gui.VENTOY_SHA256, {name: good}, clear=True), \
+                mock.patch.object(gui.cr, "http_get", side_effect=AssertionError("a listed archive needs no asking")):
+            with self.assertRaisesRegex(app.RescueError, "isn't downloaded"):
                 gui.ventoy_dir(cfg)
-            archive.write_bytes(b"ventoy")
+            archive.write_bytes(b"altered")
+            with self.assertRaisesRegex(app.RescueError, "not the file Ventoy published"):
+                gui.ventoy_dir(cfg)
+            self.assertEqual(gui.VERIFIED, {})
+            archive.write_bytes(b"ventoy as published")
             self.assertEqual(gui.ventoy_dir(cfg), archive)
-            self.assertEqual(gui.VERIFIED[str(archive)], entry["sha256_download"])
-            archive.write_bytes(b"something else")
-            with self.assertRaisesRegex(app.RescueError, "has changed since it was downloaded and verified"):
-                gui.ventoy_dir(cfg)
-        with mock.patch.object(gui.cr, "load_lock", lambda cfg: {"ventoy": {**entry, "verified_by": "unverified"}}):
-            with self.assertRaisesRegex(app.RescueError, "isn't downloaded and verified"):
-                gui.ventoy_dir(cfg)
+            self.assertEqual(gui.VERIFIED, {str(archive): good})
+
+    def test_a_ventoy_newer_than_the_program_knows_is_checked_with_ventoys_release(self):
+        name = "ventoy-1.2.0-linux.tar.gz"
+        good = hashlib.sha256(b"new ventoy").hexdigest()
+        asked = []
+
+        def release(url, *a, **k):
+            asked.append(url)
+            return f"{'0' * 64}  ventoy-1.2.0-windows.zip\n{good}  {name}\n".encode()
+        with mock.patch.dict(gui.VENTOY_SHA256, {}, clear=True):
+            with mock.patch.object(gui.cr, "http_get", release):
+                self.assertEqual(gui.ventoy_sha256(name), good)
+            self.assertEqual(asked, ["https://github.com/ventoy/Ventoy/releases/download/v1.2.0/sha256.txt"])
+            with mock.patch.object(gui.cr, "http_get", side_effect=gui.cr.RescueError("couldn't reach github.com")):
+                with self.assertRaisesRegex(app.RescueError, "newer than this program knows.*couldn't reach"):
+                    gui.ventoy_sha256(name)                                  # offline: not run, not guessed
+            with mock.patch.object(gui.cr, "http_get", lambda url, *a, **k: b"nothing about that file\n"):
+                with self.assertRaisesRegex(app.RescueError, "lists no checksum"):
+                    gui.ventoy_sha256(name)
+            for odd in ("ventoy.tar.gz", "ventoy-1.2.0-linux.tar.gz.sh", "../ventoy-1.2.0-linux.tar.gz", "evil-1.0-linux.tar.gz"):
+                with mock.patch.object(gui.cr, "http_get", side_effect=AssertionError("not asked")):
+                    with self.assertRaisesRegex(app.RescueError, "isn't named as Ventoy's"):
+                        gui.ventoy_sha256(odd)
+
+    def test_a_packs_ventoy_is_held_to_the_same_checksum(self):
+        tmp = Path(tempfile.mkdtemp())
+        cfg = mock.Mock(cache=tmp)
+        name = "ventoy-1.1.17-linux.tar.gz"
+        for content, ok in ((b"ventoy as published", True), (b"something else in the pack", False)):
+            pack = tmp / "pack.zip"
+            with zipfile.ZipFile(pack, "w") as z:
+                z.writestr("installer/" + name, content)
+            meta = {"ventoy": {"file": "installer/" + name, "version": "1.1.17"}}
+            with mock.patch.object(gui.cr, "_open_pack", lambda p: zipfile.ZipFile(p)), \
+                    mock.patch.object(gui.cr, "_read_pack", lambda zf: meta), mock.patch.dict(gui.VERIFIED, clear=True), \
+                    mock.patch.dict(gui.VENTOY_SHA256, {name: hashlib.sha256(b"ventoy as published").hexdigest()}, clear=True):
+                if ok:
+                    self.assertEqual(gui.pack_ventoy_dir(cfg, pack).name, name)
+                    self.assertEqual(len(gui.VERIFIED), 1)
+                else:
+                    with self.assertRaisesRegex(app.RescueError, "not the file Ventoy published"):
+                        gui.pack_ventoy_dir(cfg, pack)
+                    self.assertEqual(gui.VERIFIED, {})
+
+    def test_the_listed_checksums_are_well_formed(self):
+        self.assertTrue(gui.VENTOY_SHA256)
+        for name, sha in gui.VENTOY_SHA256.items():
+            self.assertRegex(name, r"^ventoy-\d+(\.\d+)+-linux\.tar\.gz$")
+            self.assertRegex(sha, r"^[0-9a-f]{64}$")
 
 
 class TestFlows(unittest.TestCase):

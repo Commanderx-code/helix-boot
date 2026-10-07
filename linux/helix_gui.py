@@ -167,6 +167,14 @@ def wait_for_stick(disk_no, run_=None, timeout: float = 60, expected: dict | Non
 # only root can write, checks that copy, unpacks it there and runs Ventoy's script from there.
 ROOT_TOOLS = ("/usr/bin", "/usr/sbin", "/bin", "/sbin")     # root's programs are found here, never on your PATH
 VERIFIED: dict[str, str] = {}                               # Ventoy archive -> the sha256 it was verified to have
+# What Ventoy's archive must be. Not what the cache or a pack says it is, since whoever could
+# change the archive there could change that as well: the checksums Ventoy publishes, as this
+# program was built knowing them, and for a Ventoy newer than those, asked of its release now.
+# (scripts/release.sh won't cut a release whose Ventoy isn't listed here.)
+VENTOY_SHA256 = {
+    "ventoy-1.1.17-linux.tar.gz": "7fb4ed08cef6a6b4d39dd19260d8c80291a78dfdf9af7d461571e23cbbc43805",
+}
+VENTOY_SUMS = "https://github.com/ventoy/Ventoy/releases/download/v{version}/sha256.txt"
 RUN_VENTOY = r'''
 set -eu
 archive=$1; want=$2; shift 2
@@ -207,29 +215,54 @@ def as_root(cmd: list[str], feed: str = "", timeout: float = ROOT_TIMEOUT) -> tu
     return r.returncode, r.stdout + r.stderr
 
 
-def ventoy_dir(cfg) -> Path:
-    """Ventoy's archive as it was downloaded, still the file whose checksum Ventoy publishes."""
-    entry = cr.load_lock(cfg).get("ventoy") or {}
-    want = str(entry.get("sha256_download") or "")
-    archive = cfg.cache / "ventoy" / str(entry.get("source_file") or "-")
-    if not archive.is_file() or not re.fullmatch(r"[0-9a-f]{64}", want) or "sha256" not in str(entry.get("verified_by")):
-        raise RescueError("Ventoy isn't downloaded and verified: check your connection and try again")
+def ventoy_sha256(name: str) -> str:
+    """The checksum Ventoy publishes for one of its Linux archives, by the archive's name."""
+    if name in VENTOY_SHA256:
+        return VENTOY_SHA256[name]
+    m = re.fullmatch(r"ventoy-(\d+(?:\.\d+){1,3})-linux\.tar\.gz", name)
+    if not m:
+        raise RescueError(f"{name} isn't named as Ventoy's Linux archives are; refusing to run it as root")
+    try:        # (https to github.com only: the engine never follows a download down to http)
+        found = cr.parse_checksum_text(cr.http_get(VENTOY_SUMS.format(version=m[1])).decode("utf-8", "replace"), name)
+    except (cr.RescueError, OSError) as e:
+        found, why = None, str(e)
+    else:
+        why = "its release lists no checksum for that file"
+    if not found or found[0] != "sha256" or not re.fullmatch(r"[0-9a-f]{64}", found[1]):
+        raise RescueError(f"Ventoy {m[1]} is newer than this program knows, and its checksum couldn't be had from "
+                          f"Ventoy's release page ({why}). Go online and try again, or use ./install.sh in a terminal.")
+    return found[1]
+
+
+def verified(archive: Path) -> Path:
+    """An archive root may run: it has the checksum Ventoy publishes for a file of that name."""
+    want = ventoy_sha256(archive.name)
     if cr.file_hash(archive) != want:
-        raise RescueError(f"{archive} has changed since it was downloaded and verified. Delete it and try again.")
+        raise RescueError(f"{archive} is not the file Ventoy published under that name (its checksum differs). "
+                          "It won't be run as root. Delete it and try again.")
     VERIFIED[str(archive)] = want
     return archive
 
 
+def ventoy_dir(cfg) -> Path:
+    """Ventoy's archive as downloaded, if it is still the file Ventoy publishes."""
+    entry = cr.load_lock(cfg).get("ventoy") or {}
+    archive = cfg.cache / "ventoy" / Path(str(entry.get("source_file") or "-")).name
+    if not archive.is_file():
+        raise RescueError("Ventoy isn't downloaded: check your connection and try again")
+    return verified(archive)
+
+
 def pack_ventoy_dir(cfg, pack) -> Path:
-    """Ventoy's archive out of a pack, in the cache, with the checksum of what came out."""
+    """Ventoy's archive out of a pack, in the cache, if it is the file Ventoy publishes."""
     with cr._open_pack(str(pack)) as zf:
         v = cr._read_pack(zf).get("ventoy")
         if not v or not str(v.get("file", "")).endswith(".tar.gz"):
             raise RescueError("this pack has no Ventoy installer for Linux. Make it again after `helix fetch ventoy`.")
         dest = cr._inside(cfg.cache.resolve(), f"ventoy-from-pack/{Path(v['file']).name}", "Ventoy archive")
         dest.parent.mkdir(parents=True, exist_ok=True)
-        VERIFIED[str(dest)] = cr._unzip_to(zf, v["file"], dest)
-    return dest
+        cr._unzip_to(zf, v["file"], dest)
+    return verified(dest)
 
 
 def ventoy_command(vdir: Path, mode: str, disk_no, gpt: bool = True, secure_boot: bool = True) -> list[str]:

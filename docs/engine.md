@@ -24,10 +24,15 @@ stick (`fsck`). The window, the install and update steps and their safety
 checks are the same code on both systems.
 
 Only those two steps run as root. Your cache is yours to write, so root is
-never pointed at a script in it: it gets Ventoy's archive and the checksum that
-archive was verified against when it was downloaded, copies the archive to a
-folder only root can write, checks the copy, unpacks it there and runs
-Ventoy's script from there. Root's own programs (`pkexec`, `fsck`) are taken
+never pointed at a script in it: it gets Ventoy's archive and the checksum
+Ventoy publishes for it, copies the archive to a folder only root can write,
+checks the copy, unpacks it there and runs Ventoy's script from there. The
+checksum is listed in `linux/helix_gui.py` (`VENTOY_SHA256`); for a Ventoy
+newer than the list it is fetched from Ventoy's release page at that moment,
+and without either the window refuses and points to `install.sh`. What the
+cache or a pack records about its own Ventoy is not used: whoever could change
+the archive there could change that too. `scripts/release.sh` stops if the
+current Ventoy isn't listed. Root's own programs (`pkexec`, `fsck`) are taken
 from the system's folders, never found on your `PATH`.
 
 `theme.sh` and `check.sh` wrap `helix theme` and `helix verify` the same way:

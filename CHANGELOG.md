@@ -13,8 +13,10 @@ tagged releases also publish the Windows app.
   mounted and not a drive letter, and Ventoy is installed by its own Linux
   script. It runs as you, and asks for your password in the desktop's dialog
   (pkexec) only to install Ventoy and for Repair stick. Root never runs
-  anything out of your cache: it is handed Ventoy's archive and the checksum
-  it was verified against, checks its own copy, and runs Ventoy from there. A
+  anything out of your cache: it is handed Ventoy's archive, checks its own
+  copy against the checksum Ventoy publishes, and runs Ventoy from there. That
+  checksum is the program's own (or, for a newer Ventoy, asked of Ventoy's
+  release page), never what the cache or a pack says about itself. A
   disk holding the
   running system is never offered, by the same check `install.sh` makes, and a
   stick swapped for another after you chose it is refused. From a clone:

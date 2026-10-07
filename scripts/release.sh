@@ -53,6 +53,10 @@ unreleased=$(awk '/^## \[Unreleased\]$/ { on = 1; next } on && /^## \[/ { exit }
 [[ -n $unreleased ]] || die "CHANGELOG.md's [Unreleased] section is empty: nothing to release"
 grep -q "^\[Unreleased\]: .*/compare/v$last\.\.\.HEAD$" CHANGELOG.md || die "CHANGELOG.md's [Unreleased] link doesn't compare from v$last"
 python3 -m unittest discover -s tests >/dev/null 2>&1 || die "the tests fail: python3 -m unittest discover -s tests"
+# The Linux window runs Ventoy's installer as root only if it knows that archive's checksum
+ventoy=$(./helix ventoy-path 2>/dev/null | xargs -r basename) || ventoy=''
+[[ -z $ventoy ]] || grep -q "\"$ventoy-linux.tar.gz\": \"[0-9a-f]\{64\}\"" linux/helix_gui.py \
+  || die "linux/helix_gui.py doesn't list $ventoy: add its sha256 (from Ventoy's release page) to VENTOY_SHA256"
 ok "main is clean and pushed, the tests pass, $last → $version"
 
 section "Version $version"
