@@ -2875,6 +2875,32 @@ def _from_its_source(tool: dict, entry: dict) -> bool:
     return False
 
 
+def _shareable(cfg: Config, tool: dict, entry: dict) -> str:
+    """May a pack made to be shared carry this tool, of whatever kind, as the cache has it?
+    "yes"; "no" (yours, or your own build); "elsewhere" (a download, but not from the project's
+    source for it, so not known to be the project's)."""
+    if tool.get("byo"):
+        return "no"
+    if tool["source"] == "local":
+        # The project's own files (the menu's settings and themes, the launcher) are shipped in its
+        # folder. A boot image or an app that is "local" is a build of yours (Lazarus PE).
+        if tool["kind"] in ("iso", "app"):
+            return "no"
+        if not entry.get("path"):
+            return "yes"
+        try:
+            path, home = Path(entry["path"]).resolve(), cfg.assets.resolve()
+        except OSError:
+            return "no"
+        inside = path.is_relative_to(home) and not any(path.is_relative_to(home / mine) for mine in ("byo", "pe/out"))
+        return "yes" if inside else "no"
+    if entry.get("path"):
+        return "no"                     # recorded as a file of yours, not a download
+    if not entry:
+        return "yes"                    # nothing cached: nothing of yours to carry
+    return "yes" if _from_its_source(tool, entry) else "elsewhere"
+
+
 def cmd_pack(cfg: Config, args) -> int:
     public = bool(getattr(args, "public", False))
     if public:
@@ -2893,19 +2919,14 @@ def cmd_pack(cfg: Config, args) -> int:
         own, kept = set(cfg.own), load_lock(cfg)
         cfg = theirs
 
-        def yours(t: dict) -> bool:
-            entry = kept.get(t["name"]) or {}
-            if t["kind"] == "tree":
-                return bool(t.get("byo")) or t["name"] in own
-            return (bool(t.get("byo")) or t["name"] in own or t["source"] == "local" or bool(entry.get("path"))
-                    or (t["kind"] in ("iso", "app") and bool(entry) and not _from_its_source(t, entry)))
-        elsewhere = [t["title"] for t in cfg.tools if t["kind"] in ("iso", "app") and not t.get("byo")
-                     and t["name"] not in own and t["source"] != "local" and kept.get(t["name"])
-                     and not kept[t["name"]].get("path") and not _from_its_source(t, kept[t["name"]])]
+        # Every tool of every kind is held to this, the installer's own parts too (Ventoy, the
+        # menu's platform, the small files): one gate, so no kind is a way round it.
+        gate = {t["name"]: _shareable(cfg, t, kept.get(t["name"]) or {}) for t in cfg.tools if t["name"] not in own}
+        elsewhere = [t["title"] for t in cfg.tools if gate.get(t["name"]) == "elsewhere"]
         if elsewhere:       # (a tool once pointed elsewhere, say: what is cached isn't known to be the project's)
             warn(f"left out, because the copy in the cache didn't come from the project's source for it: "
                  f"{', '.join(elsewhere)}. `helix fetch --force <tool>` gets the project's.")
-        cfg.tools = [t for t in cfg.tools if not yours(t)]
+        cfg.tools = [t for t in cfg.tools if gate.get(t["name"]) == "yes"]
         info("A public pack: the tools anyone can download, as the project ships them. Your own tools, "
              "your local.toml and everything in byo/ stay at home.")
     lock = load_lock(cfg)
@@ -2931,12 +2952,17 @@ def cmd_pack(cfg: Config, args) -> int:
     win_ventoy = app_exe = None
     if vt and vt.get("windows") and not cfg.windows:
         wtool = {k: v for k, v in vt.items() if k != "windows"} | vt["windows"]
-        win_ventoy = _pack_download(cfg, wtool | {"name": f"{vt['name']}-windows", "title": "Ventoy for Windows"}, lock)
+        wtool = wtool | {"name": f"{vt['name']}-windows", "title": "Ventoy for Windows"}
+        win_ventoy = _pack_download(cfg, wtool, lock)
+        if public and win_ventoy and _shareable(cfg, wtool, win_ventoy[1]) != "yes":
+            win_ventoy = None           # (held to the same gate as everything else)
         if not win_ventoy:
             warn("Ventoy for Windows isn't available, so this pack can't set up a new stick from Windows")
-    app_exe = _pack_download(cfg, {"name": "helixboot-exe", "title": APP_EXE, "kind": "file", "source": "github",
-                                   "repo": APP_REPO, "asset": [f"^{re.escape(APP_EXE)}$"],
-                                   "checksum": ["github-digest"]}, lock)
+    exe_tool = {"name": "helixboot-exe", "title": APP_EXE, "kind": "file", "source": "github", "repo": APP_REPO,
+                "asset": [f"^{re.escape(APP_EXE)}$"], "checksum": ["github-digest"]}
+    app_exe = _pack_download(cfg, exe_tool, lock)
+    if public and app_exe and _shareable(cfg, exe_tool, app_exe[1]) != "yes":
+        app_exe = None
     if not app_exe:
         warn(f"no released {APP_EXE} to include; on Windows, download it from "
              f"https://github.com/{APP_REPO}/releases and put it beside the pack")
@@ -2948,6 +2974,14 @@ def cmd_pack(cfg: Config, args) -> int:
         if getattr(args, "need_app", False):
             raise RescueError(old_app)
         warn(old_app)
+
+    # The installer's own parts are run on whatever PC the pack is opened on, as administrator: each
+    # must still be the file that was downloaded and verified, like the apps (_check_app_cache).
+    for f, entry in ((vsrc, ventry), *(x for x in (win_ventoy, app_exe) if x)):
+        want = (entry or {}).get("sha256_download") or (entry or {}).get("sha256")
+        if f and want and file_hash(f) != want:
+            raise RescueError(f"{f.name} in the cache has changed since it was downloaded and verified. "
+                              f"Delete {f} and run `helix fetch` before making a pack.")
 
     size = sum(p["src"].stat().st_size for p in placed) + sum(s.stat().st_size for _, _, s in apps)
     size += sum(x[0].stat().st_size for x in (win_ventoy, app_exe) if x) + (vsrc.stat().st_size if vsrc else 0)

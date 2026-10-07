@@ -2577,6 +2577,60 @@ class TestPack(Base):
             self.assertFalse(any("sysinternals" in n for n in z.namelist()))
             self.assertTrue(any(n.endswith("systemrescue-12.02-amd64.iso") for n in z.namelist()))
 
+    def test_an_installer_part_changed_in_the_cache_stops_the_pack(self):
+        self.windows_ventoy_upstream()
+        self.fetch()
+        self.pack()                                                 # (brings Ventoy for Windows and the app into the cache)
+        for name in ("ventoy", "ventoy-windows", "helixboot-exe"):
+            entry = cr.load_lock(self.cfg)[name]
+            f = self.cfg.cache / name / entry["source_file"]
+            was = f.read_bytes()
+            f.write_bytes(was + b" and something added")
+            with self.assertRaisesRegex(cr.RescueError, "has changed since it was downloaded and verified"):
+                self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(self.tmp / "bad.zip")})())
+            self.assertFalse((self.tmp / "bad.zip").exists())
+            f.write_bytes(was)
+        self.pack()
+
+    def test_every_kind_of_thing_in_a_public_pack_passes_the_same_gate(self):
+        cfg = self.cfg
+        good = {"url": "https://github.com/ventoy/Ventoy/releases/download/v1/ventoy.tar.gz"}
+        gh = {"source": "github", "repo": "ventoy/Ventoy"}
+        for kind in ("iso", "app", "ventoy", "file", "tree"):
+            t = {**gh, "kind": kind, "name": "x"}
+            self.assertEqual(cr._shareable(cfg, t, good), "yes", kind)
+            self.assertEqual(cr._shareable(cfg, t, {"url": "https://my.example/ventoy.tar.gz"}), "elsewhere", kind)
+            self.assertEqual(cr._shareable(cfg, t, {**good, "path": "/home/me/mine.bin"}), "no", kind)
+            self.assertEqual(cr._shareable(cfg, {**t, "byo": True}, good), "no", kind)
+            self.assertEqual(cr._shareable(cfg, t, {}), "yes", kind)                # nothing cached, nothing to carry
+        # "local": a build of yours when it is a boot image or an app; the project's own files otherwise,
+        # and then only from the project's folder, never from byo/ or the PE's output
+        local = {"source": "local", "name": "x"}
+        inside = str(self.repo / "pe/launcher/HelixApps.cmd")
+        self.assertEqual(cr._shareable(cfg, {**local, "kind": "iso"}, {"path": inside}), "no")
+        self.assertEqual(cr._shareable(cfg, {**local, "kind": "tree"}, {"path": inside}), "yes")
+        self.assertEqual(cr._shareable(cfg, {**local, "kind": "file"}, {"path": str(self.repo / "byo/thing")}), "no")
+        self.assertEqual(cr._shareable(cfg, {**local, "kind": "tree"}, {"path": str(self.repo / "pe/out/x")}), "no")
+        self.assertEqual(cr._shareable(cfg, {**local, "kind": "file"}, {"path": "/home/someone/else"}), "no")
+
+        # In a real pack: Ventoy and the app for Windows that came from somewhere else are left out
+        self.windows_ventoy_upstream()
+        self.fetch()
+        out = self.tmp / "public.zip"
+
+        def theirs(tool, entry):                # everything here is the test's server; say which of it "is theirs"
+            return tool["kind"] not in ("ventoy", "file")
+        with unittest.mock.patch.object(cr, "_from_its_source", theirs):
+            rc, log = self.run_quiet(cr.cmd_pack, self.cfg, type("A", (), {"output": str(out), "public": True})())
+        self.assertEqual(rc, 0, log)
+        self.assertIn("didn't come from the project's source for it: Ventoy", log)
+        with zipfile.ZipFile(out) as z:
+            names = z.namelist()
+            self.assertFalse(any("ventoy-1.1.17" in n for n in names), names[-12:])     # neither Linux's nor Windows'
+            self.assertNotIn(f"installer/{cr.APP_EXE}", names)
+            self.assertTrue(any(n.endswith("systemrescue-12.02-amd64.iso") for n in names))
+        self.assertIn("this pack can refresh a stick but not set up a new one", log)
+
     def test_a_pack_made_before_the_release_is_out_says_its_app_is_old(self):
         self.windows_ventoy_upstream()                          # the released app is 0.5.0
         self.fetch()

@@ -36,7 +36,10 @@ tagged releases also publish the Windows app.
   icons and splash) can be in it, and Lazarus PE, your own build, is left out.
   The download cache is still yours, so a tool you pointed somewhere of your
   own is left out as well, and so is any cached copy that didn't come from the
-  project's source for that tool.
+  project's source for that tool: boot images, apps, Ventoy, the menu's
+  platform and the bundled programs alike.
+- Making any pack re-checks Ventoy and the bundled `HelixBoot.exe` against the
+  checksums they were verified to have when downloaded, as it does the apps.
 - **`helix pack --split`:** also cuts the pack into pieces (2 GiB if not said)
   in a folder beside it, with its checksum, a README, and scripts for Windows
   and for Linux and Mac that join the pieces, check the result and start the
