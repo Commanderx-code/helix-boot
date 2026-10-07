@@ -514,6 +514,13 @@ class TestPackaging(unittest.TestCase):
         self.assertEqual(sorted(missing), [], "add these imports to windows/helix_boot.py")
 
 
+class TestWords(unittest.TestCase):
+    def test_the_window_knows_the_engines_words_about_newer_tools(self):
+        found = {"fetched": 3, "checked": "2026-10-07T12:22", "failed": 0,
+                 "newer": [{"name": "x", "title": "X", "have": "1", "latest": "2"}]}
+        self.assertIn(app.GETS_THEM, app.cr.updates_text(found))        # (the window rewords it when a pack is chosen)
+
+
 class TestSelfUpdate(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())

@@ -7,6 +7,9 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Fixed
+- With a pack chosen, the window's line about newer tools said "Update stick
+  gets them", which a pack can't do: it holds the versions it was made with.
+  It now says to choose "Tools from the internet" first.
 - The note about tools an antivirus kept off the stick names them as the menu
   does ("ProduKey", where it said "produkey") and reads right for one tool.
 

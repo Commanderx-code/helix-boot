@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+os.environ.setdefault("NO_COLOR", "1")          # what the engine prints goes to a window and a log, not a terminal
 if not getattr(sys, "frozen", False):           # (the one-file build has it inside)
     sys.path.insert(0, str(HERE.parent / "windows"))
 

@@ -607,6 +607,7 @@ def repair(target: str, run=None) -> str:
 
 # ── A newer Helix Boot ─────────────────────────────────────────────────────
 APP_ASSET = "HelixBoot.exe"         # this program's file in a release (linux/helix_gui.py has its own)
+GETS_THEM = "Update stick gets them"    # in the engine's line about newer tools (true with the internet chosen)
 
 
 def app_news(cfg, refresh: bool = False) -> dict | None:
@@ -1065,6 +1066,16 @@ def gui(selftest: bool = False) -> int:
         except Exception as e:  # noqa: BLE001 — a button that does nothing is worse than a message
             messagebox.showerror(APP, f"Couldn't open the Look window: {e}")
 
+    said = {"news": ""}
+
+    def show_news(*_):
+        """The line about newer tools. A pack holds the versions it was made with, so with a pack
+        chosen an update can't bring newer ones: the line says which choice does."""
+        text = said["news"]
+        if use_pack.get():
+            text = text.replace(GETS_THEM, 'Choose "Tools from the internet" and Update stick to get them')
+        news.config(text=text)
+
     def look_for_updates(refresh=False):
         """In the background: which tools have newer versions than this PC has (at most one
         look upstream every 6 hours; the rest of the time, from the last look)."""
@@ -1138,7 +1149,8 @@ def gui(selftest: bool = False) -> int:
                     if last:
                         status.config(text=last[0][:110])
                 elif item[0] == "news":
-                    news.config(text=item[1])
+                    said["news"] = item[1]
+                    show_news()
                 elif item[0] == "app":
                     offer_newer_app(item[1])
                 elif item[0] == "total":
@@ -1186,6 +1198,7 @@ def gui(selftest: bool = False) -> int:
     b_look.config(command=do_look)
     b_check.config(command=do_check)
     b_repair.config(command=do_repair)
+    use_pack.trace_add("write", show_news)
     b_newer.bind("<Button-1>", do_self_update)
     b_install.config(command=do_install)
     b_update.config(command=do_update)
