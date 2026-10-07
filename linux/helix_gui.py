@@ -68,6 +68,28 @@ def system_disks() -> set[str]:
     return set(r.stdout.split())
 
 
+def vm_holding(dev: str) -> list[tuple[str, str]]:
+    """The virtual machines with a claim on this disk, as scripts/common.sh finds them:
+    ("running", name) for one that has it right now, ("set", name) for one that will take it."""
+    script = app.bundle_dir() / "scripts" / "common.sh"
+    try:
+        r = subprocess.run(["bash", "-c", 'source "$1" && vm_holding "$2"', "helix-boot", str(script), dev],
+                           capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [tuple(line.split("\t", 1)) for line in r.stdout.splitlines() if "\t" in line]
+
+
+def check_vm(dev: str) -> None:
+    """Refuse a stick a running virtual machine has: two systems writing one stick corrupts it."""
+    for state, vm in vm_holding(dev):
+        if state == "running":
+            raise RescueError(f"{dev} is attached to the virtual machine '{vm}', which is running. Two systems "
+                              "writing one stick corrupts it: shut that VM down, or detach the stick from it, first.")
+        print(f"! the virtual machine '{vm}' is set to take this stick when it starts: don't start it until this "
+              "has finished, and eject the stick here before you do")
+
+
 def _diskseq(name: str) -> str:
     """The number the kernel gives a disk each time one appears: a stick unplugged and another
     plugged in is /dev/sdb again, with another number."""
@@ -143,7 +165,9 @@ def partitions(dev: str) -> list[str]:
 
 
 def stick_path(d: dict) -> str:
-    """Where the stick's files are: its data partition's mount point (mounted if it isn't)."""
+    """Where the stick's files are: its data partition's mount point (mounted if it isn't).
+    Everything the window does to a stick starts here, so this is where a VM's claim on it is met."""
+    check_vm(d["Path"])
     return mount(d["Ventoy"])
 
 
@@ -289,6 +313,7 @@ def run_ventoy(args: list[str], vdir: Path, progress=lambda pct: None, timeout: 
     archive `vdir`. Ventoy asks "Continue?" twice, which was answered in the window; it exits 0
     even when it gives up, so its own words decide."""
     dev, want = args[-1], VERIFIED.get(str(vdir))
+    check_vm(dev)
     if not want or not re.fullmatch(r"[0-9a-f]{64}", want):
         raise RescueError(f"{vdir} isn't a Ventoy archive this run verified; refusing to run it as root")
     for part in partitions(dev):

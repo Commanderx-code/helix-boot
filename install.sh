@@ -114,6 +114,7 @@ for s in "${sticks[@]}"; do [[ ${s%%$'\t'*} == "$dev" ]] && is_usb=1; done
 ((is_usb)) || die "$dev isn't a USB/removable disk. Refusing (edit install.sh if you really mean it)."
 
 identity=$(disk_identity "$dev") || die "cannot establish disk identity; refusing to erase"
+check_vm_holding "$dev"
 
 # ── 3. Confirm ───────────────────────────────────────────────────────────
 section "This will ERASE everything on:"

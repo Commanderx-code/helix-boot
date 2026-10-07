@@ -176,11 +176,68 @@ apply_splash() {  # apply_splash <disk> [mount point of its data partition]
   unmount_part "$efi" 2>/dev/null || true
 }
 
+# A stick that a virtual machine holds as well is written by two systems at once, and that corrupts
+# it. Prints one line per libvirt VM that has this disk: "running<TAB>name" for one that is
+# running with it attached as a disk, "set<TAB>name" for one that is set to take it (as a disk, or
+# as a USB device) when it starts. Nothing where there is no libvirt. Never asks for a password:
+# the system's VMs are read through its read-only door.
+vm_holding() {  # vm_holding <disk>
+  command -v virsh >/dev/null || return 0
+  python3 - "$1" <<'PY' 2>/dev/null || true
+import os, subprocess, sys
+import xml.etree.ElementTree as ET
+
+disk = sys.argv[1]
+def out(*cmd):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=8, stdin=subprocess.DEVNULL,
+                           env={**os.environ, "LC_ALL": "C"})
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return r.stdout if r.returncode == 0 else ""
+
+mine = {os.path.realpath(p) for p in out("lsblk", "-lnpo", "NAME", disk).split()}
+props = dict(line.split("=", 1) for line in out("udevadm", "info", "-q", "property", "-n", disk).splitlines() if "=" in line)
+usb = (props.get("ID_VENDOR_ID", "").lower(), props.get("ID_MODEL_ID", "").lower())
+doors = [["virsh", "-c", "qemu:///system", "--readonly"]]
+if os.path.isdir(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent"), "libvirt")):
+    doors.append(["virsh", "-c", "qemu:///session"])        # (only if yours is already running: none is started)
+for door in doors:
+    for vm in out(*door, "list", "--all", "--name").split():
+        try:
+            root = ET.fromstring(out(*door, "dumpxml", vm) or "<x/>")
+        except ET.ParseError:
+            continue
+        as_disk = any(os.path.realpath(s.get("dev")) in mine for s in root.iter("source") if s.get("dev"))
+        as_usb = all(usb) and any(
+            (h.find("source/vendor") is not None and h.find("source/product") is not None
+             and (h.find("source/vendor").get("id", "").lower().removeprefix("0x"),
+                  h.find("source/product").get("id", "").lower().removeprefix("0x")) == usb)
+            for h in root.iter("hostdev") if h.get("type") == "usb")
+        if not (as_disk or as_usb):
+            continue
+        running = out(*door, "domstate", vm).strip() == "running"
+        print(("running" if running and as_disk else "set") + "\t" + vm)
+PY
+}
+
+# Stop, or warn, before a stick a VM has a claim on is touched.
+check_vm_holding() {  # check_vm_holding <disk>
+  local state vm
+  while IFS=$'\t' read -r state vm; do
+    [[ -n $vm ]] || continue
+    if [[ $state == running ]]; then
+      die "$1 is attached to the virtual machine '$vm', which is running. Two systems writing one stick corrupts it: shut that VM down (or detach the stick from it) first."
+    fi
+    warn "the virtual machine '$vm' is set to take this stick when it starts: don't start it until this has finished, and unmount the stick here before you do"
+  done < <(vm_holding "$1")
+}
+
 # Find the Ventoy stick: the one plugged in, or the partition / mount point given. Sets $part
 # and $mnt (mounting it if it isn't). A stick is known by Ventoy's own small partition, always
 # labelled VTOYEFI: the data partition before it may have been renamed.
 find_stick() {  # find_stick [/dev/sdX1 | /mount/point]
-  local target=${1:-} found
+  local target=${1:-} found held
   [[ -z $target || -d $target || -b $target ]] || die "target does not exist or is not a folder/block device: $target"
   part=''
   if [[ -d $target ]]; then
@@ -196,6 +253,8 @@ find_stick() {  # find_stick [/dev/sdX1 | /mount/point]
       ((${#found[@]} == 1)) || die "more than one Ventoy stick plugged in (${found[*]}) — pass the one you want"
       part=${found[0]}
     fi
+    held=$(lsblk -ndpo PKNAME "$part" 2>/dev/null | head -n1) || held=''
+    [[ -z $held ]] || check_vm_holding "$held"
     mnt=$(mount_part "$part")
   fi
   [[ -n $mnt ]] || die "couldn't mount the stick"

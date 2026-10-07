@@ -6,7 +6,22 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **A stick a virtual machine also holds isn't written.** Two systems writing
+  one stick corrupts it. On Linux, `install.sh`, `refresh.sh`, `check.sh`,
+  `theme.sh` and the window stop when a running libvirt VM has the stick
+  attached as a disk, and warn when a VM is set to take it at its next start.
+- **`scripts/vm-stick.sh give <vm>` / `take <vm>`** hands the stick to a
+  running VM and takes it back: unmounted here before it is attached there,
+  and mounted here again only after it is detached. Nothing is added to the
+  VM's settings.
+
 ### Changed
+- `scripts/release.sh` waits for CI on the commit it is about to release, and
+  stops if a run failed or was cancelled.
+- CI downloads and verifies every tool (about 4 GB) on the weekly run, for a
+  release, and when `helix`, `tools.toml` or the workflow changed. Any other
+  push skips that, and still asks every upstream for its latest.
 - **ProduKey is off by default.** Windows Defender stops it being written, so
   a new stick no longer meets that. Tick it in the app's Tools window (or
   enable it in `local.toml`) to have it. Without that, the next update from

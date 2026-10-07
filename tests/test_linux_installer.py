@@ -105,3 +105,64 @@ class TestLinuxInstaller(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVmGuard(unittest.TestCase):
+    """scripts/common.sh: a stick a virtual machine also holds isn't written (virsh, lsblk and udevadm faked)."""
+
+    DISK = "<disk type='block' device='disk'><source dev='/dev/sdb'/><target dev='sdz' bus='usb'/></disk>"
+    USB = ("<hostdev mode='subsystem' type='usb'><source><vendor id='0x0781'/><product id='0x5581'/></source></hostdev>")
+
+    def guard(self, vms: dict):
+        """vms: name -> (state, the <devices> of its definition). Returns (exit code, what it said)."""
+        tmp = Path(tempfile.mkdtemp(prefix="helix-vm-"))
+        bindir = tmp / "bin"
+        bindir.mkdir()
+        for name, (state, devices) in vms.items():
+            (tmp / f"{name}.xml").write_text(f"<domain><name>{name}</name><devices>{devices}</devices></domain>")
+            (tmp / f"{name}.state").write_text(state + "\n")
+        (tmp / "names").write_text("".join(f"{n}\n" for n in vms))
+        fakes = {
+            "virsh": f'''#!/bin/sh
+case "$*" in
+  *"qemu:///session"*) exit 1 ;;
+  *"list --all --name"*) cat {tmp}/names ;;
+  *dumpxml*) for a in "$@"; do last=$a; done; cat "{tmp}/$last.xml" ;;
+  *domstate*) for a in "$@"; do last=$a; done; cat "{tmp}/$last.state" ;;
+esac
+''',
+            "lsblk": "#!/bin/sh\nprintf '/dev/sdb\\n/dev/sdb1\\n/dev/sdb2\\n'\n",
+            "udevadm": "#!/bin/sh\nprintf 'ID_VENDOR_ID=0781\\nID_MODEL_ID=5581\\n'\n",
+        }
+        for name, text in fakes.items():
+            (bindir / name).write_text(text)
+            (bindir / name).chmod(0o755)
+        env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "NO_COLOR": "1", "XDG_RUNTIME_DIR": str(tmp)}
+        r = subprocess.run(["bash", "-c", f'source "{ROOT}/scripts/common.sh"; check_vm_holding /dev/sdb; echo carried-on'],
+                           capture_output=True, text=True, env=env, timeout=60)
+        shutil.rmtree(tmp, ignore_errors=True)
+        return r.returncode, r.stdout + r.stderr
+
+    def test_a_stick_attached_to_a_running_vm_isnt_touched(self):
+        rc, said = self.guard({"win11": ("running", self.DISK), "fedora": ("shut off", "")})
+        self.assertEqual(rc, 1, said)
+        self.assertIn("attached to the virtual machine 'win11', which is running", said)
+        self.assertNotIn("carried-on", said)
+
+    def test_a_vm_set_to_take_the_stick_is_a_warning(self):
+        for devices in (self.DISK, self.USB):
+            rc, said = self.guard({"win11": ("shut off", devices)})
+            self.assertEqual(rc, 0, said)
+            self.assertIn("'win11' is set to take this stick when it starts", said)
+            self.assertIn("carried-on", said)
+        # running with the stick passed through as a USB device: this system no longer has it at all,
+        # so a stick that is here and named in such a VM is one it will take, not one it has
+        rc, said = self.guard({"win11": ("running", self.USB)})
+        self.assertEqual(rc, 0, said)
+        self.assertIn("is set to take this stick", said)
+
+    def test_other_vms_and_no_libvirt_say_nothing(self):
+        other = "<disk type='file'><source file='/var/lib/libvirt/images/x.qcow2'/></disk><disk type='block'><source dev='/dev/sdc'/></disk>"
+        rc, said = self.guard({"zorin": ("running", other), "fedora": ("shut off", "")})
+        self.assertEqual((rc, said.strip()), (0, "carried-on"))
+        self.assertEqual(self.guard({})[1].strip(), "carried-on")

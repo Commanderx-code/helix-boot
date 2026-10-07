@@ -33,7 +33,7 @@ jobs:
       - name: Shellcheck
         run: |
           # gcc format → annotations on the exact line
-          shellcheck -x -f gcc install.sh refresh.sh theme.sh check.sh scripts/common.sh scripts/release-notes.sh scripts/release.sh pe/vm/build-vm.sh \
+          shellcheck -x -f gcc install.sh refresh.sh theme.sh check.sh scripts/common.sh scripts/release-notes.sh scripts/release.sh scripts/vm-stick.sh pe/vm/build-vm.sh \
             linux/build.sh linux/HelixBoot.sh.in \
             | sed -E 's/^([^:]+):([0-9]+):([0-9]+): (error|warning|note): (.*)$/::\4 file=\1,line=\2,col=\3::\5/; s/^::note /::notice /'
           exit "${PIPESTATUS[0]}"
@@ -144,10 +144,31 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      - name: Is a full download needed?
+        id: need
+        env:
+          BEFORE: ${{ github.event.before || github.event.pull_request.base.sha }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          # Everything is downloaded and verified on the weekly run, when started by hand, for a
+          # release, and when what decides the downloads changed. Any other push skips it: the
+          # job above still asks every upstream what its latest is, which takes half a minute.
+          need=true
+          if [[ $EVENT == push || $EVENT == pull_request ]] && [[ $REF != refs/tags/* ]] \
+             && [[ $BEFORE =~ ^[0-9a-f]{40}$ && $BEFORE != 0000000000000000000000000000000000000000 ]] \
+             && git fetch -q --depth=1 origin "$BEFORE" 2>/dev/null; then
+            changed=$(git diff --name-only "$BEFORE" HEAD -- helix tools.toml .github/workflows/ci.yml)
+            [[ -n $changed ]] || need=false
+          fi
+          echo "run=$need" >> "$GITHUB_OUTPUT"
+          [[ $need == true ]] || echo "::notice title=skipped::nothing that decides the downloads changed (helix, tools.toml, this workflow)"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        if: steps.need.outputs.run == 'true'
         with:
           python-version: "3.11"
       - name: Fetch and verify
+        if: steps.need.outputs.run == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HELIX_CACHE: ${{ runner.temp }}/helix

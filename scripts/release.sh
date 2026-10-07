@@ -46,6 +46,18 @@ section "Checks"
 git fetch -q origin
 [[ $(git rev-parse HEAD) == "$(git rev-parse origin/main)" ]] || die "main isn't what is on GitHub: push or pull first"
 git rev-parse -q --verify "refs/tags/v$version" >/dev/null && die "v$version is already tagged"
+# What is released has passed CI: every run on this very commit, waited for if still going.
+head=$(git rev-parse HEAD)
+for n in {1..90}; do
+  runs=$(gh run list --commit "$head" --json name,status,conclusion --jq '.[] | select(.name == "ci" or .name == "windows") | "\(.name) \(.status) \(.conclusion)"')
+  [[ $(grep -c . <<< "$runs") -ge 2 ]] || die "CI hasn't run on this commit (ci and windows): push it, or see https://github.com/$repo/actions"
+  if ! grep -qv ' completed ' <<< "$runs"; then break; fi
+  ((n > 1)) || info "waiting for CI on $(git rev-parse --short HEAD) to finish …"
+  ((n < 90)) || die "CI on this commit is still running after 45 minutes: see https://github.com/$repo/actions"
+  sleep 30
+done
+bad=$(grep -v ' completed success$' <<< "$runs" || true)
+[[ -z $bad ]] || die "CI didn't pass on this commit ($(tr '\n' ';' <<< "$bad" | sed 's/;$//')): fix it, or re-run a job that was only cancelled"
 [[ $(printf '%s\n%s\n' "$last" "$version" | sort -V | tail -1) == "$version" && $version != "$last" ]] \
   || die "$version isn't newer than $last"
 grep -q '^## \[Unreleased\]$' CHANGELOG.md || die "CHANGELOG.md has no [Unreleased] section"
@@ -57,7 +69,7 @@ python3 -m unittest discover -s tests >/dev/null 2>&1 || die "the tests fail: py
 ventoy=$(./helix ventoy-path 2>/dev/null | xargs -r basename) || ventoy=''
 [[ -z $ventoy ]] || grep -q "\"$ventoy-linux.tar.gz\": \"[0-9a-f]\{64\}\"" linux/helix_gui.py \
   || die "linux/helix_gui.py doesn't list $ventoy: add its sha256 (from Ventoy's release page) to VENTOY_SHA256"
-ok "main is clean and pushed, the tests pass, $last → $version"
+ok "main is clean and pushed, CI passed on it, the tests pass, $last → $version"
 
 section "Version $version"
 sed -i "s/^__version__ = \"$last\"$/__version__ = \"$version\"/" helix

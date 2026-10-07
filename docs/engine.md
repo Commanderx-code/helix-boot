@@ -98,6 +98,20 @@ runs the test stops before copying anything onto a stick that fails. It writes
 and reads the whole stick, so expect it to take as long as two full copies.
 `--gb N` tests only the first N GiB, which is quicker but can't find a fake.
 
+## A stick and a virtual machine
+
+A stick attached to a virtual machine while this system has it mounted is
+written by two systems at once, which corrupts its filesystem. On Linux the
+scripts and the window look at libvirt's VMs first (the system's through its
+read-only door, so no password is asked; yours if its service is running).
+They stop if a running VM has the stick as a disk, and warn if a VM is set to
+take it when it starts.
+
+To use the stick in a VM, hand it over: `scripts/vm-stick.sh give win11`
+unmounts it here and attaches it to the running VM; eject it inside the VM
+when you are done, then `scripts/vm-stick.sh take win11` detaches it and
+mounts it here again.
+
 ## When a tool's site is down
 
 A site that answers with a server error, or not at all, is tried four times. If
@@ -112,7 +126,8 @@ for good still shows.
 ## Releasing
 
 `scripts/release.sh 0.7.1 "what is new"` does a release in the one order that
-works. It checks that `main` is clean, pushed and passes the tests, moves
+works. It checks that `main` is clean, pushed and passes the tests, waits for
+CI on that commit and stops unless every run passed, moves
 `CHANGELOG.md`'s Unreleased section under the new version, shows the release
 notes and asks, then commits, tags and pushes. It waits for the build on GitHub
 to publish the release, and only then fetches and makes the pack

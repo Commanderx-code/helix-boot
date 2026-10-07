@@ -277,6 +277,7 @@ class TestFlows(unittest.TestCase):
                       pack_ventoy_dir=lambda cfg, pack: Path("/cache/from-pack"),
                       boot_script=lambda target, disk_no=None, run=None: self.calls.append(("boot script", target, disk_no))),
             gui: dict(mount=lambda part: self.calls.append(("mount", part)) or "/run/media/me/HelixBoot",
+                      vm_holding=lambda dev: [],                # (this PC's own virtual machines are not asked)
                       run_ventoy=self.ventoy),
             app.cr: dict(update_plan=lambda *a, **k: []),
         }
@@ -439,6 +440,31 @@ class TestEjectAndLauncher(unittest.TestCase):
             self.assertFalse((tmp / "applications/helix-boot.desktop").exists())
             self.assertFalse((tmp / "icons/hicolor/256x256/apps/helix-boot.png").exists())
 
+
+class TestVmClaim(unittest.TestCase):
+    def test_a_stick_a_running_vm_has_is_refused_before_it_is_mounted(self):
+        d = disks(VENTOY)[0]
+        with mock.patch.object(gui, "vm_holding", lambda dev: [("running", "win11")]), \
+                mock.patch.object(gui, "mount", side_effect=AssertionError("not mounted while a VM has it")):
+            with self.assertRaisesRegex(app.RescueError, "attached to the virtual machine 'win11', which is running"):
+                gui.stick_path(d)
+        with mock.patch.object(gui, "vm_holding", lambda dev: [("running", "win11")]), \
+                mock.patch.object(gui, "as_root", side_effect=AssertionError("nothing is written")), \
+                mock.patch.dict(gui.VERIFIED, {"/cache/v.tar.gz": "ab" * 32}):
+            with self.assertRaisesRegex(app.RescueError, "which is running"):
+                gui.run_ventoy(["-I", "/dev/sdb"], Path("/cache/v.tar.gz"))
+
+    def test_a_vm_set_to_take_it_later_is_said_and_the_work_goes_on(self):
+        d = disks(VENTOY)[0]
+        out = io.StringIO()
+        with mock.patch.object(gui, "vm_holding", lambda dev: [("set", "win11")]), \
+                mock.patch.object(gui, "mount", lambda part: "/run/media/me/HelixBoot"), redirect_stdout(out):
+            self.assertEqual(gui.stick_path(d), "/run/media/me/HelixBoot")
+        self.assertIn("'win11' is set to take this stick when it starts", out.getvalue())
+        with mock.patch.object(gui.subprocess, "run", return_value=mock.Mock(stdout="running\twin11\nset\tzorin\nnoise\n")):
+            self.assertEqual(gui.vm_holding("/dev/sdb"), [("running", "win11"), ("set", "zorin")])
+        with mock.patch.object(gui.subprocess, "run", side_effect=OSError("no bash")):
+            self.assertEqual(gui.vm_holding("/dev/sdb"), [])
 
 
 if __name__ == "__main__":
