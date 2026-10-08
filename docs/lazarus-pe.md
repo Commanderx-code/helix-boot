@@ -7,7 +7,9 @@ image stays lean: drivers (including Intel Wi-Fi and RST), networking and
 Explorer, in its own look: the phoenix wallpaper and profile picture, dark
 mode and a teal accent. The launcher, apps and startup live on the stick and
 update without a rebuild. On Linux, `pe/vm/build-vm.sh` sets up the build VM
-for you. See the [Lazarus PE guide](../pe/README.md).
+for you, and on Windows `pe\phoenixpe\Build-LazarusPE.ps1` takes a Windows ISO
+and sets the build up, to the point of one button. See the
+[Lazarus PE guide](../pe/README.md).
 
 Until yours is built, Hiren's BootCD PE covers for it, and the app launcher
 works there too.

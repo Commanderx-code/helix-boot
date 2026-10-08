@@ -80,7 +80,46 @@ The transfer disk shows up in Explorer as **CRTRANSFER**, with a README.txt of
 these steps. Files move only while the VM is **shut down**: `push` refreshes the
 tooling and `pull` fetches the ISO.
 
+## The quick way
+
+On the Windows build host, one script does the setting up, and leaves you one
+button to press. From an administrator PowerShell, in `pe\phoenixpe` (on the
+build VM's transfer disk: `helix\phoenixpe`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Build-LazarusPE.ps1 C:\Users\me\Downloads\Win11_23H2.iso
+```
+
+It takes a Windows ISO (which it mounts), or a drive or folder holding one, and:
+
+1. downloads the latest PhoenixPE, checks it against the checksum GitHub
+   records for the release, and unpacks it to `C:\PhoenixPE` (a PhoenixPE
+   already there is kept; unpacking needs 7-Zip, or a Windows whose `tar` reads `.7z`),
+2. applies the Helix preset (step 2 below),
+3. fills in Source Config as its *Rescan Source* button would: the source, the
+   Windows Setup base image, the edition, programs not run from RAM (step 4 below),
+4. opens PEBakery, where **you press Build**: PEBakery can't be told to build from outside,
+5. waits for the ISO and copies it out as `LazarusPE.iso` (to the transfer
+   disk's `out` folder, or `pe\out` in a clone; `-Out` names another folder).
+
+`-WhatIf` shows what it would change, `-NoBuild` stops before PEBakery, and
+`-PhoenixPE D:\PhoenixPE` uses another folder. Run it again any time: it changes
+only what differs.
+
+**Editions.** A Windows ISO usually holds several (Home, Pro, Education); the PE
+they make is the same, and no product key or activation is involved. Pro is
+taken when the disc has it, the only edition when it has one, and otherwise the
+script lists them for `-Edition Home`. PhoenixPE is tested with Pro, and doesn't
+support Windows S.
+
+Still yours to do: the Defender exclusion (step 3) before the first build, extra
+drivers (step 5), and the newer boot manager afterwards
+([Which Windows to build from](#which-windows-to-build-from)).
+
 ## Build steps
+
+The same by hand:
+
 
 1. Unpack the PhoenixPE release inside the VM to `C:\PhoenixPE` (the `.7z` has no
    top folder, so extract into that folder). With the build VM it's on the

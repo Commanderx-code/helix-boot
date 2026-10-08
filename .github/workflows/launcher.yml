@@ -4,9 +4,9 @@ name: lazarus-launcher
 # Lazarus PE: checks how tools are found and sorted, and renders screenshots to look at.
 on:
   push:
-    paths: ["pe/lazarus/**", "pe/launcher/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
+    paths: ["pe/lazarus/**", "pe/launcher/**", "pe/phoenixpe/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
   pull_request:
-    paths: ["pe/lazarus/**", "pe/launcher/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
+    paths: ["pe/lazarus/**", "pe/launcher/**", "pe/phoenixpe/**", "tests/lazarus/**", ".github/workflows/launcher.yml"]
   workflow_dispatch:
 
 permissions:
@@ -52,6 +52,12 @@ jobs:
           $global:LASTEXITCODE = 0
           subst P: /d; subst Q: /d; subst R: /d
           'stick detection ok'
+
+      - name: The one-go build script (Source Config, editions, what it refuses)
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\lazarus\Test-BuildScript.ps1 -Work "$env:RUNNER_TEMP\build-test"
+          if ($LASTEXITCODE) { throw "the build script's checks failed ($LASTEXITCODE)" }
 
       - name: Stand-in stick
         shell: powershell

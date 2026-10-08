@@ -103,20 +103,20 @@ push() {
   mmd -i "$M" ::/helix
   mcopy -i "$M" -s -m "$REPO/pe/phoenixpe" "$REPO/pe/launcher" "$REPO/pe/README.md" ::/helix/
   # A PhoenixPE release saved in $DIR rides along, so Windows needn't download it
-  local pe_zip='' step1='1. Unpack PhoenixPE (https://github.com/PhoenixPE/PhoenixPE/releases) to C:\PhoenixPE'
+  local pe_zip='' step1='   It downloads PhoenixPE to C:\PhoenixPE (checked against its checksum), applies the'
   pe_zip=$(find "$DIR" -maxdepth 1 -name 'PhoenixPE-*.7z' -printf '%f\n' | sort -V | tail -n1)
   if [[ -n $pe_zip ]]; then
     mdel -i "$M" '::/PhoenixPE-*.7z' 2>/dev/null || true
     mcopy -i "$M" -o -m "$DIR/$pe_zip" ::/
-    step1="1. Right-click $pe_zip on this disk, Extract All, and extract to C:\PhoenixPE"
+    step1="   It unpacks $pe_zip from this disk to C:\PhoenixPE, applies the"
   fi
   # Unpacked drivers in $DIR/drivers/x64 (e.g. Intel Wi-Fi) ride along for Driver Integration
-  local drivers='' step3b='   (Extra drivers: put unpacked .inf folders in C:\PhoenixPE\Workbench\Drivers\x64)'
+  local drivers='' step3b='2. (Extra drivers: put unpacked .inf folders in C:\PhoenixPE\Workbench\Drivers\x64.)'
   mdeltree -i "$M" ::/drivers 2>/dev/null || true
   if [[ -d $DIR/drivers/x64 ]] && [[ -n $(ls -A "$DIR/drivers/x64") ]]; then
     mcopy -i "$M" -s -m "$DIR/drivers" ::/
     drivers=$(find "$DIR/drivers/x64" -mindepth 1 -maxdepth 1 -printf '%f ' | sed 's/ $//')
-    step3b='   Drivers > Driver Integration: tick it and set "x64 Drivers" to D:\drivers\x64'
+    step3b='2. In PEBakery, Drivers > Driver Integration: tick it and set "x64 Drivers" to D:\drivers\x64.'
   fi
   # Anything else for the build (a wallpaper image, ...) rides along from $DIR/extra
   mdeltree -i "$M" ::/extra 2>/dev/null || true
@@ -133,15 +133,17 @@ push() {
     "     Add-MpPreference -ExclusionPath 'C:\\PhoenixPE','D:\\'" \
     '  (D: is this disk.) Defender flags some PhoenixPE tools; exclusions stop it for good.' \
     '' \
+    '1. In Terminal (Admin), from helix\phoenixpe on this disk:' \
+    '     powershell -ExecutionPolicy Bypass -File .\Build-LazarusPE.ps1 E:' \
+    '   (E: is the drive with the Windows disc to build from; an .iso file works too.)' \
     "$step1" \
-    '2. In PowerShell, from helix\phoenixpe on this disk:' \
-    '     powershell -ExecutionPolicy Bypass -File .\Apply-HelixPreset.ps1 C:\PhoenixPE' \
-    '3. Run C:\PhoenixPE\PEBakeryLauncher.exe as administrator. Source Config: the Windows DVD' \
-    '   drive root, base image 2, the Pro edition, "Run all programs from RAM" NOT ticked.' \
+    '   Helix preset, fills in Source Config (the Pro edition, not run from RAM) and opens PEBakery.' \
     "$step3b" \
-    '   Then Build. (The preset already sets the Lazarus PE wallpaper and theme;' \
-    '    any other files for the build are in D:\extra.)' \
-    '4. Copy the finished .iso into the out folder on this disk, then shut Windows down.' \
+    '3. Press Build. (The preset already sets the Lazarus PE wallpaper and theme;' \
+    '    any other files for the build are in D:\extra.) Leave the PowerShell window open:' \
+    '   it copies the finished ISO into the out folder on this disk.' \
+    '4. Shut Windows down.' \
+    '   (Each step by hand instead: helix\README.md.)' \
     '5. On Linux: pe/vm/build-vm.sh pull' > "$DIR/README.txt"
   mcopy -i "$M" -o "$DIR/README.txt" ::/README.txt
   ok "transfer disk updated (helix\\, README.txt${pe_zip:+, $pe_zip}${drivers:+, drivers: $drivers}${extra:+, extra: $extra})"

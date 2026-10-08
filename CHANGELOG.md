@@ -6,6 +6,17 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Added
+- **Lazarus PE in one go.** `pe\phoenixpe\Build-LazarusPE.ps1 <Windows ISO>`, on
+  the Windows build host, downloads PhoenixPE and checks it against the
+  checksum GitHub records, unpacks it, applies the Helix preset, and fills in
+  Source Config from the ISO (the source, the Windows Setup image, the edition,
+  programs not run from RAM), then opens PEBakery and waits. You press Build:
+  PEBakery has no way to be told to. The finished image is copied out as
+  `LazarusPE.iso`. It reads the ISO's editions itself, takes Pro when there is
+  one, and says which Windows builds make a PE whose Start menu won't open. The
+  build VM's transfer disk now carries these steps instead of the by-hand ones.
+
 ## [0.7.7] - 2026-10-08
 
 ### Changed
