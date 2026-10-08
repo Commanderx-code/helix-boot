@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-10-08
+
 ### Changed
 - **A shorter README.** It is the pitch, a quick start and where to find the
   rest (140 lines, from 554). What it held is in pages of its own under
@@ -827,7 +829,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.6...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.7...HEAD
+[0.7.7]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.3...v0.7.4
