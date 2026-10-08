@@ -84,6 +84,8 @@ how it is verified, and how to add or leave out your own.
 
 ## More
 
+All of it is in [`docs/`](docs/README.md):
+
 | | |
 |---|---|
 | [Installing and updating](docs/install.md) | Linux, Windows and Mac; the app's window; checking a download |
