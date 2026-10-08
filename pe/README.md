@@ -103,7 +103,9 @@ It takes a Windows ISO (which it mounts), or a drive or folder holding one, and:
    disk's `out` folder, or `pe\out` in a clone; `-Out` names another folder).
 
 `-WhatIf` shows what it would change, `-NoBuild` stops before PEBakery, and
-`-PhoenixPE D:\PhoenixPE` uses another folder. Run it again any time: it changes
+`-PhoenixPE D:\PhoenixPE` uses another folder. `-Archive` takes a `PhoenixPE-*.7z`
+you already have, checked against GitHub's checksum for that release (the one
+on the build VM's transfer disk is found, and checked, by itself). Run it again any time: it changes
 only what differs.
 
 **Editions.** A Windows ISO usually holds several (Home, Pro, Education); the PE

@@ -131,5 +131,22 @@ $r = Run $disc $odd
 Expect 'a PhoenixPE with a renamed option' $r.Ok $false
 Expect 'nothing half-written into it' (Row $odd 'script.project' '%SourceDir%') ''
 
+# What a disc says about itself is written into files PEBakery runs: anything but a plain name is refused
+$before = Get-Content -Raw (Join-Path $pe 'Projects\PhoenixPE\script.project')
+$beforeConfig = Get-Content -Raw (Join-Path $pe 'Projects\PhoenixPE\100-ConfigSource.script')
+$n = 0
+foreach ($bad in "Windows 11 Pro&#13;&#10;%Tools%=C:\evil", 'Windows 11 Pro",_Evil_,True,"', 'Windows 11 Pro %BaseDir%', 'Windows 11 Pro#$x', 'Windows 11 Pro,x') {
+  $n++
+  $r = Run (New-Disc "bad$n" @($bad)) $pe
+  Expect "an image named $bad" $r.Ok $false
+}
+$odd = New-Disc 'badlang' @('Windows 11 Pro') 22621 "en-US&#10;%Tools%=x"
+Expect 'a fallback language with a line break' (Run $odd $pe).Ok $false
+New-Item -ItemType Directory -Force (Join-Path $Work 'has%percent') | Out-Null
+Copy-Item -Recurse (Join-Path $disc 'Sources') (Join-Path $Work 'has%percent')
+Expect 'a source path with a % in it' (Run (Join-Path $Work 'has%percent') $pe).Ok $false
+Expect 'none of those wrote anything' (Get-Content -Raw (Join-Path $pe 'Projects\PhoenixPE\script.project')) $before
+Expect 'nor into Source Config' (Get-Content -Raw (Join-Path $pe 'Projects\PhoenixPE\100-ConfigSource.script')) $beforeConfig
+
 if ($fail) { $fail | ForEach-Object { Write-Host "FAIL $_" }; throw "$($fail.Count) check(s) failed" }
 'build script ok'

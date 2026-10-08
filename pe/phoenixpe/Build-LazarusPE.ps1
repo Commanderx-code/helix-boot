@@ -23,8 +23,10 @@
   The PhoenixPE folder to make or reuse.
 
 .PARAMETER Archive
-  A PhoenixPE-*.7z you already have, to unpack without downloading. One on the
-  build VM's transfer disk is found by itself.
+  A PhoenixPE-*.7z you already have, to unpack without downloading. It is checked
+  against the checksum GitHub records for the release it is named after; one that
+  can't be checked is used only because you named it. One on the build VM's
+  transfer disk is found by itself, and used only if it passes that check.
 
 .PARAMETER Edition
   Which edition of install.wim to take system files from: Pro, Home, Education ...
@@ -85,24 +87,39 @@ function Find-Unpacker {
   throw 'Nothing here can unpack a .7z: install 7-Zip (7-zip.org), or unpack PhoenixPE yourself and run this again.'
 }
 
-function Get-PhoenixPERelease([string]$To) {
+# The checksum GitHub records for a PhoenixPE release's archive: the latest, or the one a file is named after.
+function Get-ReleaseAsset([string]$Tag) {
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-  $release = Invoke-RestMethod -UseBasicParsing 'https://api.github.com/repos/PhoenixPE/PhoenixPE/releases/latest'
+  $which = if ($Tag) { "tags/$Tag" } else { 'latest' }
+  $release = Invoke-RestMethod -UseBasicParsing "https://api.github.com/repos/PhoenixPE/PhoenixPE/releases/$which"
   $asset = @($release.assets | Where-Object { $_.name -like 'PhoenixPE-*-x64.7z' })
-  if ($asset.Count -ne 1) { throw "PhoenixPE's release $($release.tag_name) has no single PhoenixPE-*-x64.7z: download it yourself and pass -Archive." }
+  if ($asset.Count -ne 1) { throw "PhoenixPE's release $($release.tag_name) has no single PhoenixPE-*-x64.7z." }
   $asset = $asset[0]
   $digest = if ($asset.PSObject.Properties['digest']) { [string]$asset.digest } else { '' }
-  if ($digest -notmatch '^sha256:([0-9a-f]{64})$') { throw "GitHub records no checksum for $($asset.name): download it yourself, check it, and pass -Archive." }
-  $want = $Matches[1]
-  $file = Join-Path $To ($asset.name -replace '[^A-Za-z0-9._-]', '_')
-  Write-Host "Downloading $($asset.name) ($([math]::Round($asset.size / 1MB)) MB) ..."
-  Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $file
+  if ($digest -notmatch '^sha256:([0-9a-f]{64})$') { throw "GitHub records no checksum for $($asset.name)." }
+  @{ Name = [string]$asset.name; Size = [long]$asset.size; Url = [string]$asset.browser_download_url; Sha256 = $Matches[1] }
+}
+
+# An archive that was not downloaded just now: is it the release its name says? $true, $false, or $null when that can't be found out.
+function Test-Archive([string]$File) {
+  if ((Split-Path $File -Leaf) -notmatch '^PhoenixPE-([0-9][0-9A-Za-z.]{0,30})-x64\.7z$') { return $null }
+  try { $asset = Get-ReleaseAsset $Matches[1] } catch { return $null }
+  (Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash.ToLowerInvariant() -eq $asset.Sha256
+}
+
+function Get-PhoenixPERelease([string]$To) {
+  try { $asset = Get-ReleaseAsset '' } catch { throw "$_ Download PhoenixPE yourself, check it, and pass -Archive." }
+  $want = $asset.Sha256
+  if ($asset.Url -notmatch '^https://github\.com/PhoenixPE/PhoenixPE/releases/download/') { throw "PhoenixPE's release points somewhere unexpected ($($asset.Url)): not downloaded." }
+  $file = Join-Path $To ($asset.Name -replace '[^A-Za-z0-9._-]', '_')
+  Write-Host "Downloading $($asset.Name) ($([math]::Round($asset.Size / 1MB)) MB) ..."
+  Invoke-WebRequest -UseBasicParsing -Uri $asset.Url -OutFile $file
   $got = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($got -ne $want) {
     Remove-Item -LiteralPath $file -Force
-    throw "$($asset.name) isn't what GitHub recorded (sha256 $got, expected $want): not unpacked."
+    throw "$($asset.Name) isn't what GitHub recorded (sha256 $got, expected $want): not unpacked."
   }
-  Write-Host "+ $($asset.name) matches GitHub's checksum"
+  Write-Host "+ $($asset.Name) matches GitHub's checksum"
   $file
 }
 
@@ -112,13 +129,28 @@ if (Test-PhoenixPE $PhoenixPE) {
   throw "$PhoenixPE exists, has files in it and isn't a PhoenixPE folder: name another with -PhoenixPE."
 } elseif ($PSCmdlet.ShouldProcess($PhoenixPE, 'Download and unpack PhoenixPE')) {
   $unpack = Find-Unpacker
+  $found = $false
   if (-not $Archive) {   # the build VM's transfer disk carries the release that Linux put there
     $disk = Split-Path (Split-Path $here)
     $carried = @(if (Test-Path -LiteralPath (Join-Path $disk 'README.txt')) { Get-ChildItem -LiteralPath $disk -Filter 'PhoenixPE-*.7z' -File | Sort-Object Name })
-    if ($carried) { $Archive = $carried[-1].FullName; Write-Host "PhoenixPE: $Archive (from the transfer disk)" }
+    if ($carried) { $Archive = $carried[-1].FullName; $found = $true }
+  }
+  if ($Archive) {
+    # What gets unpacked is run as administrator: it is PhoenixPE's own release, or you said to use it
+    $Archive = (Resolve-Path -LiteralPath $Archive).Path
+    $genuine = Test-Archive $Archive
+    if ($genuine) {
+      Write-Host "PhoenixPE: $Archive matches GitHub's checksum for that release"
+    } elseif ($genuine -eq $false) {
+      throw "$Archive isn't the PhoenixPE release its name says (its checksum differs from GitHub's): not unpacked."
+    } elseif ($found) {
+      throw "$Archive, found on the transfer disk, can't be checked against GitHub (no connection, or not named like a release). To use it all the same: -Archive `"$Archive`"."
+    } else {
+      Write-Warning "$Archive can't be checked against GitHub (no connection, or not named like a release): used because you named it."
+    }
   }
   New-Item -ItemType Directory -Force $PhoenixPE | Out-Null
-  $file = if ($Archive) { (Resolve-Path -LiteralPath $Archive).Path } else { Get-PhoenixPERelease $PhoenixPE }
+  $file = if ($Archive) { $Archive } else { Get-PhoenixPERelease $PhoenixPE }
   Write-Host "Unpacking into $PhoenixPE ..."
   & $unpack.Exe @(& $unpack.Args $file $PhoenixPE) | Out-Null
   if ($LASTEXITCODE -ne 0 -or -not (Test-PhoenixPE $PhoenixPE)) { throw "Couldn't unpack $file into $PhoenixPE ($($unpack.Exe) said $LASTEXITCODE)." }
@@ -162,20 +194,31 @@ function Get-WimImages([string]$Path) {
   $xml.XmlResolver = $null
   $reader = [Xml.XmlReader]::Create((New-Object IO.StringReader $text), $settings)
   try { $xml.Load($reader) } finally { $reader.Dispose() }
+  # What a disc says about itself ends up in files PEBakery runs: a name, a language or a
+  # number that is anything but plain is refused, never written (no line breaks, quotes, % or #).
+  $plain = {
+    param($what, $value, $pattern)
+    if ($value -cnotmatch "\A(?:$pattern)\z") { throw "$Path names $what in a way no Windows disc does: not used." }
+    $value
+  }
+  $langPattern = '[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8}){0,3}'
   foreach ($image in $xml.SelectNodes('/WIM/IMAGE')) {
     $get = { param($q) $n = $image.SelectSingleNode($q); if ($n) { $n.InnerText.Trim() } else { '' } }
     $name = & $get 'DISPLAYNAME'
     if (-not $name) { $name = & $get 'NAME' }
-    $lang = & $get 'WINDOWS/LANGUAGES/DEFAULT'
-    $fallback = (& $get 'WINDOWS/LANGUAGES/FALLBACK') -replace ',', '|'
+    $name = & $plain 'an image' $name '[\p{L}\p{N}][\p{L}\p{N} .()+_-]{0,79}'
+    $lang = & $plain 'a language' (& $get 'WINDOWS/LANGUAGES/DEFAULT') $langPattern
+    $fallback = & $plain 'a fallback language' (& $get 'WINDOWS/LANGUAGES/FALLBACK') "($langPattern(,$langPattern){0,9})?"
+    $fallback = $fallback -replace ',', '|'
+    $number = { param($q) & $plain 'a version' (& $get $q) '[0-9]{1,6}' }
     [pscustomobject]@{
-      Index    = [int]$image.GetAttribute('INDEX')
+      Index    = [int](& $plain 'an image number' $image.GetAttribute('INDEX') '[1-9][0-9]{0,2}')
       Name     = $name
       Arch     = if ((& $get 'WINDOWS/ARCH') -eq '0') { 'x86' } else { 'x64' }
       Lang     = $lang
       Fallback = "$lang|$fallback".Trim('|')
-      Version  = '{0}.{1}.{2}.{3}' -f (& $get 'WINDOWS/VERSION/MAJOR'), (& $get 'WINDOWS/VERSION/MINOR'), (& $get 'WINDOWS/VERSION/BUILD'), (& $get 'WINDOWS/VERSION/SPBUILD')
-      Build    = [int]('0' + (& $get 'WINDOWS/VERSION/BUILD'))
+      Version  = '{0}.{1}.{2}.{3}' -f (& $number 'WINDOWS/VERSION/MAJOR'), (& $number 'WINDOWS/VERSION/MINOR'), (& $number 'WINDOWS/VERSION/BUILD'), (& $number 'WINDOWS/VERSION/SPBUILD')
+      Build    = [int](& $number 'WINDOWS/VERSION/BUILD')
     }
   }
 }
@@ -208,7 +251,10 @@ function Split-Fields([string]$s) {
 }
 function Quote([string]$s) { if ($s -match '[\s,]') { '"' + $s + '"' } else { $s } }
 # A value PEBakery reads back: it writes these few characters as escapes.
-function Escape([string]$s) { $s.Replace('#', '#$s').Replace('%', '#$p').Replace('"', '#$q') }
+function Escape([string]$s) {
+  if ($s -match '[\p{C}]') { throw 'a value with a line break or control character is never written into PhoenixPE.' }
+  $s.Replace('#', '#$s').Replace('%', '#$p').Replace('"', '#$q')
+}
 
 # One row of a script's [Interface]: its value, and for a dropdown its choices as well.
 function Set-Row($s, [string]$Name, [string]$Type, [string]$Value, [string[]]$Choices) {
@@ -244,6 +290,8 @@ if ((Test-Path -LiteralPath $Windows -PathType Leaf) -and $Windows -match '\.iso
 }
 if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "$Windows is neither an .iso nor a folder." }
 $source = (Resolve-Path -LiteralPath $source).Path
+# The path is written into PhoenixPE's settings, where these characters mean something
+if ($source -match '[%#",;\p{C}]') { throw "$source has a character PhoenixPE's settings can't hold (% # `" , ; or a control character): use a drive letter, or a folder with a plainer name." }
 $sources = Join-Path $source 'Sources'
 $bootWim = Join-Path $sources 'Boot.wim'
 $installWim = @('Install.wim', 'Install.esd' | ForEach-Object { Join-Path $sources $_ } | Where-Object { Test-Path -LiteralPath $_ })
@@ -297,6 +345,7 @@ if (-not (Test-Path -LiteralPath $configFile)) { throw "this PhoenixPE has no 10
 
 $p = Read-Script $projectFile
 foreach ($name in $vars.Keys) {
+  if ($vars[$name] -match '[%#"\p{C}]') { throw "$name would be written with a character PhoenixPE's settings can't hold: nothing changed." }
   $p.Lines[(Find-Row $p 'Variables' "%$name%")] = "%$name%=" + $vars[$name]
 }
 $c = Read-Script $configFile

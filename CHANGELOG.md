@@ -16,6 +16,10 @@ tagged releases also publish the Windows app.
   `LazarusPE.iso`. It reads the ISO's editions itself, takes Pro when there is
   one, and says which Windows builds make a PE whose Start menu won't open. The
   build VM's transfer disk now carries these steps instead of the by-hand ones.
+  What a disc says about itself (image names, languages, versions) is written
+  into PhoenixPE's settings only when it is plain text of the expected shape, and
+  a PhoenixPE archive you already have is checked against GitHub's checksum for
+  the release it is named after before it is unpacked.
 
 ## [0.7.7] - 2026-10-08
 
