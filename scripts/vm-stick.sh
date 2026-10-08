@@ -14,7 +14,10 @@ source "$HERE/scripts/common.sh"
 trap on_err ERR
 
 what=${1:-} vm=${2:-}
-[[ $what == give || $what == take ]] && [[ -n $vm ]] || { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+if [[ $what != give && $what != take ]] || [[ -z $vm ]]; then
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+  exit 2
+fi
 [[ $vm =~ ^[A-Za-z0-9._-]+$ ]] || die "not a VM's name: $vm"
 need virsh libvirt
 conn=${LIBVIRT_DEFAULT_URI:-qemu:///system}
