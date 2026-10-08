@@ -6,6 +6,13 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Changed
+- **A shorter README.** It is the pitch, a quick start and where to find the
+  rest (140 lines, from 554). What it held is in pages of its own under
+  `docs/`: [installing and updating](docs/install.md),
+  [what's on the stick](docs/tools.md), [packs](docs/packs.md),
+  [Lazarus PE](docs/lazarus-pe.md) and the [roadmap](docs/roadmap.md).
+
 ## [0.7.6] - 2026-10-07
 
 ### Added

@@ -120,4 +120,4 @@ drawn across it, in place of the theme's own splash. 1920×1080 works best.
 
 A background of your own is set on the stick rather than kept here:
 `./theme.sh --background picture.jpg --dim 40`. See the README's
-[boot menu's look](../README.md#the-boot-menus-look).
+[boot menu's look](../docs/look.md).

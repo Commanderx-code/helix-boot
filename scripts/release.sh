@@ -76,15 +76,15 @@ sed -i "s/^__version__ = \"$last\"$/__version__ = \"$version\"/" helix
 [[ $(./helix --version | awk '{ print $2 }') == "$version" ]] || die "couldn't set the version in helix"
 sed -i -e "s/^## \[Unreleased\]$/## [Unreleased]\n\n## [$version] - $today/" \
   -e "s#^\[Unreleased\]: \(.*\)/compare/v$last\.\.\.HEAD\$#[Unreleased]: \1/compare/v$version...HEAD\n[$version]: \1/compare/v$last...v$version#" CHANGELOG.md
-sed -i "s/^\(| .*\) | next |$/\1 | $version |/" README.md        # the roadmap's Shipped rows that waited for this
+sed -i "s/^\(| .*\) | next |$/\1 | $version |/" docs/roadmap.md  # the roadmap's Shipped rows that waited for this
 GITHUB_REPOSITORY=$repo scripts/release-notes.sh "$version"
 echo
 git --no-pager diff --stat
 if ((!yes)); then
   read -r -p "Release $version: $title — commit, tag and push? [y/N] " answer
-  [[ $answer == [yY]* ]] || { git checkout -q -- helix CHANGELOG.md README.md; die "left as it was: nothing committed"; }
+  [[ $answer == [yY]* ]] || { git checkout -q -- helix CHANGELOG.md docs/roadmap.md; die "left as it was: nothing committed"; }
 fi
-git add helix CHANGELOG.md README.md
+git add helix CHANGELOG.md docs/roadmap.md
 git commit -q -m "Release $version: $title"
 git tag -a "v$version" -m "Helix Boot $version"
 git push -q origin main

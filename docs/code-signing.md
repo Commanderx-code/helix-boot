@@ -3,7 +3,7 @@
 **Status: releases are not code-signed yet.** This page describes how signed
 releases of `HelixBoot.exe` are to be made, and what the program does on your
 PC and on the network. Until a release is signed, check a download with its
-`SHA256SUMS` file and build attestation ([how](../README.md#quick-start)).
+`SHA256SUMS` file and build attestation ([how](install.md#checking-a-download)).
 
 ## Signing
 
