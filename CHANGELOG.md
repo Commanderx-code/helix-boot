@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-10-07
+
 ### Added
 - **A stick a virtual machine also holds isn't written.** Two systems writing
   one stick corrupts it. On Linux, `install.sh`, `refresh.sh`, `check.sh`,
@@ -818,7 +820,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.5...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.6...HEAD
+[0.7.6]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.2...v0.7.3
