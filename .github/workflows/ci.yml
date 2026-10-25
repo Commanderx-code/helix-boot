@@ -23,12 +23,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.11"
+      - name: Install test dependencies
+        run: pip install --disable-pip-version-check -q --require-hashes -r tests/requirements.txt
       - name: Unit + end-to-end tests
         run: python -m unittest discover -s tests -v
       - name: Lint
         run: |
           # Also flags syntax that Python 3.11, the oldest the project runs on, doesn't accept (ruff.toml)
-          pip install --disable-pip-version-check -q --require-hashes -r tests/requirements.txt
           ruff check --output-format github .
       - name: Shellcheck
         run: |
