@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.11"
       - name: Install test dependencies
@@ -40,7 +40,7 @@ jobs:
           exit "${PIPESTATUS[0]}"
       - name: Build HelixBoot.sh
         run: linux/build.sh dist/HelixBoot.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: HelixBoot-linux
           path: dist/HelixBoot.sh
@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.11"
       - name: QEMU, firmware and disk tools
@@ -75,7 +75,7 @@ jobs:
         run: |
           ./helix fetch ventoy
           python tests/boot/boot_menu.py --firmware both --out boot-shots
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: boot-menu-screenshots
@@ -90,7 +90,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.11"
       - name: Resolve latest releases
@@ -164,7 +164,7 @@ jobs:
           fi
           echo "run=$need" >> "$GITHUB_OUTPUT"
           [[ $need == true ]] || echo "::notice title=skipped::nothing that decides the downloads changed (helix, tools.toml, this workflow)"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         if: steps.need.outputs.run == 'true'
         with:
           python-version: "3.11"
@@ -236,7 +236,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.11"
       # Updating a stick from a Mac, for real: a disk image partitioned like a Ventoy stick (a data
@@ -295,7 +295,7 @@ jobs:
           grep -q 'already up to date' again.log
           hdiutil detach "$dev" || { sleep 10; hdiutil detach -force "$dev"; }   # macOS holds a disk a moment
           gzip -1 "$RUNNER_TEMP/new-stick.img"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: stick-made-on-a-mac
           path: ${{ runner.temp }}/new-stick.img.gz
@@ -321,10 +321,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.11"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: stick-made-on-a-mac
           path: ${{ runner.temp }}
@@ -336,7 +336,7 @@ jobs:
           sudo chmod 666 /dev/kvm 2>/dev/null || true
           gunzip "$RUNNER_TEMP/new-stick.img.gz"
           python tests/boot/boot_menu.py --image "$RUNNER_TEMP/new-stick.img" --firmware both --out boot-shots
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: mac-stick-boot-screenshots
