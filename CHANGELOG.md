@@ -20,6 +20,18 @@ tagged releases also publish the Windows app.
   into PhoenixPE's settings only when it is plain text of the expected shape, and
   a PhoenixPE archive you already have is checked against GitHub's checksum for
   the release it is named after before it is unpacked.
+- **Five new themes over helix artwork**: Moon, Horizon, Nebula, Circuit and
+  Scope (`./theme.sh --theme nebula`). Each picture has its own footer, so the
+  hotkey row and Ventoy's version text sit above it.
+
+### Changed
+- **Helix Steel is the default theme**: brushed metal and a framed wireframe
+  helix, with the HELIXBOOT wordmark and footer in the picture. It replaces
+  Helix Neon.
+
+### Removed
+- The Helix Neon, Midnight, Ember, Terminal and Slate themes. A stick set to
+  one of them gets Helix Steel at its next refresh. Standby and Poly dark stay.
 
 ## [0.7.7] - 2026-10-08
 

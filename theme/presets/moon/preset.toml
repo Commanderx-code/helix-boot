@@ -1,0 +1,4 @@
+title = "Helix Moon"
+description = "Bright helix and a moon over dark hills."
+muted = "#baabd3"                 # ventoy.json: the tip line and Ventoy's version text
+bar = ["#00dceb", "#b55eff"]     # the splash's loading bar, left to right

@@ -13,7 +13,7 @@ Tools you add in local.toml get their letter badges (into byo/icons/) with:
 """
 import argparse
 import math
-import random
+import re
 import shutil
 import subprocess
 import sys
@@ -25,8 +25,9 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 HERE = Path(__file__).resolve().parent
 W, H = 1920, 1080
 
-# Helix Neon palette (keep theme.txt and helix's menu_tip colour in step).
-ARTWORK = HERE.parent / "docs/artwork/helix-purple-source.png"
+# Helix Steel: the default theme (keep theme.txt and helix's menu_tip colour in step).
+ARTS = HERE.parent / "docs/artwork/themes"                      # the backgrounds, wordmark and footer included
+ARTWORK = ARTS / "steel.png"
 SPLASH_ART = HERE.parent / "docs/artwork/helix-splash.png"     # the default theme's splash, as it is
 ICON_DIR = HERE.parent / "docs/artwork/helix-icons"            # the default set: <menu class>.png masters
 PANEL = (9, 5, 20, 228)
@@ -37,34 +38,26 @@ TEXT = (244, 240, 255)
 MUTED = (186, 171, 211)
 SELECT = (71, 22, 119, 220)   # the selected row
 SCROLL = (35, 18, 55, 255)
-LINE = (70, 34, 102)          # the footer rule on the background
 DIM = (6, 3, 14)              # what the splash dims the artwork towards
-TITLE = "Helix Neon"
-DESCRIPTION = "Purple and cyan over the helix artwork."
+TITLE = "Helix Steel"
+DESCRIPTION = "Brushed metal and a framed wireframe helix."
+HOTKEYS = "87%"               # the hotkey row's top in theme.txt: above the artwork's footer rule
+VERSION = ("78%", "91%")      # Ventoy's version text: [left, top], in the metal strip under the raised rule
 
-# Presets: the same theme in other colours (theme/presets/<id>/), over artwork drawn here, so
-# all of it is free to ship. `helix theme` switches a stick between them.
+# Presets: the same theme over other artwork from ARTS (theme/presets/<id>/). Each picture has
+# its own footer rule, so the hotkey row and Ventoy's version text move to sit above it.
+# `helix theme` switches a stick between them.
 PRESETS = {
-    "midnight": dict(
-        title="Midnight", description="Deep navy with ice blue and cyan.",
-        panel=(5, 9, 22, 228), border=(58, 110, 214, 255), accent=(96, 165, 250), highlight=(34, 211, 238),
-        text=(238, 245, 255), muted=(158, 178, 210), select=(20, 44, 104, 220), scroll=(16, 26, 54, 255),
-        sky=((2, 4, 12), (7, 15, 40))),
-    "ember": dict(
-        title="Ember", description="Charcoal with orange and amber.",
-        panel=(18, 8, 5, 228), border=(214, 96, 34, 255), accent=(255, 128, 48), highlight=(255, 196, 72),
-        text=(255, 244, 236), muted=(214, 180, 160), select=(104, 38, 12, 220), scroll=(52, 24, 14, 255),
-        sky=((10, 4, 3), (38, 13, 6))),
-    "terminal": dict(
-        title="Terminal", description="Black with phosphor green.",
-        panel=(3, 10, 5, 232), border=(34, 150, 72, 255), accent=(52, 211, 106), highlight=(170, 255, 120),
-        text=(226, 255, 232), muted=(140, 190, 152), select=(10, 66, 30, 220), scroll=(10, 36, 18, 255),
-        sky=((1, 4, 2), (4, 20, 10))),
-    "slate": dict(
-        title="Slate", description="Plain graphite and steel, the quietest of them.",
-        panel=(13, 15, 19, 232), border=(104, 116, 134, 255), accent=(148, 163, 184), highlight=(226, 232, 240),
-        text=(244, 246, 250), muted=(160, 168, 182), select=(48, 56, 70, 220), scroll=(30, 34, 42, 255),
-        sky=((7, 8, 11), (22, 25, 32))),
+    "moon": dict(title="Helix Moon", description="Bright helix and a moon over dark hills.",
+                 hotkeys="91%", version=None),
+    "horizon": dict(title="Helix Horizon", description="A planet's glowing rim behind the helix.",
+                    hotkeys="91%", version=None),
+    "nebula": dict(title="Helix Nebula", description="A thin helix in a purple nebula.",
+                   hotkeys="89%", version=("78%", "91%")),
+    "circuit": dict(title="Helix Circuit", description="Circuit traces around a wireframe helix.",
+                    hotkeys="89%", version=("78%", "91%")),
+    "scope": dict(title="Helix Scope", description="A large helix inside crosshair rings.",
+                  hotkeys="89%", version=("78%", "91%")),
 }
 # Other people's GRUB themes, kept as presets with their own layout, boxes and fonts (see each
 # folder's NOTICE.md). Their files are committed as adapted; only the splash, in these colours
@@ -79,8 +72,7 @@ IMPORTED = {
         text=(190, 190, 190), highlight=(235, 235, 235), accent=(119, 119, 119), muted=(119, 119, 119),
         tip=("15%", "81%"), version=("72%", "96%")),
 }
-SKY = None                    # a preset's sky gradient (top, bottom); None: the artwork file
-OUT = None                    # where a preset is being written; None: the theme folder itself
+OUT = None                    # where an imported preset's splash is written; None: the theme folder
 
 ICON = 40                     # keep in step with icon_width/icon_height in theme.txt
 SS = 8                        # draw icons this many times larger, then scale down (anti-aliasing)
@@ -118,106 +110,29 @@ def ttf(name: str) -> Path:
     sys.exit(f"can't find {name} — install the DejaVu fonts")
 
 
-def helix_strands(d: ImageDraw.ImageDraw, cx: float, top: float, span: float, amp: float, turns: float,
-                  width: int, rungs: int) -> None:
-    """A DNA double helix running down from (cx, top): rungs first, then the two strands."""
-    for i in range(rungs + 1):
-        y = top + span * i / rungs
-        offset = amp * math.cos(i / rungs * turns * math.tau)
-        d.line((cx - offset, y, cx + offset, y), fill=(*MUTED, 150), width=max(2, width // 3))
-    for sign, color in ((1, CYAN), (-1, ACCENT)):
-        points = [(cx + sign * amp * math.cos(t / span * turns * math.tau), top + t) for t in range(int(span) + 1)]
-        d.line(points, fill=(*color, 255), width=width, joint="curve")
-
-
-def artwork(helix: bool = True) -> Image.Image:
-    """The picture behind everything: the artwork file, or for a preset one drawn in its colours
-    (a night sky, a grid floor and, unless the splash's logo goes there, a glowing helix on the
-    right). Nothing here is UI."""
-    if SKY is None:
-        return ImageOps.fit(Image.open(ARTWORK).convert("RGB"), (W, H), method=Image.LANCZOS)
-    top, bottom = SKY
-    img = Image.new("RGB", (1, H))
-    for y in range(H):
-        img.putpixel((0, y), tuple(round(a + (b - a) * y / (H - 1)) for a, b in zip(top, bottom)))
-    img = img.resize((W, H)).convert("RGBA")
-    q = 8                                    # the glows are soft: draw them small, scale up
-    glow = Image.new("RGBA", (W // q, H // q))
-    gd = ImageDraw.Draw(glow)
-    for (x, y, r), color, alpha in (((1420, 470, 430), ACCENT, 80), ((1120, 980, 520), CYAN, 34),
-                                    ((240, 1060, 420), ACCENT, 40)):
-        gd.ellipse(((x - r) // q, (y - r) // q, (x + r) // q, (y + r) // q), fill=(*color, alpha))
-    img = Image.alpha_composite(img, glow.filter(ImageFilter.GaussianBlur(28)).resize((W, H), Image.BICUBIC))
-    rng = random.Random(20261001)            # the same stars every build
-    stars = ImageDraw.Draw(img, "RGBA")
-    for _ in range(520):
-        x, y, a = rng.randrange(W), rng.randrange(int(H * .78)), rng.randrange(40, 200)
-        r = rng.choice((0, 0, 0, 1))
-        stars.ellipse((x - r, y - r, x + r, y + r), fill=(*TEXT, a))
-    floor = Image.new("RGBA", (W, H))        # a grid floor running to the horizon
-    fd = ImageDraw.Draw(floor)
-    horizon, vx = 830, W * .62
-    for i in range(1, 15):
-        y = horizon + (H - horizon) * (i / 14) ** 2.2
-        fd.line((0, y, W, y), fill=(*ACCENT, round(26 + 60 * i / 14)), width=1)
-    for i in range(-22, 23):
-        fd.line((vx + i * 46, horizon, vx + i * 330, H), fill=(*ACCENT, 46), width=1)
-    fd.line((0, horizon, W, horizon), fill=(*CYAN, 120), width=2)
-    img = Image.alpha_composite(img, floor.filter(ImageFilter.GaussianBlur(6)))
-    img = Image.alpha_composite(img, floor)
-    if not helix:
-        return img.convert("RGB")
-    n = 1500                                 # the helix, drawn upright then tilted
-    layer = Image.new("RGBA", (n, n))
-    helix_strands(ImageDraw.Draw(layer), n / 2, 60, n - 120, 150, 2.5, 20, 34)
-    layer = layer.rotate(-24, resample=Image.BICUBIC)
-    tilted = Image.new("RGBA", (W, H))
-    tilted.alpha_composite(layer, (1400 - n // 2, 430 - n // 2), (0, 0))
-    img = Image.alpha_composite(img, tilted.filter(ImageFilter.GaussianBlur(26)))
-    img = Image.alpha_composite(img, tilted.filter(ImageFilter.GaussianBlur(7)))
-    return Image.alpha_composite(img, tilted).convert("RGB")
+def artwork() -> Image.Image:
+    """The picture behind everything: the artwork file, fitted to the screen. Nothing here is UI."""
+    with Image.open(ARTWORK) as art:
+        return ImageOps.fit(art.convert("RGB"), (W, H), method=Image.LANCZOS)
 
 
 def background() -> None:
-    # The art contains no UI. Menu rows, selection, timers and status are live GRUB components.
-    img = artwork()
-    d = ImageDraw.Draw(img)
-    bold = ImageFont.truetype(str(ttf("DejaVuSans-Bold.ttf")), 66)
-    small = ImageFont.truetype(str(ttf("DejaVuSans.ttf")), 23)
-    tiny = ImageFont.truetype(str(ttf("DejaVuSans.ttf")), 17)
-    # A small, reproducible DNA brand mark; the large helix remains part of the artwork.
-    mark = Image.new("RGBA", (W, H))
-    md = ImageDraw.Draw(mark)
-    for y in range(59, 168, 12):
-        offset = 32 * math.cos((y - 59) / 108 * math.tau)
-        md.line((139 - offset, y, 139 + offset, y), fill=(*MUTED, 255), width=3)
-    for sign, color in ((1, CYAN), (-1, ACCENT)):
-        points = [(139 + sign * 32 * math.cos(t / 108 * math.tau), 59 + t) for t in range(109)]
-        md.line(points, fill=(*color, 255), width=8, joint="curve")
-    img = Image.alpha_composite(img.convert("RGBA"), mark.filter(ImageFilter.GaussianBlur(9)))
-    img = Image.alpha_composite(img, mark).convert("RGB")
-    d = ImageDraw.Draw(img)
-    x, y = 203, 57
-    d.text((x, y), "HELIX", font=bold, fill=TEXT)
-    x += d.textlength("HELIX", font=bold)
-    d.text((x, y), "BOOT", font=bold, fill=CYAN)
-    d.text((205, 142), "RECOVERY • DIAGNOSTICS • REPAIR", font=small, fill=MUTED)
-    d.line((96, 1041, 1824, 1041), fill=LINE, width=1)
-    d.text((96, 1051), "HELIXSTACK  /  HELIXBOOT", font=tiny, fill=MUTED)
-    d.text((1824, 1051), "MULTIBOOT RECOVERY ENVIRONMENT", font=tiny, fill=MUTED, anchor="ra")
-    img.save(out_dir() / "background.png", optimize=True)
+    # The artwork already carries the HELIXBOOT wordmark and the footer; the menu rows,
+    # selection, timers and status are live GRUB components.
+    artwork().save(out_dir() / "background.png", optimize=True)
 
 
 def splash() -> None:
     """The picture Ventoy shows for a moment before its menu (splash.png): the same artwork,
     dimmed, with the DNA mark, wordmark and tagline centred. The default theme's is a finished
-    picture instead (SPLASH_ART); the presets' are drawn, in their colours. byo/splash.png
+    picture instead (SPLASH_ART); the imported presets' are drawn, in their colours; the artwork presets use the
+    theme's. byo/splash.png
     replaces either."""
     if OUT is None and SPLASH_ART.is_file():
         with Image.open(SPLASH_ART) as art:
             ImageOps.fit(art.convert("RGB"), (W, H), method=Image.LANCZOS).save(out_dir() / "splash.png", optimize=True)
         return
-    img = Image.blend(artwork(helix=False), Image.new("RGB", (W, H), DIM), 0.45).convert("RGBA")
+    img = Image.blend(artwork(), Image.new("RGB", (W, H), DIM), 0.45).convert("RGBA")
     cx, top = W // 2, 300
     mark = Image.new("RGBA", (W, H))
     md = ImageDraw.Draw(mark)
@@ -545,8 +460,17 @@ def fallback_icons(out: Path) -> None:
         pen.save(cls, out)
 
 
+def preset_toml(title: str, description: str, version: tuple[str, str] | None) -> str:
+    """preset.toml for the theme or one of its presets, all in the theme's palette."""
+    return (f'title = "{title}"\ndescription = "{description}"\n'
+            f'muted = "{hexc(MUTED)}"                 # ventoy.json: the tip line and Ventoy\'s version text\n'
+            f'bar = ["{hexc(CYAN)}", "{hexc(ACCENT)}"]     # the splash\'s loading bar, left to right\n'
+            + (f'version = ["{version[0]}", "{version[1]}"]     # Ventoy\'s version text, above the footer rule\n'
+               if version else ""))
+
+
 def themed() -> None:
-    """Everything that follows the palette, written to the theme folder (or the preset's)."""
+    """Everything that follows the palette, written to the theme folder."""
     background()
     splash()
     nine_slice("menu", PANEL, border=BORDER)
@@ -555,44 +479,23 @@ def themed() -> None:
     nine_slice("scrollbar", SCROLL, size=2)
     slider()
     icons()
-    if OUT is None:             # the same on every preset, which is laid over the theme
-        key_icons()
-    (out_dir() / "preset.toml").write_text(
-        f'title = "{TITLE}"\ndescription = "{DESCRIPTION}"\n'
-        f'muted = "{hexc(MUTED)}"                 # ventoy.json: the tip line and Ventoy\'s version text\n'
-        f'bar = ["{hexc(CYAN)}", "{hexc(ACCENT)}"]     # the splash\'s loading bar, left to right\n',
-        encoding="utf-8")
+    key_icons()
+    (out_dir() / "preset.toml").write_text(preset_toml(TITLE, DESCRIPTION, VERSION), encoding="utf-8")
 
 
 def presets() -> None:
-    """theme/presets/<id>/: what differs from the theme itself. `helix theme` lays one over it."""
-    g = globals()
-    names = ("OUT", "SKY", "PANEL", "BORDER", "ACCENT", "CYAN", "TEXT", "MUTED", "SELECT", "SCROLL",
-             "LINE", "DIM", "TITLE", "DESCRIPTION")
-    default = {k: g[k] for k in names}
+    """theme/presets/<id>/: what differs from the theme itself, which is its background,
+    theme.txt and preset.toml. `helix theme` lays one over the theme."""
     theme_txt = (HERE / "theme.txt").read_text(encoding="utf-8")
-    try:
-        for pid, p in PRESETS.items():
-            out = HERE / "presets" / pid
-            shutil.rmtree(out, ignore_errors=True)
-            out.mkdir(parents=True)
-            g.update(OUT=out, SKY=p["sky"], PANEL=p["panel"], BORDER=p["border"], ACCENT=p["accent"],
-                     CYAN=p["highlight"], TEXT=p["text"], MUTED=p["muted"], SELECT=p["select"],
-                     SCROLL=p["scroll"], LINE=tuple(round(c * .45) for c in p["border"][:3]),
-                     DIM=p["sky"][0], TITLE=p["title"], DESCRIPTION=p["description"])
-            themed()
-            for icon in sorted((out / "icons").iterdir()):   # the icons don't change colour: keep one copy
-                if icon.read_bytes() == (HERE / "icons" / icon.name).read_bytes():
-                    icon.unlink()
-            if not any((out / "icons").iterdir()):
-                (out / "icons").rmdir()
-            item = tuple(round(a + (b - a) * .25) for a, b in zip(TEXT, MUTED))
-            text = theme_txt.replace(default["TITLE"], TITLE)
-            for old, new in (("#f4f0ff", TEXT), ("#e6dff2", item), ("#b55eff", ACCENT), ("#baabd3", MUTED)):
-                text = text.replace(old, hexc(new))
-            (out / "theme.txt").write_text(text, encoding="utf-8")
-    finally:
-        g.update(default)
+    for pid, p in PRESETS.items():
+        out = HERE / "presets" / pid
+        shutil.rmtree(out, ignore_errors=True)
+        out.mkdir(parents=True)
+        with Image.open(ARTS / f"{pid}.png") as art:
+            ImageOps.fit(art.convert("RGB"), (W, H), method=Image.LANCZOS).save(out / "background.png", optimize=True)
+        text = re.sub(rf"top = {HOTKEYS}(?=[-+])", f"top = {p['hotkeys']}", theme_txt.replace(TITLE, p["title"]))
+        (out / "theme.txt").write_text(text, encoding="utf-8")
+        (out / "preset.toml").write_text(preset_toml(p["title"], p["description"], p["version"]), encoding="utf-8")
 
 
 def imported() -> None:

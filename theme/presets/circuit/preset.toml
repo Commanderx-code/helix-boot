@@ -1,0 +1,5 @@
+title = "Helix Circuit"
+description = "Circuit traces around a wireframe helix."
+muted = "#baabd3"                 # ventoy.json: the tip line and Ventoy's version text
+bar = ["#00dceb", "#b55eff"]     # the splash's loading bar, left to right
+version = ["78%", "91%"]     # Ventoy's version text, above the footer rule

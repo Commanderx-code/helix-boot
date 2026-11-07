@@ -7,7 +7,7 @@ else
   G='' Y='' R='' B='' D='' X=''
 fi
 
-# The Helix Boot logo: ANSI Shadow letters, purple to cyan like the Helix Neon theme. Plain
+# The Helix Boot logo: ANSI Shadow letters, purple to cyan like the Helix Steel theme. Plain
 # text instead on a terminal that can't show it (not UTF-8, or under 76 columns).
 banner() {  # banner <what this run does>
   [[ -z ${HELIX_NO_BANNER:-} ]] || return 0   # HelixBoot.sh's menu already showed it

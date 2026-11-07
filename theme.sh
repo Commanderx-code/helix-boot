@@ -3,7 +3,7 @@
 # The choice is kept on the stick, so a refresh doesn't undo it.
 #   ./theme.sh                         how it looks now, and what there is to choose from
 #   ./theme.sh --menu                  choose from numbered lists, with a preview
-#   ./theme.sh --theme midnight        a preset theme (`off`: the plain one, Standby)
+#   ./theme.sh --theme nebula          a preset theme (`off`: the plain one, Standby)
 #   ./theme.sh --icons off             no icons (or `grey`, or an icon pack such as `badges`)
 #   ./theme.sh --background pic.jpg --dim 40     your own picture behind the menu, darkened
 #   ./theme.sh --splash pic.png        your own picture before the menu (`off`: none)

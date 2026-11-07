@@ -343,8 +343,8 @@ class TestFlows(unittest.TestCase):
                 mock.patch.object(sys, "__stdout__", out), \
                 mock.patch.object(app.cr, "cmd_theme", lambda cfg, a: seen.update(vars(a)) or 0), \
                 mock.patch.object(app, "look_window", lambda mnt, **kw: seen.update(window=str(mnt))):
-            self.assertEqual(app.cli(["--look", "E:\\", "--theme", "midnight", "--icons", "off"]), 0)
-            self.assertEqual((seen["stick"], seen["theme"], seen["icons"], seen["reset"]), ("E:\\", "midnight", "off", False))
+            self.assertEqual(app.cli(["--look", "E:\\", "--theme", "nebula", "--icons", "off"]), 0)
+            self.assertEqual((seen["stick"], seen["theme"], seen["icons"], seen["reset"]), ("E:\\", "nebula", "off", False))
             self.assertNotIn("window", seen)
             self.assertEqual(app.cli(["--look", "E:\\"]), 0)           # no options: the Look window
             self.assertEqual(seen["window"], "E:\\")
