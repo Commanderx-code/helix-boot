@@ -44,7 +44,7 @@ class TestLinuxInstaller(unittest.TestCase):
         self.assertEqual(len(apps), 1)
         self.assertTrue(apps[0].name.startswith(f"{version}-"))
         for f in ("helix", "install.sh", "refresh.sh", "theme.sh", "check.sh", "scripts/common.sh", "tools.toml", "theme/theme.txt",
-                  "theme/presets/midnight/theme.txt", "theme/icon-packs/badges/pack.toml",
+                  "theme/presets/moon/theme.txt", "theme/icon-packs/badges/pack.toml",
                   "pe/launcher/HelixApps.cmd", "pe/launcher/FindStick.ps1", "pe/lazarus/LazarusLauncher.ps1"):
             self.assertTrue((apps[0] / f).is_file(), f)
         self.assertTrue(os.access(apps[0] / "install.sh", os.X_OK))

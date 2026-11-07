@@ -22,7 +22,7 @@ Current tools, verified downloads, a MediCat-style boot menu, and room for your 
 [Themes](docs/look.md) ·
 [Changelog](CHANGELOG.md)
 
-<img src="docs/boot-menu.jpg" alt="The Helix Boot menu (Helix Neon theme) in Ventoy" width="820">
+<img src="docs/boot-menu.jpg" alt="The Helix Boot menu (Helix Steel theme) in Ventoy" width="820">
 
 </div>
 
@@ -39,7 +39,7 @@ desktop) and fixes the rest:
 | **Verified** | Downloads are checked against the publisher's own checksums before they reach the stick. Anything without one is flagged, never trusted silently. |
 | **Free by default** | The shipped tool list is free software and freeware. Paid tools get [bring-your-own](docs/tools.md#bring-your-own-tools) slots for your licensed copies. |
 | **Refreshable in place** | `./refresh.sh` swaps in new versions and leaves alone the files you added yourself, and the tools another PC put there. |
-| **Yours to restyle** | Seven boot-menu [themes](docs/look.md), icon styles, your own background and splash: switched on a finished stick from Linux or the Windows app, with a preview first. |
+| **Yours to restyle** | Eight boot-menu [themes](docs/look.md), icon styles, your own background and splash: switched on a finished stick from Linux or the Windows app, with a preview first. |
 | **Offline-ready** | [Packs](docs/packs.md) put the whole stick, your own tools included, into one zip that builds a stick with no internet, from Linux or Windows. |
 | **A real recovery desktop** | [Lazarus PE](docs/lazarus-pe.md), your own Windows 11 PE, opens on a full-screen launcher with every tool on the stick sorted into categories. |
 | **Nothing redistributed** | The repo holds a manifest and scripts, not binaries. The Windows PE is built from *your* Windows ISO. |

@@ -101,19 +101,19 @@ jobs:
           if ((Get-Content -Raw "$env:RUNNER_TEMP\stick\ventoy\theme\theme.txt") -notmatch "key_power.png") { throw "the menu doesn't show the power key" }
 
           # The stick's look: a preset with the icons off, a preview drawn by the bundled Pillow, the window
-          Run "--look $env:RUNNER_TEMP\stick --theme midnight --icons off"
+          Run "--look $env:RUNNER_TEMP\stick --theme nebula --icons off"
           $theme = Get-Content -Raw "$env:RUNNER_TEMP\stick\ventoy\theme\theme.txt"
-          if ($theme -notmatch "Midnight" -or $theme -notmatch "icon_width = 0") { throw "the look wasn't applied" }
+          if ($theme -notmatch "Helix Nebula" -or $theme -notmatch "icon_width = 0") { throw "the look wasn't applied" }
           if (Test-Path "$env:RUNNER_TEMP\stick\ventoy\theme\icons") { throw "icons are still on the stick" }
           if (-not (Test-Path "$env:RUNNER_TEMP\stick\ventoy\theme\splash\20.jpg")) { throw "no loading bar: Pillow isn't in the .exe" }
-          Run "--look $env:RUNNER_TEMP\stick --theme ember --preview $env:RUNNER_TEMP\preview.png"
+          Run "--look $env:RUNNER_TEMP\stick --theme scope --preview $env:RUNNER_TEMP\preview.png"
           if ((Get-Item "$env:RUNNER_TEMP\preview.png").Length -lt 20000) { throw "the preview wasn't drawn" }
           Run "--look $env:RUNNER_TEMP\stick --selftest-look"   # opens the Look window, closes it
           Run "--look $env:RUNNER_TEMP\stick --theme off"       # the plain one: Standby, its icons in grey
           if ((Get-Content -Raw "$env:RUNNER_TEMP\stick\ventoy\theme\theme.txt") -notmatch "Standby") { throw "off isn't Standby" }
           if (-not (Test-Path "$env:RUNNER_TEMP\stick\ventoy\theme\NanumMyeongjo-Regular18.pf2")) { throw "Standby's font is missing" }
           Run "--look $env:RUNNER_TEMP\stick --reset-look"
-          Run "--look $env:RUNNER_TEMP\stick --theme ember --icons badges"
+          Run "--look $env:RUNNER_TEMP\stick --theme scope --icons badges"
           Run "--look $env:RUNNER_TEMP\stick --export-look $env:RUNNER_TEMP\look.zip"   # put on stick2 below
           Run "--look $env:RUNNER_TEMP\stick --reset-look"
 
@@ -145,7 +145,7 @@ jobs:
           $b = (Get-ChildItem -Recurse -File "$env:RUNNER_TEMP\stick2\ISO").Name | Sort-Object
           if (Compare-Object $a $b) { throw "the pack gave different boot images than the online sync" }
           Run "--look $env:RUNNER_TEMP\stick2 --import-look $env:RUNNER_TEMP\look.zip"
-          if ((Get-Content -Raw "$env:RUNNER_TEMP\stick2\ventoy\theme\theme.txt") -notmatch "Ember") { throw "the saved look didn't load" }
+          if ((Get-Content -Raw "$env:RUNNER_TEMP\stick2\ventoy\theme\theme.txt") -notmatch "Helix Scope") { throw "the saved look didn't load" }
           Run "--check $env:RUNNER_TEMP\stick2"
 
           Copy-Item $pack $dir                                # a pack beside the app: the window finds it
@@ -215,8 +215,8 @@ jobs:
           test -f /Volumes/HelixBoot/Tools.txt
           test -f /Volumes/HelixBoot/ventoy/theme/splash/20.jpg   # the loading bar: Pillow is inside
           "$app" check --disk "${dev#/dev/}"
-          "$app" look --disk "${dev#/dev/}" --theme midnight
-          grep -q Midnight /Volumes/HelixBoot/ventoy/theme/theme.txt
+          "$app" look --disk "${dev#/dev/}" --theme nebula
+          grep -q "Helix Nebula" /Volumes/HelixBoot/ventoy/theme/theme.txt
           hdiutil detach "$dev" || { sleep 10; hdiutil detach -force "$dev"; }   # macOS holds a disk a moment
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:

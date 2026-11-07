@@ -4,7 +4,7 @@
     mac/helix-mac                  update the stick that's plugged in (it asks first)
     mac/helix-mac update --from helix-boot-2026-10-04.zip     from a pack, no downloads
     mac/helix-mac check            read the stick back: any damaged or missing files?
-    mac/helix-mac look --theme midnight      change its look (the options of `helix theme`)
+    mac/helix-mac look --theme nebula        change its look (the options of `helix theme`)
     mac/helix-mac list             the Helix Boot / Ventoy sticks it can see
     mac/helix-mac helix …          the engine itself: helix list, check, fetch, pack …
     mac/helix-mac install --disk disk4       EXPERIMENTAL: erase a USB disk and make a new stick

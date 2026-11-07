@@ -30,7 +30,7 @@ def box(image, prefix, x, y, width, height):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--size", default="1920x1080", help="e.g. 1280x720 or 1024x768")
-    ap.add_argument("--out", type=Path, default=HERE.parent / "docs/artwork/helix-neon-preview.jpg")
+    ap.add_argument("--out", type=Path, default=HERE.parent / "docs/artwork/helix-preview.jpg")
     args = ap.parse_args()
     width, height = (int(v) for v in args.size.split("x"))
     theme = (HERE / "theme.txt").read_text()
@@ -72,8 +72,9 @@ def main():
         d.rounded_rectangle((x + w - 12, y + 16, x + w - 7, y + h // 2), 2, fill=build.CYAN)
     d = ImageDraw.Draw(image)
     d.text((width * .05, height * .82), rows[2]["description"], font=small, fill=build.MUTED)
-    d.text((width * .05, height * .91), "F1 Help     F2 Browse     F3 Tree View    [sample hotkeys]", font=small, fill=build.MUTED)
-    d.text((width * .05, height * .94), "Enter  open      Esc  back", font=small, fill=build.MUTED)
+    row = int(re.search(r"top = (\d+)%-12", theme).group(1)) / 100   # the hotkey row, as theme.txt places it
+    d.text((width * .05, height * row), "F1 Help     F2 Browse     F3 Tree View    [sample hotkeys]", font=small, fill=build.MUTED)
+    d.text((width * .05, height * (row + .03)), "Enter  open      Esc  back", font=small, fill=build.MUTED)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     image.convert("RGB").save(args.out, optimize=True)
     print(f"{args.out}: {visible}/{len(rows)} category rows visible; offline simulation, not a boot capture")

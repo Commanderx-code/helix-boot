@@ -6,12 +6,12 @@ choice is kept on the stick, so a refresh doesn't undo it:
 ```sh
 ./theme.sh                                  # how it looks now, and what there is to choose
 ./theme.sh --menu                           # choose from numbered lists, with a preview
-./theme.sh --theme midnight                 # a preset: midnight, ember, terminal, slate (default: Helix Neon)
+./theme.sh --theme nebula                   # a preset: moon, horizon, nebula, circuit, scope (default: Helix Steel)
 ./theme.sh --theme standby                  # the plain one (also --theme off); poly-dark is another
 ./theme.sh --icons off                      # no icons, just names (--icons grey, --icons badges)
 ./theme.sh --background ~/pic.jpg --dim 40  # your own picture behind the menu, darkened 40 %
 ./theme.sh --splash ~/pic.png               # your own picture before the menu (--splash off: none)
-./theme.sh --preview out.png --theme ember  # a picture of how it would look; the stick is untouched
+./theme.sh --preview out.png --theme scope  # a picture of how it would look; the stick is untouched
 ./theme.sh --reset                          # back to the default look
 ./theme.sh --export my-look.zip             # save the look, with your own pictures and icons
 ./theme.sh --import my-look.zip             # put it on this stick, or a new one
@@ -23,24 +23,26 @@ default theme and says so. Its icons and splash stay on the stick through
 updates, unless the updating PC has its own in `byo/`.
 
 On Windows it is the app's **Look…** button, with a live preview, or
-`HelixBoot.exe --look E:\ --theme midnight`. Its **Save look…** and
+`HelixBoot.exe --look E:\ --theme nebula`. Its **Save look…** and
 **Load look…** buttons save and load a look. `HelixBoot.sh` has it in its menu
 as **Change a stick's look**.
 
-![The Midnight, Ember, Terminal and Slate presets](themes.jpg)
+![Helix Steel and the Moon, Horizon, Nebula, Circuit and Scope presets](themes.jpg)
 
 | Theme | |
 |---|---|
-| `default` | **Helix Neon**: purple and cyan over the helix artwork |
-| `midnight` | deep navy with ice blue and cyan |
-| `ember` | charcoal with orange and amber |
-| `terminal` | black with phosphor green |
-| `slate` | plain graphite and steel |
+| `default` | **Helix Steel**: brushed metal and a framed wireframe helix |
+| `moon` | a bright helix and a moon over dark hills |
+| `horizon` | a planet's glowing rim behind the helix |
+| `nebula` | a thin helix in a purple nebula |
+| `circuit` | circuit traces around a wireframe helix |
+| `scope` | a large helix inside crosshair rings |
 | `standby` | black cubes, a power symbol, grey icons; the plain choice (`--theme off` gives it) |
 | `poly-dark` | dark polygons and a plain list, in greys |
 
-Midnight, Ember, Terminal and Slate are the same menu in other colours, over
-artwork drawn by `theme/build-theme.py`, so all of it can be shared. **Standby**
+Moon, Horizon, Nebula, Circuit and Scope are the Helix Steel menu over other
+artwork (`docs/artwork/themes/`), each with the HELIXBOOT wordmark and footer in
+the picture. **Standby**
 (by Llewelyn Trahaearn, GPL) and **Poly dark** (by Andrei Shevchuk, MIT) are
 other people's GRUB themes with their own layout, adapted for Ventoy. Standby
 takes the place of Ventoy's own white look, which `theme = ""` under
@@ -86,8 +88,9 @@ small VTOYEFI partition, and re-add them after a Ventoy upgrade.
 
 ## The default theme
 
-**Helix Neon** is purple/cyan DNA artwork, the HELIXBOOT wordmark and a purple
-selection with a cyan edge. The menu, scrolling,
+**Helix Steel** is a brushed-metal header with the HELIXBOOT wordmark, a
+wireframe DNA helix in an octagonal frame, and a purple selection with a cyan
+edge. The menu, scrolling,
 timeout, hotkeys and boot-mode indicators are real Ventoy components; no menu
 entries are painted into the wallpaper. Lazarus PE keeps its separate green
 PortableApps theme.
@@ -97,7 +100,7 @@ HELIXBOOT icon collection, the same on every theme. The
 [icon notes](tool-icons.md) show the set and say how to change an icon or
 use one of the collection's extras.
 
-![Helix Neon layout preview](artwork/helix-neon-preview.jpg)
+![Helix Steel layout preview](artwork/helix-preview.jpg)
 
 The image above is a layout preview; the screenshots at the top are the real
 thing. The themes target 1920×1080; other screen modes use Ventoy's resolution
