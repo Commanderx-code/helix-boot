@@ -909,6 +909,26 @@ class TestFetchAndSync(Base):
         self.assertEqual(rc, 0, out)
         self.assertIn("+ SourceForge md5", cr.load_lock(self.cfg)["systemrescue"]["verified_by"])
 
+    def test_tools_are_fetched_several_at_once(self):
+        names = [t["name"] for t in self.cfg.enabled([])][:4]
+        together = threading.Barrier(3, timeout=10)      # only passes if three run at the same time
+
+        def fetch_tool(cfg, tool, lock, force=False):
+            if tool["name"] in names[:3]:
+                together.wait()
+            if tool["name"] == names[3]:
+                raise cr.RescueError("no luck")
+            lock[tool["name"]] = {"version": "1"}
+            return "new"
+
+        ns = type("A", (), {"tools": names, "force": False, "jobs": 3})()
+        with unittest.mock.patch.object(cr, "fetch_tool", fetch_tool):
+            rc, out = self.run_quiet(cr.cmd_fetch, self.cfg, ns)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("3 at a time", out)
+        self.assertIn(f"1 failed: {names[3]}", out)
+        self.assertEqual(sorted(cr.load_lock(self.cfg)), sorted(names[:3]))   # each saved, none lost
+
     def test_no_checksum_refused_without_tofu(self):
         gh_release("ventoy/Ventoy", "v1.1.18",
                    {"ventoy-1.1.18-linux.tar.gz": self.ventoy_tgz}, digests=False)
@@ -2987,6 +3007,67 @@ class TestDownloadRetry(unittest.TestCase):
             with unittest.mock.patch.object(cr, "RETRY_DELAYS", ()):
                 with self.assertRaisesRegex(cr.RescueError, "stalled 1 times"):
                     cr.download("https://example.invalid/tool.iso", self.tmp / "other.iso")
+
+    def sourceforge(self, speeds):
+        """cr.download from a SourceForge link, each mirror serving at the speed given for it in
+        bytes a second (missing: it hasn't got the file). Returns the mirrors asked, each with the
+        byte it was asked to start from, and what was warned."""
+        whole, clock, asked = bytes(range(256)) * 400, [0.0], []   # 100 KiB
+
+        class Reply:
+            def __init__(self, host, start):
+                self.url = f"https://{host}/project/x/tool.iso"
+                self.data, self.status = whole[start:], 206 if start else 200
+                self.headers = {"Content-Length": str(len(whole) - start)}
+                self.speed = speeds[host.split(".")[0]]
+
+            def read(self, n):
+                chunk, self.data = self.data[:1000], self.data[1000:]
+                clock[0] += len(chunk) / self.speed
+                return chunk
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def urlopen(req, timeout=None):
+            query = cr.urllib.parse.parse_qs(cr.urllib.parse.urlparse(req.full_url).query)
+            host = (query.get("use_mirror") or ["auto-dal"])[0]
+            start = int((req.get_header("Range") or "bytes=0-")[6:-1])
+            asked.append((host, start))
+            if host.split("-")[0] not in {h.split("-")[0] for h in speeds}:
+                raise cr.urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+            return Reply(f"{host}.dl.sourceforge.net", start)
+
+        with unittest.mock.patch.object(cr.urllib.request, "urlopen", urlopen), \
+                unittest.mock.patch.object(cr.time, "monotonic", lambda: clock[0]), \
+                unittest.mock.patch.object(cr, "SLOW_RATE", 1000), unittest.mock.patch.object(cr, "SLOW_AFTER", 20), \
+                unittest.mock.patch.object(cr, "SF_MIRRORS", ("fast", "auto", "gone", "other")), \
+                redirect_stderr(io.StringIO()) as err:
+            cr.download("https://downloads.sourceforge.net/project/x/tool.iso", self.tmp / "tool.iso")
+        self.assertEqual((self.tmp / "tool.iso").read_bytes(), whole)
+        return asked, err.getvalue()
+
+    def test_a_slow_sourceforge_mirror_is_left_for_another(self):
+        asked, err = self.sourceforge({"auto-dal": 100, "fast": 10**6})
+        self.assertEqual([h for h, _ in asked], ["auto-dal", "fast"])   # SourceForge's pick, then the next
+        self.assertGreater(asked[1][1], 0)                                # which carries on from the same byte
+        self.assertIn("slow download mirror (auto-dal.dl.sourceforge.net at", err)
+
+    def test_mirrors_already_tried_or_without_the_file_are_passed_over(self):
+        asked, err = self.sourceforge({"auto-dal": 100, "fast": 100, "other": 10**6})
+        # "auto" is the one SourceForge picked first, "gone" hasn't got the file
+        self.assertEqual([h for h, _ in asked], ["auto-dal", "fast", "gone", "other"])
+        self.assertIn("download mirror gone: download failed: HTTP 404", err)
+
+    def test_when_every_mirror_is_slow_sourceforges_own_pick_finishes_it(self):
+        asked, _ = self.sourceforge({"auto-dal": 100, "fast": 100, "other": 100})
+        self.assertEqual([h for h, _ in asked], ["auto-dal", "fast", "gone", "other", "auto-dal"])
+
+    def test_other_hosts_are_never_left_for_being_slow(self):
+        self.assertEqual(cr._sf_mirrors("https://example.org/tool.iso"), [("", "https://example.org/tool.iso", False)])
 
 
 class TestPortability(unittest.TestCase):

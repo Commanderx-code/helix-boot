@@ -7,6 +7,11 @@ tagged releases also publish the Windows app.
 ## [Unreleased]
 
 ### Added
+- **Faster downloads.** `helix fetch` (and so refresh) gets four tools at once
+  (`--jobs N` to change it). A SourceForge download that stays under 1 MB/s for
+  20 seconds moves to another mirror and carries on from the same byte; the
+  mirrors' speeds differ fifty-fold. The checks after each download are the
+  same as before.
 - **Lazarus PE in one go.** `pe\phoenixpe\Build-LazarusPE.ps1 <Windows ISO>`, on
   the Windows build host, downloads PhoenixPE and checks it against the
   checksum GitHub records, unpacks it, applies the Helix preset, and fills in

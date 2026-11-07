@@ -24,6 +24,7 @@ import struct
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -31,6 +32,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
 import zlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from email.utils import parsedate_to_datetime
 from pathlib import Path, PureWindowsPath
 
@@ -52,6 +54,13 @@ RELEASES_FILE = "github-releases.json"      # in the cache: each repo's latest r
 RELEASES_MAX_AGE = 7 * 86400                # … and asked again after a week, whatever the tag says
 SF_RSS = _env("SF_RSS", "https://sourceforge.net/projects/{project}/rss?path={path}")  # SourceForge rejects limit > 100
 SF_DL = _env("SF_DL", "https://downloads.sourceforge.net/project/{project}{path}")
+# SourceForge sends each download to a mirror it picks, and they differ fifty-fold in speed. One
+# that stays under SLOW_RATE for SLOW_AFTER seconds is left for the next of these (names it
+# honours in ?use_mirror=); the last resort is SourceForge's own pick again, however slow.
+SF_MIRRORS = tuple(m for m in (_env("SF_MIRRORS") or "gigenet,pilotfiber,cytranet,phoenixnap,unlimited,netix").split(",") if m)
+SLOW_RATE = 1 << 20                         # bytes a second
+SLOW_AFTER = 20                             # seconds
+FETCH_JOBS = 4                              # tools fetched at once: the far end is the slow part, not this line
 USER_AGENT = f"helix-boot/{__version__} (+https://github.com/Commanderx-code/helix-boot)"
 # For the few sites that turn away anything but a browser (`user_agent = "browser"` on a tool)
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
@@ -96,20 +105,28 @@ class C:
     )
 
 
+_OUT = threading.Lock()   # tools fetched at once: one line at a time, never two run together
+
+
+def _say(text: str, stream=None) -> None:
+    with _OUT:
+        print(text, file=stream or sys.stdout)
+
+
 def ok(msg: str) -> None:
-    print(f"{C.G}✓{C.X} {msg}")
+    _say(f"{C.G}✓{C.X} {msg}")
 
 
 def warn(msg: str) -> None:
-    print(f"{C.Y}!{C.X} {msg}", file=sys.stderr)  # stderr: keeps `check --json` output clean
+    _say(f"{C.Y}!{C.X} {msg}", sys.stderr)  # stderr: keeps `check --json` output clean
 
 
 def bad(msg: str) -> None:
-    print(f"{C.R}✗{C.X} {msg}", file=sys.stderr)
+    _say(f"{C.R}✗{C.X} {msg}", sys.stderr)
 
 
 def info(msg: str) -> None:
-    print(f"{C.D}•{C.X} {msg}")
+    _say(f"{C.D}•{C.X} {msg}")
 
 
 def head(msg: str) -> None:
@@ -566,24 +583,58 @@ class _Stalled(Exception):
     """A download that stopped part-way: a timeout or a dropped connection while reading."""
 
 
+class _SlowMirror(Exception):
+    """A SourceForge mirror serving under SLOW_RATE: another one carries on from the same byte."""
+
+    def __init__(self, host: str, rate: float):
+        super().__init__(f"{host} at {_fmt_bytes(rate)}/s")
+        self.host, self.rate = host, rate
+
+
+_STOP = threading.Event()   # set when a fetch running several downloads at once is interrupted
+
+
+def _sf_mirrors(url: str) -> list[tuple[str, str, bool]]:
+    """Where to get a download from, in turn: (mirror, url, give up on it when slow). For a
+    SourceForge download that is its own pick, then SF_MIRRORS, then its own pick again with no
+    limit; anything else has the one place."""
+    if urllib.parse.urlparse(url).hostname != "downloads.sourceforge.net":
+        return [("", url, False)]
+    sep = "&" if "?" in url else "?"
+    return [("", url, True), *((m, f"{url}{sep}use_mirror={m}", True) for m in SF_MIRRORS), ("", url, False)]
+
+
 def download(url: str, dest: Path) -> None:
     """Download to dest, resuming a previous .part file when the server allows it.
 
     Server errors (5xx), timeouts and dropped connections are retried a few
     times: release hosts like GitHub's return the odd transient 500. One that
-    stalls part-way is picked up again from where it stopped.
+    stalls part-way is picked up again from where it stopped. A SourceForge
+    mirror that is slow, or hasn't got the file, is left for another one, which
+    carries on from the same byte; the checks after the download still apply.
     """
-    for attempt, delay in enumerate((*RETRY_DELAYS, None)):
+    places, stalls = _sf_mirrors(url), 0
+    while True:
+        mirror, at, give_up_slow = places[0]
         try:
-            return _download_once(url, dest)
+            return _download_once(at, dest, slow=give_up_slow)
+        except _SlowMirror as e:
+            places = [p for p in places[1:] if not (p[0] and e.host.startswith(p[0]))]   # not the same one again
+            warn(f"slow download mirror ({e}) — trying {places[0][0] or 'another one'}")
         except _Stalled as e:
-            if delay is None:
-                raise RescueError(f"download stalled {attempt + 1} times ({e}); run fetch again to resume") from None
+            if stalls == len(RETRY_DELAYS):
+                raise RescueError(f"download stalled {stalls + 1} times ({e}); run fetch again to resume") from None
+            delay, stalls = RETRY_DELAYS[stalls], stalls + 1
             warn(f"download stalled ({e}) — resuming in {delay}s")
             time.sleep(delay)
+        except RescueError as e:      # a mirror asked for by name that hasn't got the file, or doesn't answer
+            if not mirror:
+                raise
+            places = places[1:]
+            warn(f"download mirror {mirror}: {e} — trying {places[0][0] or 'another one'}")
 
 
-def _download_once(url: str, dest: Path) -> None:
+def _download_once(url: str, dest: Path, slow: bool = False) -> None:
     part = dest.with_name(dest.name + ".part")
     have = part.stat().st_size if part.exists() else 0
     headers = {"Range": f"bytes={have}-"} if have else {}
@@ -612,7 +663,9 @@ def _download_once(url: str, dest: Path) -> None:
         total = resp.headers.get("Content-Length")
         total = int(total) + have if total else None
         done, last, start = have, 0.0, time.monotonic()
-        tty = _isatty(sys.stderr)
+        mark, marked = start, done          # how far it had got at the start of this SLOW_AFTER stretch
+        # the progress bar: only on a terminal, and not when several downloads run at once
+        tty = _isatty(sys.stderr) and threading.current_thread() is threading.main_thread()
         with open(part, "ab" if resumed else "wb") as f:
             while True:
                 try:
@@ -625,6 +678,15 @@ def _download_once(url: str, dest: Path) -> None:
                 f.write(chunk)
                 done += len(chunk)
                 now = time.monotonic()
+                if _STOP.is_set():          # what arrived stays in the .part file, to resume from
+                    f.flush()
+                    raise KeyboardInterrupt
+                if slow and now - mark >= SLOW_AFTER:
+                    rate = (done - marked) / (now - mark)
+                    if rate < SLOW_RATE and (total is None or total - done > SLOW_RATE * SLOW_AFTER):
+                        f.flush()
+                        raise _SlowMirror(urllib.parse.urlparse(getattr(resp, "url", None) or url).hostname or "?", rate)
+                    mark, marked = now, done
                 if tty and now - last > 0.25:
                     last = now
                     rate = (done - have) / max(now - start, 1e-6)
@@ -1395,9 +1457,12 @@ def updates_text(found: dict) -> str:
 def cmd_fetch(cfg: Config, args) -> int:
     lock = load_lock(cfg)
     tools = cfg.enabled(args.tools)
-    head(f"Fetching {len(tools)} tool(s) into {cfg.cache}")
+    jobs = max(1, min(getattr(args, "jobs", None) or FETCH_JOBS, len(tools)))
+    head(f"Fetching {len(tools)} tool(s) into {cfg.cache}" + (f", {jobs} at a time" if jobs > 1 else ""))
     failed, down = [], []
-    for t in tools:
+    saving = threading.Lock()
+
+    def one(t: dict) -> None:
         try:
             fetch_tool(cfg, t, lock, force=args.force)
         except Unreachable as e:
@@ -1411,7 +1476,24 @@ def cmd_fetch(cfg: Config, args) -> int:
             bad(str(e))
             failed.append(t["name"])
         finally:
-            save_lock(cfg, lock)
+            with saving:                    # a copy: another tool may be adding to it meanwhile
+                save_lock(cfg, dict(lock))
+
+    if jobs == 1:
+        for t in tools:
+            one(t)
+    else:
+        _STOP.clear()
+        pool = ThreadPoolExecutor(jobs)
+        try:
+            for f in as_completed([pool.submit(one, t) for t in tools]):
+                f.result()
+        except BaseException:               # Ctrl-C, or a fault: stop every download where it is (each .part stays)
+            _STOP.set()
+            raise
+        finally:
+            pool.shutdown(wait=True, cancel_futures=True)
+            _STOP.clear()
     if failed:
         bad(f"{len(failed)} failed: {', '.join(failed)}")
         return 1
@@ -4891,6 +4973,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--force", action="store_true", help="re-download even if up to date")
     p.add_argument("--outage-ok", action="store_true",
                    help="a site that is down (5xx, no answer) is a warning, not a failure")
+    p.add_argument("--jobs", type=int, metavar="N", help=f"tools to fetch at once (default {FETCH_JOBS})")
     p.set_defaults(fn=cmd_fetch)
 
     p = sub.add_parser("sync", help="copy the cache onto a mounted Ventoy stick")
