@@ -39,6 +39,7 @@ from pathlib import Path
 
 # helix is loaded from a data file, so PyInstaller can't see what it imports; name it here.
 # (tests/test_windows_app.py checks this list against helix.)
+import concurrent.futures  # noqa: F401
 import ctypes  # noqa: F401
 import email.utils  # noqa: F401
 import fnmatch  # noqa: F401

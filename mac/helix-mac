@@ -37,6 +37,7 @@ if sys.version_info < (3, 11):
 
 # The engine is loaded from a file, so a one-file build (PyInstaller) can't see what it imports:
 # named here for it, as the Windows app does.
+import concurrent.futures  # noqa: E402,F401
 import datetime  # noqa: E402,F401
 import email.utils  # noqa: E402,F401
 import fnmatch  # noqa: E402,F401
@@ -49,6 +50,7 @@ import mmap  # noqa: E402,F401
 import shutil  # noqa: E402,F401
 import struct  # noqa: E402,F401
 import tarfile  # noqa: E402,F401
+import threading  # noqa: E402,F401
 import tomllib  # noqa: E402,F401
 import urllib.error  # noqa: E402,F401
 import urllib.parse  # noqa: E402,F401
