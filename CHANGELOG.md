@@ -6,6 +6,10 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+### Changed
+- **The splash has the new logo**: the HB mark with the USB stick and DNA
+  zipper now stands over the night landscape before the menu.
+
 ## [0.8.0] - 2026-11-09
 
 ### Added
