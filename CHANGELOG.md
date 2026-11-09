@@ -6,6 +6,8 @@ tagged releases also publish the Windows app.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-09
+
 ### Added
 - **Faster downloads.** `helix fetch` (and so refresh) gets four tools at once
   (`--jobs N` to change it). A SourceForge download that stays under 1 MB/s for
@@ -868,7 +870,8 @@ First release.
 - CI: unit tests, ShellCheck, a weekly live download-and-verify of every tool,
   and a Windows build that publishes releases.
 
-[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.7...HEAD
+[Unreleased]: https://github.com/Commanderx-code/helix-boot/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.7...v0.8.0
 [0.7.7]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/Commanderx-code/helix-boot/compare/v0.7.4...v0.7.5
