@@ -160,11 +160,15 @@ menu. Each picture's footer rule sits at its own height, so the theme and each
 preset place the hotkey row and Ventoy's version text above it (`HOTKEYS`,
 `VERSION` and `PRESETS` in `build-theme.py`).
 
-`docs/artwork/helix-logo.png` is the project's logo, the HB mark on a clear
-background, and `docs/artwork/helix-app-icon.png` the same mark on a dark tile:
-the Windows app's header and its icon (`windows/logo.png`, `windows/icon.png`,
-`windows/HelixBoot.ico` are made from them). Both were supplied by the
-project's maintainer.
+`docs/artwork/helix-logo.png` is the project's logo, the HB mark with a USB
+stick and a DNA zipper on a clear background, at the top of the README.
+`docs/artwork/helix-banner.png` is the same mark beside the HELIX BOOT name and
+the RECOVERY • DIAGNOSTICS • REPAIR tagline: the app windows' header
+(`windows/logo.png`, 84 px high, is made from it).
+`docs/artwork/helix-app-icon.png` is the app icon, a USB stick with a cyan and
+violet helix: the windows' own icon and the Windows program's file icon
+(`windows/icon.png` and `windows/HelixBoot.ico` are made from it). All three
+were supplied by the project's maintainer.
 
 `docs/artwork/helix-splash.png` is the default theme's splash: the HB logo and
 HELIXBOOT wordmark over a night landscape, supplied by the project's

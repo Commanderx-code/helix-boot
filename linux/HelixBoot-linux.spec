@@ -10,7 +10,7 @@ datas = [
     (str(root / "pe" / "launcher"), "pe/launcher"),
     (str(root / "pe" / "lazarus"), "pe/lazarus"),
     (str(root / "byo" / "README.md"), "byo"),
-    (str(root / "windows" / "logo.png"), "."),          # the mark in the windows' header
+    (str(root / "windows" / "logo.png"), "."),          # the banner in the windows' header
     (str(root / "windows" / "icon.png"), "."),          # the windows' own icon
     (str(root / "scripts" / "common.sh"), "scripts"),   # which disks hold the running system
 ]
