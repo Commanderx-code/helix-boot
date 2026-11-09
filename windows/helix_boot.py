@@ -815,7 +815,7 @@ def _picture(master, name: str):
 
 
 def logo_image(master):
-    """The HB mark for a window's header, or None where the picture can't be loaded."""
+    """The banner for a window's header (HB mark, name and tagline), or None where it can't be loaded."""
     return _picture(master, "logo.png")
 
 
@@ -852,9 +852,10 @@ def gui(selftest: bool = False) -> int:
     head = ttk.Frame(frm)
     head.pack(fill="x")
     logo = logo_image(root)             # (kept in a variable: Tk drops an image nothing refers to)
-    if logo:
-        ttk.Label(head, image=logo).pack(side="left", padx=(0, 12))
-    ttk.Label(head, text="Helix Boot", style="Title.TLabel").pack(side="left")
+    if logo:                            # the banner has the name in it
+        ttk.Label(head, image=logo).pack(side="left")
+    else:
+        ttk.Label(head, text="Helix Boot", style="Title.TLabel").pack(side="left")
     corner = ttk.Frame(head)
     corner.pack(side="right", anchor="n")
     ttk.Label(corner, text=f"v{cr.__version__}", style="Muted.TLabel").pack(anchor="e")

@@ -33,6 +33,13 @@ tagged releases also publish the Windows app.
 - **Helix Steel is the default theme**: brushed metal and a framed wireframe
   helix, with the HELIXBOOT wordmark and footer in the picture. It replaces
   Helix Neon.
+- **New app icon**: a USB stick with a cyan and violet helix, in place of the
+  HB tile. It is the Windows and Linux apps' window, taskbar and file icon.
+- **New logo**: the HB mark now has a USB stick and a DNA zipper between the
+  letters. It heads the README.
+- **The apps' header is a banner**: the new HB mark with the HELIX BOOT name
+  and RECOVERY • DIAGNOSTICS • REPAIR, in place of the small mark and the
+  plain-text title. The Windows and Linux apps share it.
 
 ### Removed
 - The Helix Neon, Midnight, Ember, Terminal and Slate themes. A stick set to
