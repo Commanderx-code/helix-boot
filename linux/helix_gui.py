@@ -201,6 +201,7 @@ VERIFIED: dict[str, str] = {}                               # Ventoy archive -> 
 # (scripts/release.sh won't cut a release whose Ventoy isn't listed here.)
 VENTOY_SHA256 = {
     "ventoy-1.1.17-linux.tar.gz": "7fb4ed08cef6a6b4d39dd19260d8c80291a78dfdf9af7d461571e23cbbc43805",
+    "ventoy-1.1.18-linux.tar.gz": "d86ff9de63d94c8b8f1f6b14d23c55af4b88e8207bf2893890892a6a97b1ad54",
 }
 VENTOY_SUMS = "https://github.com/ventoy/Ventoy/releases/download/v{version}/sha256.txt"
 RUN_VENTOY = r'''
